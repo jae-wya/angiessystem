@@ -122,10 +122,71 @@ STATUS_COLOR = {
     "Cancelled":"#DC3545","Failed Delivery":"#FF6B35",
 }
 
+# ─────────────────────────────────────────────────────────────────────────────
+# ROLE-BASED PAGE ACCESS
+# ─────────────────────────────────────────────────────────────────────────────
+PAGE_ACCESS = {
+    "Super Admin":    {"Dashboard","New Order","All Orders","Edit Order","Florist Board","Rider Board","Schedule","Inventory","Waste Tracker","Staff Management","Reports","Customers","HR"},
+    "Branch Manager": {"Dashboard","New Order","All Orders","Edit Order","Florist Board","Rider Board","Schedule","Inventory","Waste Tracker","Staff Management","Reports","Customers"},
+    "Staff":          {"Dashboard","New Order","All Orders","Edit Order","Florist Board","Rider Board","Schedule","Inventory","Waste Tracker","Reports","Customers"},
+    "Florist":        {"Dashboard","New Order","All Orders","Edit Order","Florist Board","Schedule"},
+    "Rider":          {"Dashboard","Rider Board","Schedule"},
+}
+
 # Session state defaults
-for k, v in [("active_page","Dashboard"), ("edit_order_id",None)]:
+for k, v in [("active_page","Dashboard"), ("edit_order_id",None), ("auth_user",None)]:
     if k not in st.session_state:
         st.session_state[k] = v
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# LOGIN SCREEN
+# ─────────────────────────────────────────────────────────────────────────────
+def page_login():
+    st.markdown("""
+    <div style='text-align:center; padding: 60px 0 20px;'>
+      <div style='font-size:60px;'>🌸</div>
+      <div style='font-family: Playfair Display, serif; font-size:28px; font-weight:700; color:#2D1B2E;'>Angie's Florist</div>
+      <div style='font-size:12px; color:#C9A0B0; letter-spacing:2px; margin-top:4px;'>STAFF LOGIN</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    _, mid, _ = st.columns([1,1.2,1])
+    with mid:
+        with st.form("login_form"):
+            pin = st.text_input("Enter your PIN", type="password", max_chars=6, placeholder="••••••")
+            submitted = st.form_submit_button("🔓 Log In", use_container_width=True)
+        if submitted:
+            account = db.verify_login(pin.strip())
+            if account:
+                st.session_state.auth_user = account
+                st.session_state.active_page = "Dashboard"
+                st.rerun()
+            else:
+                st.error("❌ Invalid PIN. Please try again.")
+
+        st.caption("Forgot your PIN? Ask a Branch Manager or Super Admin to reset it in Staff Management → Accounts.")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# AUTH GATE — block everything below until logged in
+# ─────────────────────────────────────────────────────────────────────────────
+if st.session_state.auth_user is None:
+    page_login()
+    st.stop()
+
+CURRENT_USER   = st.session_state.auth_user
+CURRENT_ROLE   = CURRENT_USER.get("role", "Staff")
+CURRENT_BRANCH = CURRENT_USER.get("branch", "All")
+
+
+def scope_by_branch(items: list, field: str = "branch") -> list:
+    """Restrict a list of records to the logged-in user's branch,
+    unless they are Super Admin or have branch == 'All'."""
+    if CURRENT_ROLE == "Super Admin" or CURRENT_BRANCH == "All":
+        return items
+    return [i for i in items if i.get(field) == CURRENT_BRANCH]
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # HELPERS
@@ -321,19 +382,26 @@ with st.sidebar:
     if ready_sb   > 0: col3.metric("🟢", ready_sb)
     st.divider()
 
-    pages = {
+    pages_all = {
         "📊 Dashboard":      "Dashboard",
         "➕ New Order":      "New Order",
         "📋 All Orders":     "All Orders",
         "🌹 Florist Board":  "Florist Board",
         "🚴 Rider Board":    "Rider Board",
         "📅 Schedule":       "Schedule",
+        "👤 Customers":      "Customers",
         "📦 Inventory":      "Inventory",
         "♻️ Waste Tracker":  "Waste Tracker",
         "👥 Staff Management":"Staff Management",
         "📈 Reports":        "Reports",
         "👔 HR Module":      "HR",
     }
+    allowed = PAGE_ACCESS.get(CURRENT_ROLE, set())
+    pages = {label: key for label, key in pages_all.items() if key in allowed}
+
+    if st.session_state.active_page not in allowed:
+        st.session_state.active_page = "Dashboard"
+
     for label, page_key in pages.items():
         active = st.session_state.active_page == page_key
         if st.button(label, use_container_width=True, key=f"nav_{page_key}", type="primary" if active else "secondary"):
@@ -342,7 +410,23 @@ with st.sidebar:
             st.rerun()
 
     st.divider()
-    st.markdown(f"<div style='font-size:11px; color:#C9A0B0; text-align:center;'>{datetime.now().strftime('%A, %B %d %Y')}</div>", unsafe_allow_html=True)
+    if st.button("🔄 Refresh Data", use_container_width=True, help="Force-reload latest data from the database"):
+        db._invalidate_all()
+        st.rerun()
+
+    st.divider()
+    st.markdown(
+        f"<div style='text-align:center; font-size:12px;'>"
+        f"👤 <strong>{CURRENT_USER.get('name','')}</strong><br>"
+        f"<span style='color:#C9A0B0;'>{CURRENT_ROLE} · {CURRENT_BRANCH}</span></div>",
+        unsafe_allow_html=True,
+    )
+    if st.button("🚪 Log Out", use_container_width=True):
+        st.session_state.auth_user = None
+        st.session_state.active_page = "Dashboard"
+        st.rerun()
+
+    st.markdown(f"<div style='font-size:11px; color:#C9A0B0; text-align:center; margin-top:8px;'>{datetime.now().strftime('%A, %B %d %Y')}</div>", unsafe_allow_html=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -350,9 +434,9 @@ with st.sidebar:
 # ─────────────────────────────────────────────────────────────────────────────
 def page_dashboard():
     st.markdown("<div class='section-header'>📊 Dashboard</div>", unsafe_allow_html=True)
-    orders    = db.get_orders()
-    inventory = db.get_inventory()
-    waste     = db.get_waste()
+    orders    = scope_by_branch(db.get_orders())
+    inventory = scope_by_branch(db.get_inventory())
+    waste     = scope_by_branch(db.get_waste())
     today     = date.today().isoformat()
 
     today_orders    = [o for o in orders if str(o.get("target_date",""))[:10] == today]
@@ -412,6 +496,54 @@ def page_dashboard():
     c2.metric("📉 Total Waste Cost", f"₱{waste_cost:,.0f}")
     c3.metric("📈 Net Profit Margin",f"{profit_margin:.1f}%")
 
+    st.divider()
+    st.markdown("#### 📋 Shareable Recap")
+    st.caption("Quick copy-paste summary for group chats / end-of-day reports.")
+    recap_period = st.radio("Period", ["Today","This Week"], horizontal=True, key="recap_period")
+
+    if recap_period == "Today":
+        period_orders = [o for o in orders if str(o.get("target_date",""))[:10] == today]
+        period_label = f"Today ({date.today().strftime('%b %d, %Y')})"
+    else:
+        week_start = (date.today() - timedelta(days=date.today().weekday())).isoformat()
+        period_orders = [o for o in orders if str(o.get("target_date",""))[:10] >= week_start]
+        period_label = f"This Week (since {week_start})"
+
+    period_completed = [o for o in period_orders if o["status"] in ("Delivered","Picked Up")]
+    period_revenue   = sum(float(o.get("total_price",0)) for o in period_completed)
+    period_pending   = len([o for o in period_orders if o["status"] not in ("Delivered","Picked Up","Cancelled","Failed Delivery")])
+    period_cancelled = len([o for o in period_orders if o["status"] == "Cancelled"])
+    period_rush      = len([o for o in period_orders if o.get("priority_rush")])
+
+    # Top arrangement for the period
+    arr_qty = {}
+    for o in period_orders:
+        arr_qty[o.get("arrangement","Unknown")] = arr_qty.get(o.get("arrangement","Unknown"),0) + int(o.get("quantity",1))
+    top_arr = max(arr_qty.items(), key=lambda x: x[1])[0] if arr_qty else "—"
+
+    low_stock_items = [i for i in inventory if i.get("quantity",0) <= i.get("reorder_point",10)]
+
+    branch_label = CURRENT_BRANCH if CURRENT_BRANCH != "All" else "All Branches"
+    recap_text = (
+        f"🌸 Angie's Florist — {period_label}\n"
+        f"Branch: {branch_label}\n"
+        f"---------------------------\n"
+        f"📦 Total Orders: {len(period_orders)}\n"
+        f"✅ Completed: {len(period_completed)}\n"
+        f"⏳ Pending/In Progress: {period_pending}\n"
+        f"❌ Cancelled: {period_cancelled}\n"
+        f"🚀 Rush Orders: {period_rush}\n"
+        f"🏆 Top Arrangement: {top_arr}\n"
+        f"💰 Revenue: ₱{period_revenue:,.2f}\n"
+    )
+    if low_stock_items:
+        recap_text += f"⚠️ Low Stock Alerts: {len(low_stock_items)} item(s) — " + ", ".join(i['name'] for i in low_stock_items[:5])
+        if len(low_stock_items) > 5:
+            recap_text += f" +{len(low_stock_items)-5} more"
+        recap_text += "\n"
+
+    st.text_area("Recap (copy this)", value=recap_text, height=200, key="recap_text_area")
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # PAGE: NEW ORDER
@@ -466,6 +598,13 @@ def page_new_order():
         allow_substitution = cp1.checkbox("Allow Substitutions?")
         substitution_notes = cp2.text_input("Substitution Notes", placeholder="e.g., No red — use orange instead") if allow_substitution else ""
 
+        inspo_pictures = st.file_uploader(
+            "📸 Upload Inspiration Pictures (Optional)",
+            type=["jpg","jpeg","png","gif"],
+            accept_multiple_files=True,
+            key="inspo_uploader",
+        )
+
         with st.expander("💌 Message Card (Optional)"):
             mc1,mc2 = st.columns(2)
             msg_to   = mc1.text_input("To:",   placeholder="e.g., Maria")
@@ -477,6 +616,10 @@ def page_new_order():
         price   = c1.number_input("Flower Price (₱) *", min_value=0.0, step=50.0, value=st.session_state.get("form_price",0.0))
         raw_fee = c2.number_input("Delivery Fee (₱)",   min_value=0.0, step=25.0, value=st.session_state.get("form_delivery_fee",0.0))
         down_payment = st.number_input("Down Payment (₱)", min_value=0.0, step=50.0, value=st.session_state.get("form_down_payment",0.0))
+
+        proof_of_payment = st.file_uploader(
+            "📄 Proof of Payment", type=["pdf","jpg","jpeg","png"], key="payment_proof"
+        )
 
         st.markdown("**Split / Secondary Payment**")
         sp1,sp2 = st.columns(2)
@@ -493,8 +636,10 @@ def page_new_order():
         c1,c2,c3 = st.columns(3)
         target_date = c1.date_input("Target Date *", min_value=date.today())
         target_time = c2.time_input("Target Time *", value=datetime.strptime("10:00","%H:%M").time())
-        chat_branch = c3.selectbox("Chat Branch *", BRANCHES)
-        fulfillment_branch = st.selectbox("Fulfillment Branch *", BRANCHES, index=BRANCHES.index(chat_branch) if chat_branch in BRANCHES else 0)
+        no_branch_options = BRANCHES if (CURRENT_ROLE in ("Super Admin","Branch Manager") or CURRENT_BRANCH == "All") else [CURRENT_BRANCH]
+        default_branch_idx = no_branch_options.index(CURRENT_BRANCH) if CURRENT_BRANCH in no_branch_options else 0
+        chat_branch = c3.selectbox("Chat Branch *", no_branch_options, index=default_branch_idx)
+        fulfillment_branch = st.selectbox("Fulfillment Branch *", no_branch_options, index=no_branch_options.index(chat_branch) if chat_branch in no_branch_options else 0)
 
         st.markdown("##### 🚚 Delivery or Pick-up?")
         order_type       = st.radio("Order Type *", ["Delivery","Pick-up"], horizontal=True)
@@ -536,6 +681,22 @@ def page_new_order():
         all_colors      = list(set(c for fi in flower_items for c in fi.get("colors",[])))
         color_pref_str  = ", ".join(sorted(all_colors)) if all_colors else "Any"
 
+        # Upload inspiration pictures to Supabase Storage
+        inspo_urls = []
+        for pic in (inspo_pictures or []):
+            ext = pic.name.split(".")[-1].lower()
+            path = f"orders/{order_code}/inspo/{uuid.uuid4().hex[:8]}.{ext}"
+            url = db.upload_file(pic.getvalue(), path, content_type=pic.type or "image/jpeg")
+            if url:
+                inspo_urls.append(url)
+
+        # Upload proof of payment to Supabase Storage
+        proof_url = None
+        if proof_of_payment:
+            ext = proof_of_payment.name.split(".")[-1].lower()
+            path = f"orders/{order_code}/payment_proof/{uuid.uuid4().hex[:8]}.{ext}"
+            proof_url = db.upload_file(proof_of_payment.getvalue(), path, content_type=proof_of_payment.type or "application/octet-stream")
+
         order = {
             "order_code": order_code, "id": order_code,
             "customer_name": customer_name, "customer_contact": customer_contact,
@@ -546,12 +707,13 @@ def page_new_order():
             "source_page": source_page, "occasion": occasion,
             "color_preference": color_pref_str, "flower_items": flower_items,
             "allow_substitution": allow_substitution, "substitution_notes": substitution_notes,
-            "inspo_pictures": [],
+            "inspo_pictures": inspo_urls,
             "price": price, "delivery_fee": delivery_fee, "total_price": total_price,
             "down_payment_amount": down_payment,
             "split_payment_amount": split_amount,
             "split_payment_method": split_method if split_amount > 0 else "",
             "total_balance": total_balance, "balance_payment_method": balance_payment_method,
+            "proof_of_payment": proof_url,
             "notes": notes,
             "target_date": target_date.isoformat(),
             "target_time": target_time.strftime("%I:%M %p"),
@@ -562,6 +724,8 @@ def page_new_order():
             "payment_status": "Fully Paid" if total_balance == 0 else "Partially Paid",
             "payment_method": balance_payment_method,
             "status": "Pending",
+            "finished_product_picture": None,
+            "proof_of_delivery": None,
             "delivery_attempts": 0, "cancellation_reason": "", "cancellation_notes": "",
             "created_at": datetime.now().isoformat(), "updated_at": datetime.now().isoformat(),
         }
@@ -580,6 +744,12 @@ def page_new_order():
         st.session_state.pop("new_flower_items", None)
         st.success(f"✅ Order **{order_code}** logged successfully!")
         st.info(f"📌 **Order Code:** `{order_code}`")
+        if inspo_urls:
+            st.info(f"📸 {len(inspo_urls)} inspiration picture(s) uploaded.")
+        if proof_url:
+            st.info("📄 Proof of payment uploaded.")
+        if delivery_fee == 0 and raw_fee > 0:
+            st.success("🚚 Free delivery applied!")
         st.balloons()
 
 
@@ -650,6 +820,11 @@ def page_edit_order():
         allow_substitution = cp1.checkbox("Allow Substitutions?", value=bool(order.get("allow_substitution",False)))
         substitution_notes = cp2.text_input("Substitution Notes", value=order.get("substitution_notes",""))
 
+        inspo_replace = st.file_uploader(
+            "📸 Replace Inspiration Pictures (leave empty to keep existing)",
+            type=["jpg","jpeg","png","gif"], accept_multiple_files=True, key="edit_inspo",
+        )
+
         with st.expander("💌 Message Card"):
             mc1,mc2 = st.columns(2)
             msg_to   = mc1.text_input("To:",   value=order.get("message_card_to",""))
@@ -661,6 +836,10 @@ def page_edit_order():
         price        = c1.number_input("Flower Price (₱) *", min_value=0.0, step=50.0, value=float(order.get("price",0)))
         delivery_fee = c2.number_input("Delivery Fee (₱)",   min_value=0.0, step=25.0, value=float(order.get("delivery_fee",0)))
         down_payment = st.number_input("Down Payment (₱)",   min_value=0.0, step=50.0, value=float(order.get("down_payment_amount",0)))
+        proof_replace = st.file_uploader(
+            "📄 Replace Proof of Payment (leave empty to keep existing)",
+            type=["pdf","jpg","jpeg","png"], key="edit_proof",
+        )
         bm_default = order.get("balance_payment_method", PAYMENT_METHODS_BALANCE[0])
         bm_idx = PAYMENT_METHODS_BALANCE.index(bm_default) if bm_default in PAYMENT_METHODS_BALANCE else 0
         balance_payment_method = st.selectbox("Balance Payment Method", PAYMENT_METHODS_BALANCE, index=bm_idx)
@@ -704,6 +883,23 @@ def page_edit_order():
         total_price   = price + delivery_fee
         total_balance = max(total_price - down_payment, 0)
         efi = edit_flower_items
+
+        inspo_files = order.get("inspo_pictures", [])
+        if inspo_replace:
+            inspo_files = []
+            for pic in inspo_replace:
+                ext = pic.name.split(".")[-1].lower()
+                path = f"orders/{order_code}/inspo/{uuid.uuid4().hex[:8]}.{ext}"
+                url = db.upload_file(pic.getvalue(), path, content_type=pic.type or "image/jpeg")
+                if url:
+                    inspo_files.append(url)
+
+        proof_path = order.get("proof_of_payment")
+        if proof_replace:
+            ext = proof_replace.name.split(".")[-1].lower()
+            path = f"orders/{order_code}/payment_proof/{uuid.uuid4().hex[:8]}.{ext}"
+            proof_path = db.upload_file(proof_replace.getvalue(), path, content_type=proof_replace.type or "application/octet-stream")
+
         db.update_order(order_id, {
             "customer_name": customer_name, "customer_contact": customer_contact,
             "recipient_name": recipient_name, "recipient_contact": recipient_contact,
@@ -715,9 +911,11 @@ def page_edit_order():
             "source_page": source_page, "occasion": occasion,
             "color_preference": ", ".join(sorted(set(c for fi in efi for c in fi.get("colors",["Any"])))) if efi else order.get("color_preference","Any"),
             "allow_substitution": allow_substitution, "substitution_notes": substitution_notes,
+            "inspo_pictures": inspo_files,
             "price": price, "delivery_fee": delivery_fee, "total_price": total_price,
             "down_payment_amount": down_payment, "total_balance": total_balance,
             "balance_payment_method": balance_payment_method,
+            "proof_of_payment": proof_path,
             "notes": notes,
             "target_date": target_date.isoformat(), "target_time": target_time.strftime("%I:%M %p"),
             "chat_branch": chat_branch, "fulfillment_branch": fulfillment_branch, "branch": fulfillment_branch,
@@ -740,21 +938,27 @@ def page_edit_order():
 # ─────────────────────────────────────────────────────────────────────────────
 def page_all_orders():
     st.markdown("<div class='section-header'>📋 All Orders</div>", unsafe_allow_html=True)
-    orders   = db.get_orders()
-    florists = db.get_florists()
+    orders   = scope_by_branch(db.get_orders())
+    florists = scope_by_branch(db.get_florists())
 
     if not orders:
         st.info("No orders yet. Head to **➕ New Order** to get started.")
         return
 
+    branch_options = BRANCHES if (CURRENT_ROLE == "Super Admin" or CURRENT_BRANCH == "All") else [CURRENT_BRANCH]
     c1,c2,c3,c4,c5 = st.columns(5)
-    f_branch = c1.selectbox("Branch", ["All"] + BRANCHES, key="ao_branch")
+    f_branch = c1.selectbox("Branch", ["All"] + branch_options, key="ao_branch")
     f_status = c2.selectbox("Status", ["All"] + STATUS_FLOW, key="ao_status")
     f_type   = c3.selectbox("Type",   ["All","Delivery","Pick-up"], key="ao_type")
     f_date   = c4.date_input("Date",  value=None, key="ao_date")
     search   = c5.text_input("🔍 Search", key="ao_search")
 
+    show_all = st.checkbox("Show all orders (including older than 60 days) — may be slower", key="ao_show_all")
+
     filtered = orders.copy()
+    if not show_all and not f_date and f_status == "All":
+        cutoff = (date.today() - timedelta(days=60)).isoformat()
+        filtered = [o for o in filtered if str(o.get("target_date",""))[:10] >= cutoff]
     if f_branch != "All": filtered = [o for o in filtered if o.get("branch") == f_branch]
     if f_status != "All": filtered = [o for o in filtered if o.get("status") == f_status]
     if f_type   != "All": filtered = [o for o in filtered if o.get("order_type") == f_type]
@@ -765,13 +969,23 @@ def page_all_orders():
 
     filtered = sorted(filtered, key=lambda x: str(x.get("target_date","")), reverse=True)
     col_count, col_export = st.columns([3,1])
-    col_count.markdown(f"**{len(filtered)} order(s) found**")
+    col_count.markdown(f"**{len(filtered)} order(s) found** {'(last 60 days — check *Show all* for older)' if not show_all and not f_date and f_status=='All' else ''}")
     if filtered:
         col_export.download_button("⬇️ Export CSV", data=orders_to_csv(filtered),
             file_name=f"angies_orders_{datetime.now().strftime('%Y%m%d_%H%M')}.csv", mime="text/csv", use_container_width=True)
     st.divider()
 
-    for o in filtered:
+    # Pagination — show 25 at a time to keep the page snappy
+    PAGE_SIZE = 25
+    total_pages = max(1, (len(filtered) + PAGE_SIZE - 1) // PAGE_SIZE)
+    if total_pages > 1:
+        page_num = st.number_input(f"Page (1–{total_pages})", min_value=1, max_value=total_pages, value=1, key="ao_page")
+    else:
+        page_num = 1
+    start_idx = (page_num - 1) * PAGE_SIZE
+    page_orders = filtered[start_idx:start_idx + PAGE_SIZE]
+
+    for o in page_orders:
         status       = o["status"]
         order_type   = o["order_type"]
         order_code   = o.get("order_code", o.get("id","N/A"))
@@ -914,15 +1128,29 @@ def page_all_orders():
             if any([o.get("message_card_to"), o.get("message_card_body"), o.get("message_card_from")]):
                 st.markdown("**💌 Message Card:**")
                 st.info(f"**To:** {o.get('message_card_to','')}\n\n{o.get('message_card_body','')}\n\n**From:** {o.get('message_card_from','')}")
+
+            inspo = o.get("inspo_pictures", [])
+            if inspo:
+                st.markdown("**📸 Inspiration Pictures:**")
+                cols = st.columns(min(3, len(inspo)))
+                for i, url in enumerate(inspo):
+                    cols[i % len(cols)].image(url, caption=f"Ref {i+1}", use_container_width=True)
+
+            pod = o.get("proof_of_delivery")
+            if pod:
+                st.markdown("**📷 Proof of Delivery:**")
+                st.image(pod, caption="Delivery Proof", width=300)
         st.divider()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # PAGE: FLORIST BOARD
 # ─────────────────────────────────────────────────────────────────────────────
+@st.fragment(run_every="30s")
 def page_florist_board():
     st.markdown("<div class='section-header'>🌹 Florist Production Board</div>", unsafe_allow_html=True)
-    orders = db.get_orders()
+    st.caption("🔄 Auto-refreshes every 30 seconds")
+    orders = scope_by_branch(db.get_orders())
     production = sorted(
         [o for o in orders if o["status"] in ["Confirmed","In Progress"]],
         key=lambda x: (str(x.get("target_date","")), x.get("target_time",""))
@@ -971,6 +1199,14 @@ def page_florist_board():
             </div>
             """, unsafe_allow_html=True)
 
+            # Inspiration pictures
+            inspo_pics = o.get("inspo_pictures", [])
+            if inspo_pics:
+                st.markdown("#### 📸 Inspiration Pictures")
+                cols = st.columns(min(3, len(inspo_pics)))
+                for idx, pic_url in enumerate(inspo_pics):
+                    cols[idx % len(cols)].image(pic_url, caption=f"Reference {idx+1}", use_container_width=True)
+
             c1,c2 = st.columns(2)
             with c1:
                 if o["status"] == "Confirmed":
@@ -978,22 +1214,34 @@ def page_florist_board():
                         db.update_order_status(o["id"],"In Progress"); st.rerun()
             with c2:
                 if o["status"] == "In Progress":
-                    if st.button("✅ Mark as READY", key=f"fready_{order_code}"):
-                        db.update_order_status(o["id"],"Ready")
-                        if o.get("order_type") == "Delivery":
-                            st.success(f"✅ Order **{order_code}** marked READY — it will appear on the 🚴 Rider Board!")
-                        else:
-                            st.success(f"✅ Order **{order_code}** marked READY — awaiting pick-up.")
-                        st.rerun()
+                    finished_pic = st.file_uploader(
+                        "📸 Upload Finished Product Picture",
+                        type=["jpg","jpeg","png"], key=f"finished_{order_code}",
+                    )
+                    if finished_pic:
+                        if st.button("✅ Mark as READY", key=f"fready_{order_code}"):
+                            ext = finished_pic.name.split(".")[-1].lower()
+                            path = f"orders/{order_code}/finished_product/{uuid.uuid4().hex[:8]}.{ext}"
+                            url = db.upload_file(finished_pic.getvalue(), path, content_type=finished_pic.type or "image/jpeg")
+                            db.update_order(o["id"], {"finished_product_picture": url, "status": "Ready"})
+                            if o.get("order_type") == "Delivery":
+                                st.success(f"✅ Order **{order_code}** marked READY — it will appear on the 🚴 Rider Board!")
+                            else:
+                                st.success(f"✅ Order **{order_code}** marked READY — awaiting pick-up.")
+                            st.rerun()
+                    else:
+                        st.info("📸 Upload a finished product picture before marking ready.")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # PAGE: RIDER BOARD
 # ─────────────────────────────────────────────────────────────────────────────
+@st.fragment(run_every="30s")
 def page_rider_board():
     st.markdown("<div class='section-header'>🚴 Rider Delivery Board</div>", unsafe_allow_html=True)
-    orders  = db.get_orders()
-    riders  = db.get_riders()
+    st.caption("🔄 Auto-refreshes every 30 seconds")
+    orders  = scope_by_branch(db.get_orders())
+    riders  = scope_by_branch(db.get_riders())
     rider_names    = [r["name"] for r in riders]
     rider_contacts = {r["name"]: r.get("contact","") for r in riders}
 
@@ -1066,11 +1314,37 @@ def page_rider_board():
             </div>
             """, unsafe_allow_html=True)
 
-            # Mark delivered
+            # Finished product picture
+            fp = o.get("finished_product_picture")
+            if fp:
+                st.markdown("#### 📸 Finished Product")
+                st.image(fp, caption="Ready for delivery", width=350)
+
+            # Proof of delivery
             st.markdown("#### 📷 Proof of Delivery")
-            if st.button(f"✅ Mark as DELIVERED", key=f"mkdel_{order_code}"):
-                db.update_order_status(o["id"],"Delivered")
-                st.success("✅ Order marked as DELIVERED!"); st.rerun()
+            pod = o.get("proof_of_delivery")
+            if pod:
+                st.success("✅ Proof of delivery already uploaded.")
+                st.image(pod, caption="Delivery Proof", width=300)
+                if st.button(f"✅ Mark as DELIVERED", key=f"mkdel_{order_code}"):
+                    db.update_order_status(o["id"],"Delivered")
+                    st.success("✅ Order marked as DELIVERED!"); st.rerun()
+            else:
+                st.warning("📷 **Upload a proof of delivery photo before marking as Delivered.**")
+                proof_image = st.file_uploader(
+                    "Upload Proof of Delivery Photo",
+                    type=["jpg","jpeg","png","webp"], key=f"pod_upload_{order_code}",
+                    help="Take a photo on your phone and upload it here.",
+                )
+                if proof_image:
+                    st.image(proof_image, caption="Preview", width=300)
+                    if st.button(f"📸 Confirm & Mark DELIVERED", key=f"mkdel_{order_code}"):
+                        ext = proof_image.name.split(".")[-1].lower()
+                        path = f"orders/{order_code}/delivery_proof/{uuid.uuid4().hex[:8]}.{ext}"
+                        url = db.upload_file(proof_image.getvalue(), path, content_type=proof_image.type or "image/jpeg")
+                        db.update_order(o["id"], {"proof_of_delivery": url})
+                        db.update_order_status(o["id"],"Delivered")
+                        st.success("✅ Order marked as DELIVERED with proof!"); st.rerun()
 
             # Failed delivery
             st.divider()
@@ -1091,7 +1365,7 @@ def page_rider_board():
 # ─────────────────────────────────────────────────────────────────────────────
 def page_schedule():
     st.markdown("<div class='section-header'>📅 Schedule</div>", unsafe_allow_html=True)
-    orders = db.get_orders()
+    orders = scope_by_branch(db.get_orders())
     active = [o for o in orders if o["status"] != "Cancelled"]
     today  = date.today()
 
@@ -1132,8 +1406,104 @@ def page_schedule():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# PAGE: INVENTORY
+# PAGE: CUSTOMERS (CRM)
 # ─────────────────────────────────────────────────────────────────────────────
+def page_customers():
+    st.markdown("<div class='section-header'>👤 Customers</div>", unsafe_allow_html=True)
+    orders = scope_by_branch(db.get_orders())
+
+    if not orders:
+        st.info("No order data yet."); return
+
+    search = st.text_input("🔍 Search by name or contact number", key="cust_search")
+
+    # Aggregate per customer (by contact number)
+    customers = {}
+    for o in orders:
+        contact = o.get("customer_contact","").strip()
+        if not contact:
+            continue
+        c = customers.setdefault(contact, {
+            "name": o.get("customer_name",""),
+            "contact": contact,
+            "orders": [],
+            "total_spent": 0.0,
+            "completed": 0,
+            "cancelled": 0,
+        })
+        c["orders"].append(o)
+        if o.get("status") in ("Delivered","Picked Up"):
+            c["total_spent"] += float(o.get("total_price",0))
+            c["completed"] += 1
+        elif o.get("status") == "Cancelled":
+            c["cancelled"] += 1
+        # Keep the most recently used name
+        if o.get("created_at","") >= max((x.get("created_at","") for x in c["orders"]), default=""):
+            c["name"] = o.get("customer_name", c["name"])
+
+    rows = []
+    for contact, c in customers.items():
+        last_order = sorted(c["orders"], key=lambda x: x.get("created_at",""), reverse=True)[0]
+        rows.append({
+            "Name": c["name"],
+            "Contact": contact,
+            "Total Orders": len(c["orders"]),
+            "Completed": c["completed"],
+            "Cancelled": c["cancelled"],
+            "Lifetime Spend (₱)": c["total_spent"],
+            "Last Order Date": str(last_order.get("target_date",""))[:10],
+            "Last Status": last_order.get("status",""),
+        })
+
+    if search:
+        q = search.lower()
+        rows = [r for r in rows if q in r["Name"].lower() or q in r["Contact"]]
+
+    rows = sorted(rows, key=lambda x: x["Lifetime Spend (₱)"], reverse=True)
+
+    c1,c2,c3 = st.columns(3)
+    c1.metric("👥 Unique Customers", len(customers))
+    c2.metric("🔁 Returning Customers", len([r for r in rows if r["Total Orders"] > 1]))
+    c3.metric("💰 Total Lifetime Revenue", f"₱{sum(r['Lifetime Spend (₱)'] for r in rows):,.0f}")
+    st.divider()
+
+    if not rows:
+        st.info("No customers match your search."); return
+
+    df = pd.DataFrame(rows)
+    st.dataframe(
+        df.style.format({"Lifetime Spend (₱)": "₱{:,.2f}"}),
+        use_container_width=True, hide_index=True,
+    )
+
+    st.divider()
+    st.markdown("##### 📜 Order History")
+    selected_contact = st.selectbox(
+        "View order history for:",
+        options=[r["Contact"] for r in rows],
+        format_func=lambda c: f"{customers[c]['name']} ({c})",
+    )
+    if selected_contact:
+        hist = sorted(customers[selected_contact]["orders"], key=lambda x: x.get("created_at",""), reverse=True)
+        for o in hist:
+            status_c = STATUS_COLOR.get(o["status"],"#888")
+            st.markdown(
+                f"**`{o.get('order_code','')}`** · {str(o.get('target_date',''))[:10]} · "
+                f"{o.get('arrangement','')} ×{o.get('quantity',1)} · ₱{float(o.get('total_price',0)):,.0f} · "
+                f"<span style='color:{status_c}; font-weight:700;'>{o['status']}</span>",
+                unsafe_allow_html=True,
+            )
+
+    st.divider()
+    st.download_button(
+        "⬇️ Export Customer List CSV",
+        data=df.to_csv(index=False).encode("utf-8"),
+        file_name=f"customers_{datetime.now().strftime('%Y%m%d')}.csv",
+        mime="text/csv",
+    )
+
+
+
 @st.dialog("➕ Add New Inventory Item")
 def _inventory_add_modal():
     with st.form("modal_inv_form", clear_on_submit=True):
@@ -1141,7 +1511,9 @@ def _inventory_add_modal():
         name     = c1.text_input("Item Name *", placeholder="e.g. CHINA ROSES")
         category = c2.selectbox("Category *", list(INVENTORY_CATEGORIES.keys()))
         c1,c2   = st.columns(2)
-        branch  = c1.selectbox("Branch *", BRANCHES)
+        modal_branch_options = BRANCHES if (CURRENT_ROLE == "Super Admin" or CURRENT_BRANCH == "All") else [CURRENT_BRANCH]
+        default_idx = modal_branch_options.index(CURRENT_BRANCH) if CURRENT_BRANCH in modal_branch_options else 0
+        branch  = c1.selectbox("Branch *", modal_branch_options, index=default_idx)
         qty     = c2.number_input("Initial Quantity", min_value=0, value=0)
         c1,c2,c3 = st.columns(3)
         unit    = c1.text_input("Unit", value="pcs")
@@ -1167,7 +1539,7 @@ def _inventory_add_modal():
 
 def page_inventory():
     st.markdown("<div class='section-header'>📦 Inventory Management</div>", unsafe_allow_html=True)
-    inventory = db.get_inventory()
+    inventory = scope_by_branch(db.get_inventory())
 
     hdr1,hdr2 = st.columns([5,1])
     with hdr1: st.markdown("#### 📦 Current Stock")
@@ -1177,7 +1549,8 @@ def page_inventory():
 
     c1,c2 = st.columns(2)
     category       = c1.selectbox("Filter Category", ["All"] + list(INVENTORY_CATEGORIES.keys()))
-    branch_filter  = c2.selectbox("Filter Branch",   ["All"] + BRANCHES)
+    inv_branch_options = BRANCHES if (CURRENT_ROLE == "Super Admin" or CURRENT_BRANCH == "All") else [CURRENT_BRANCH]
+    branch_filter  = c2.selectbox("Filter Branch",   ["All"] + inv_branch_options)
     dc1,dc2 = st.columns(2)
     start_date = dc1.date_input("From", value=date.today()-timedelta(days=30))
     end_date   = dc2.date_input("To",   value=date.today())
@@ -1227,7 +1600,7 @@ def page_inventory():
 # ─────────────────────────────────────────────────────────────────────────────
 def page_waste_tracker():
     st.markdown("<div class='section-header'>♻️ Waste & Spoilage Tracker</div>", unsafe_allow_html=True)
-    waste = db.get_waste()
+    waste = scope_by_branch(db.get_waste())
     tab1,tab2 = st.tabs(["📋 Log","➕ Add Entry"])
 
     with tab1:
@@ -1241,7 +1614,7 @@ def page_waste_tracker():
             st.divider()
             for w in sorted(waste, key=lambda x: str(x.get("date","")), reverse=True):
                 wc1,wc2,wc3 = st.columns([3,1,0.7])
-                wc1.write(f"**{w['item_name']}** | {w['reason']} | {str(w.get('date',''))[:10]} | {w.get('quantity','')} {w.get('unit','')}")
+                wc1.write(f"**{w['item_name']}** | {w.get('branch','')} | {w['reason']} | {str(w.get('date',''))[:10]} | {w.get('quantity','')} {w.get('unit','')}")
                 wc2.write(f"₱{float(w.get('cost',0)):,.0f}")
                 if wc3.button("🗑", key=f"dw_{w['id']}"):
                     db.delete_waste_entry(w["id"]); st.rerun()
@@ -1255,6 +1628,8 @@ def page_waste_tracker():
             unit    = c1.text_input("Unit", value="pcs")
             cost    = c2.number_input("Cost (₱) *", min_value=0.0, step=50.0)
             reason  = c3.selectbox("Reason *", WASTE_REASONS)
+            waste_branch_options = BRANCHES if (CURRENT_ROLE == "Super Admin" or CURRENT_BRANCH == "All") else [CURRENT_BRANCH]
+            branch  = st.selectbox("Branch *", waste_branch_options)
             notes   = st.text_area("Notes")
             wdate   = st.date_input("Date")
             if st.form_submit_button("📝 Log Waste", use_container_width=True):
@@ -1264,7 +1639,7 @@ def page_waste_tracker():
                     db.save_waste_entry({
                         "id": str(uuid.uuid4())[:8], "item_name": item,
                         "quantity": qty, "unit": unit, "cost": cost,
-                        "reason": reason, "notes": notes,
+                        "reason": reason, "branch": branch, "notes": notes,
                         "date": wdate.isoformat(), "logged_at": datetime.now().isoformat(),
                     })
                     st.success("✅ Waste entry logged!")
@@ -1275,9 +1650,10 @@ def page_waste_tracker():
 # ─────────────────────────────────────────────────────────────────────────────
 def page_staff_management():
     st.markdown("<div class='section-header'>👥 Staff Management</div>", unsafe_allow_html=True)
-    florists = db.get_florists()
-    riders   = db.get_riders()
-    tab1,tab2,tab3,tab4 = st.tabs(["🌹 Florists","➕ Add Florist","🚴 Riders","➕ Add Rider"])
+    florists = scope_by_branch(db.get_florists())
+    riders   = scope_by_branch(db.get_riders())
+    smgmt_branch_options = BRANCHES if (CURRENT_ROLE == "Super Admin" or CURRENT_BRANCH == "All") else [CURRENT_BRANCH]
+    tab1,tab2,tab3,tab4,tab5 = st.tabs(["🌹 Florists","➕ Add Florist","🚴 Riders","➕ Add Rider","🔐 Accounts"])
 
     with tab1:
         if not florists: st.info("No florists added yet.")
@@ -1295,7 +1671,7 @@ def page_staff_management():
         with st.form("add_florist"):
             name     = st.text_input("Name *")
             contact  = st.text_input("Contact *")
-            branch   = st.selectbox("Branch *", BRANCHES)
+            branch   = st.selectbox("Branch *", smgmt_branch_options)
             max_conc = st.number_input("Max Concurrent Orders", min_value=1, value=5)
             if st.form_submit_button("➕ Add Florist", use_container_width=True):
                 if name and contact:
@@ -1315,11 +1691,78 @@ def page_staff_management():
         with st.form("add_rider"):
             name    = st.text_input("Name *")
             contact = st.text_input("Contact *")
-            branch  = st.selectbox("Branch *", BRANCHES)
+            branch  = st.selectbox("Branch *", smgmt_branch_options)
             if st.form_submit_button("➕ Add Rider", use_container_width=True):
                 if name and contact:
                     db.save_rider({"id":str(uuid.uuid4())[:8],"name":name,"contact":contact,"branch":branch,"created_at":datetime.now().isoformat()})
                     st.success(f"✅ Rider **{name}** added!")
+
+    with tab5:
+        st.markdown("##### 🔐 Login Accounts")
+        st.caption("Each staff member logs in with their own 4-6 digit PIN.")
+        accounts = db.get_staff_accounts()
+        if CURRENT_ROLE != "Super Admin":
+            accounts = [a for a in accounts if a.get("branch") == CURRENT_BRANCH]
+
+        if not accounts:
+            st.info("No accounts yet — create one below.")
+        for a in sorted(accounts, key=lambda x: x.get("name","")):
+            ac1,ac2,ac3,ac4 = st.columns([2,1.3,1.3,1])
+            ac1.write(f"**{a['name']}**")
+            ac2.write(a.get("role",""))
+            ac3.write(f"🏪 {a.get('branch','')}")
+            ac4.write("🟢 Active" if a.get("active",True) else "🔴 Inactive")
+            with st.expander(f"⚙️ Manage {a['name']}"):
+                mc1,mc2 = st.columns(2)
+                new_pin = mc1.text_input("Set New PIN (4-6 digits)", key=f"pin_{a['id']}", max_chars=6, type="password", placeholder="••••••")
+                if mc1.button("🔄 Reset PIN", key=f"resetpin_{a['id']}"):
+                    if new_pin and new_pin.isdigit() and 4 <= len(new_pin) <= 6:
+                        if db.pin_in_use(new_pin, exclude_id=a["id"]):
+                            st.error("⚠️ That PIN is already in use by another account.")
+                        else:
+                            salt, pin_hash = db.make_pin_credentials(new_pin)
+                            db.update_staff_account(a["id"], {"pin_salt": salt, "pin_hash": pin_hash})
+                            st.success("✅ PIN updated!"); st.rerun()
+                    else:
+                        st.error("PIN must be 4-6 digits.")
+                toggle_label = "🔴 Deactivate Account" if a.get("active",True) else "🟢 Activate Account"
+                if mc2.button(toggle_label, key=f"toggleacc_{a['id']}"):
+                    db.update_staff_account(a["id"], {"active": not a.get("active",True)})
+                    st.rerun()
+                if mc2.button("🗑 Delete Account", key=f"delacc_{a['id']}"):
+                    db.delete_staff_account(a["id"]); st.rerun()
+
+        st.divider()
+        st.markdown("##### ➕ Create New Account")
+        with st.form("add_account"):
+            acc_name = st.text_input("Name *")
+            if CURRENT_ROLE == "Super Admin":
+                acc_role_options   = db.ROLES
+                acc_branch_options = ["All"] + BRANCHES
+            else:
+                acc_role_options   = ["Staff","Florist","Rider"]
+                acc_branch_options = [CURRENT_BRANCH]
+            c1,c2 = st.columns(2)
+            acc_role   = c1.selectbox("Role *", acc_role_options)
+            acc_branch = c2.selectbox("Branch *", acc_branch_options)
+            acc_pin    = st.text_input("PIN (4-6 digits) *", max_chars=6, type="password", placeholder="••••••")
+            if st.form_submit_button("➕ Create Account", use_container_width=True):
+                if not acc_name or not acc_pin:
+                    st.error("Name and PIN are required.")
+                elif not acc_pin.isdigit() or not (4 <= len(acc_pin) <= 6):
+                    st.error("PIN must be 4-6 digits.")
+                elif db.pin_in_use(acc_pin):
+                    st.error("⚠️ This PIN is already in use. Choose a different one.")
+                else:
+                    salt, pin_hash = db.make_pin_credentials(acc_pin)
+                    db.save_staff_account({
+                        "id": str(uuid.uuid4())[:8], "name": acc_name,
+                        "pin_salt": salt, "pin_hash": pin_hash,
+                        "role": acc_role, "branch": acc_branch, "active": True,
+                        "created_at": datetime.now().isoformat(),
+                    })
+                    st.success(f"✅ Account for **{acc_name}** created!")
+                    st.rerun()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1327,15 +1770,21 @@ def page_staff_management():
 # ─────────────────────────────────────────────────────────────────────────────
 def page_reports():
     st.markdown("<div class='section-header'>📈 Reports & Analytics</div>", unsafe_allow_html=True)
-    orders    = db.get_orders()
-    waste     = db.get_waste()
-    inventory = db.get_inventory()
-    florists  = db.get_florists()
-    riders    = db.get_riders()
+    orders    = scope_by_branch(db.get_orders())
+    waste     = scope_by_branch(db.get_waste())
+    inventory = scope_by_branch(db.get_inventory())
+    florists  = scope_by_branch(db.get_florists())
+    riders    = scope_by_branch(db.get_riders())
     if not orders:
         st.info("No order data yet."); return
 
-    tab1,tab2,tab3,tab4,tab5,tab6 = st.tabs(["💰 Financial","🌹 Florists","🚴 Riders","📦 Inventory","🏆 Best Sellers","📍 Delivery Cities"])
+    tab_labels = ["💰 Financial","🌹 Florists","🚴 Riders","📦 Inventory","🏆 Best Sellers","📍 Delivery Cities","📈 Restock Forecast"]
+    show_branch_compare = (CURRENT_ROLE == "Super Admin")
+    if show_branch_compare:
+        tab_labels.append("🏪 Branch Comparison")
+    tabs = st.tabs(tab_labels)
+    tab1,tab2,tab3,tab4,tab5,tab6,tab7 = tabs[:7]
+    tab8 = tabs[7] if show_branch_compare else None
 
     with tab1:
         completed  = [o for o in orders if o["status"] in ["Delivered","Picked Up"]]
@@ -1432,7 +1881,7 @@ def page_reports():
 
     with tab5:
         bs1,bs2,bs3 = st.columns(3)
-        bs_branch = bs1.selectbox("Branch",["All"]+BRANCHES, key="bs_branch")
+        bs_branch = bs1.selectbox("Branch",["All"]+ (BRANCHES if (CURRENT_ROLE=="Super Admin" or CURRENT_BRANCH=="All") else [CURRENT_BRANCH]), key="bs_branch")
         bs_from   = bs2.date_input("From", value=date.today()-timedelta(days=30), key="bs_from")
         bs_to     = bs3.date_input("To",   value=date.today(), key="bs_to")
         bs_orders = [o for o in orders if bs_from.isoformat() <= str(o.get("target_date",""))[:10] <= bs_to.isoformat() and (bs_branch=="All" or o.get("fulfillment_branch",o.get("branch",""))==bs_branch)]
@@ -1460,7 +1909,7 @@ def page_reports():
 
     with tab6:
         dc1,dc2,dc3 = st.columns(3)
-        cty_branch = dc1.selectbox("Branch",["All"]+BRANCHES, key="cty_branch")
+        cty_branch = dc1.selectbox("Branch",["All"]+ (BRANCHES if (CURRENT_ROLE=="Super Admin" or CURRENT_BRANCH=="All") else [CURRENT_BRANCH]), key="cty_branch")
         cty_from   = dc2.date_input("From", value=date.today()-timedelta(days=30), key="cty_from")
         cty_to     = dc3.date_input("To",   value=date.today(), key="cty_to")
         delivery_orders = [o for o in orders if o.get("order_type")=="Delivery" and cty_from.isoformat() <= str(o.get("target_date",""))[:10] <= cty_to.isoformat() and (cty_branch=="All" or o.get("fulfillment_branch",o.get("branch",""))==cty_branch)]
@@ -1485,18 +1934,121 @@ def page_reports():
                 pct   = count/max_count
                 st.markdown(f"<div class='city-rank-bar'><strong>{medal} {zone}</strong> &nbsp; <span style='color:#C85C8E; font-weight:700;'>{count} deliveries</span><div style='background:#F0D9E0; border-radius:4px; height:8px; margin-top:4px;'><div style='background:#C85C8E; width:{pct*100:.0f}%; height:8px; border-radius:4px;'></div></div></div>", unsafe_allow_html=True)
 
+    # ── RESTOCK FORECAST ────────────────────────────────────────────────────
+    with tab7:
+        st.markdown("##### 📈 Restock Forecast")
+        st.caption("Estimates based on flower usage from orders placed in the last 30 days. Matches inventory item names against flowers used in the Flower Builder.")
+
+        lookback_days = 30
+        cutoff = (date.today() - timedelta(days=lookback_days)).isoformat()
+        recent_orders = [o for o in orders if str(o.get("target_date",""))[:10] >= cutoff and o.get("status") != "Cancelled"]
+
+        usage = {}
+        for o in recent_orders:
+            for fi in (o.get("flower_items") or []):
+                fname = fi.get("flower","").strip().lower()
+                if fname:
+                    usage[fname] = usage.get(fname, 0) + int(fi.get("qty",1))
+
+        if not usage:
+            st.info("Not enough order history with flower details yet to forecast usage — this improves as more orders are logged with the Flower Builder.")
+        else:
+            forecast_rows = []
+            for item in inventory:
+                iname = item.get("name","").strip().lower()
+                used = usage.get(iname, 0)
+                current_qty = item.get("quantity",0)
+                daily_rate = used / lookback_days if used else 0
+                days_left = (current_qty / daily_rate) if daily_rate > 0 else None
+                forecast_rows.append({
+                    "Item": item.get("name",""),
+                    "Branch": item.get("branch",""),
+                    "Current Stock": current_qty,
+                    f"Used (last {lookback_days}d)": used,
+                    "Avg Daily Use": round(daily_rate,2),
+                    "Est. Days Until Stockout": round(days_left,1) if days_left is not None else None,
+                    "Reorder Point": item.get("reorder_point",10),
+                })
+
+            df_forecast = pd.DataFrame(forecast_rows)
+            df_forecast["_sort"] = df_forecast["Est. Days Until Stockout"].apply(lambda v: v if v is not None else float("inf"))
+            df_forecast = df_forecast.sort_values("_sort").drop(columns="_sort")
+            df_forecast["Est. Days Until Stockout"] = df_forecast["Est. Days Until Stockout"].apply(lambda v: f"{v:.1f}" if v is not None else "—")
+
+            urgent = [r for r in forecast_rows if r["Est. Days Until Stockout"] is not None and r["Est. Days Until Stockout"] <= 14]
+            if urgent:
+                st.warning(f"⚠️ {len(urgent)} item(s) projected to run out within 14 days based on recent usage: " + ", ".join(r["Item"] for r in urgent))
+
+            st.dataframe(df_forecast, use_container_width=True, hide_index=True)
+            st.download_button(
+                "⬇️ Export Restock Forecast CSV",
+                data=df_forecast.to_csv(index=False).encode("utf-8"),
+                file_name=f"restock_forecast_{datetime.now().strftime('%Y%m%d')}.csv",
+                mime="text/csv",
+            )
+
+    # ── BRANCH COMPARISON (Super Admin only) ────────────────────────────────
+    if show_branch_compare:
+        with tab8:
+            st.markdown("##### 🏪 Branch Comparison")
+            st.caption("Compares all branches side-by-side. Visible to Super Admin only.")
+
+            bc_rows = []
+            for branch in BRANCHES:
+                b_orders    = [o for o in orders if o.get("fulfillment_branch", o.get("branch","")) == branch]
+                b_completed = [o for o in b_orders if o["status"] in ("Delivered","Picked Up")]
+                b_revenue   = sum(float(o.get("total_price",0)) for o in b_completed)
+                b_avg       = (b_revenue / len(b_completed)) if b_completed else 0
+                b_cancelled = len([o for o in b_orders if o["status"] == "Cancelled"])
+                b_failed    = len([o for o in b_orders if o["status"] == "Failed Delivery"])
+                b_waste     = sum(float(w.get("cost",0)) for w in waste if w.get("branch") == branch)
+                bc_rows.append({
+                    "Branch": branch,
+                    "Total Orders": len(b_orders),
+                    "Completed": len(b_completed),
+                    "Cancelled": b_cancelled,
+                    "Failed Deliveries": b_failed,
+                    "Revenue (₱)": b_revenue,
+                    "Avg Order (₱)": b_avg,
+                    "Waste Cost (₱)": b_waste,
+                })
+
+            df_bc = pd.DataFrame(bc_rows)
+            st.dataframe(
+                df_bc.style.format({"Revenue (₱)":"₱{:,.2f}","Avg Order (₱)":"₱{:,.2f}","Waste Cost (₱)":"₱{:,.2f}"}),
+                use_container_width=True, hide_index=True,
+            )
+
+            fc1,fc2 = st.columns(2)
+            with fc1:
+                st.markdown("**Revenue by Branch**")
+                fig,ax = plt.subplots(figsize=(6,4), facecolor="#FDF6F0")
+                ax.bar(df_bc["Branch"], df_bc["Revenue (₱)"], color="#C85C8E", alpha=0.85)
+                ax.set_facecolor("#FDF6F0"); ax.grid(axis="y",alpha=0.3)
+                plt.xticks(rotation=15, ha="right", fontsize=9); plt.tight_layout()
+                st.pyplot(fig); plt.close(fig)
+            with fc2:
+                st.markdown("**Orders by Branch**")
+                fig,ax = plt.subplots(figsize=(6,4), facecolor="#FDF6F0")
+                ax.bar(df_bc["Branch"], df_bc["Total Orders"], color="#17A2B8", alpha=0.85)
+                ax.set_facecolor("#FDF6F0"); ax.grid(axis="y",alpha=0.3)
+                plt.xticks(rotation=15, ha="right", fontsize=9); plt.tight_layout()
+                st.pyplot(fig); plt.close(fig)
+
+            st.download_button(
+                "⬇️ Export Branch Comparison CSV",
+                data=df_bc.to_csv(index=False).encode("utf-8"),
+                file_name=f"branch_comparison_{datetime.now().strftime('%Y%m%d')}.csv",
+                mime="text/csv",
+            )
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # PAGE: HR MODULE
 # ─────────────────────────────────────────────────────────────────────────────
 def page_hr():
-    role = st.session_state.get("role","Staff")
-    if role != "Super Admin":
+    if CURRENT_ROLE != "Super Admin":
         st.error("🔒 Access denied. This section is for Super Admins only.")
-        with st.expander("🔑 Set Role (Admin/Dev use only)"):
-            new_role = st.selectbox("Set Session Role", ["Staff","Admin","Super Admin"])
-            if st.button("Apply Role"):
-                st.session_state.role = new_role; st.rerun()
         return
 
     st.markdown("<div class='section-header'>👔 HR Module — Super Admin</div>", unsafe_allow_html=True)
@@ -1549,6 +2101,7 @@ elif page == "Edit Order":       page_edit_order()
 elif page == "Florist Board":    page_florist_board()
 elif page == "Rider Board":      page_rider_board()
 elif page == "Schedule":         page_schedule()
+elif page == "Customers":        page_customers()
 elif page == "Inventory":        page_inventory()
 elif page == "Waste Tracker":    page_waste_tracker()
 elif page == "Staff Management": page_staff_management()
