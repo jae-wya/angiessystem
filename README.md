@@ -2,7 +2,7 @@
 
 Complete flower shop management system, ready to deploy to the cloud.
 
---- ETO NA TO TANGINAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+---
 
 ## 🆕 Recent Improvements
 
@@ -113,6 +113,27 @@ key = "YOUR_SUPABASE_ANON_KEY"
 
 ---
 
+## 🔄 Updating the App (after the first deploy)
+
+Once your app is live, applying future updates (new features, bug fixes) is much simpler than the first deploy — **no need to repeat Supabase or Streamlit setup** unless a change specifically says so.
+
+1. **Get the updated files** (you'll usually be given: `angies_florist_v3.py`, `db.py`, `requirements.txt`, and sometimes `supabase_schema.sql` or `README.md`)
+2. Go to your GitHub repo
+3. For each updated file:
+   - Click the file → click the **pencil (edit) icon**, or
+   - Use **Add file → Upload files** at the repo root and drag in the new version — GitHub will ask to confirm overwriting
+4. Scroll down, write a short commit message describing the change, click **Commit changes**
+5. **Streamlit Community Cloud auto-redeploys** within 1-2 minutes of detecting the push — no manual redeploy needed
+6. **If a `supabase_schema.sql` update is included**: go to Supabase → SQL Editor → run only the **new** statements mentioned in the changelog (don't re-run the whole file unless told to — most statements use `if not exists` / `on conflict do nothing` so they're safe to re-run, but it's cleaner to run just what's new)
+7. Refresh the live app and verify the new feature appears
+
+**If the build fails after an update:**
+- Check the Streamlit Cloud build logs (click on your app → **Manage app** → logs)
+- Most common cause: a new package was added to `requirements.txt` and failed to install — check the log for a `pip install` error
+- If something looks broken, you can always re-upload the previous working version of the file to roll back
+
+---
+
 ## 🔑 Staff Login System (PIN-based)
 
 Every staff member logs in with their own **4-6 digit PIN** — no usernames, emails, or passwords needed. Fast on mobile.
@@ -182,7 +203,7 @@ streamlit run angies_florist_v3.py
 | Data persistence | ❌ Lost if server restarts | ✅ Permanent in cloud |
 | Concurrent users | ❌ File locking issues | ✅ Safe concurrent writes |
 | Backups | ❌ Manual | ✅ Supabase auto-backups |
-| File uploads (inspo pics) | Saved to local `/uploads/` | ⚠️ Still local — migrate to Supabase Storage if needed |
+| File uploads (inspo pics, proof of payment/delivery, finished product) | Saved to local `/uploads/` | ✅ Supabase Storage — synced across all devices |
 | Data layer | Scattered `json.load`/`json.dump` calls | Centralized `db.py` module |
 
 ---
