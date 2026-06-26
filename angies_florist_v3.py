@@ -84,16 +84,16 @@ STATUS_FLOW = ["Pending","Confirmed","In Progress","Ready","Delivered","Picked U
 SOURCE_PAGES = ["Facebook","Instagram","WhatsApp","TikTok","Website","Walk-in","Other"]
 PAYMENT_METHODS_BALANCE = ["COD","GCash","Bank Transfer","Cash","Maya"]
 PAYMENT_METHODS_DIGITAL = ["GCash","Bank Transfer","Cash","Maya"]
-OCCASIONS = ["Birthday","Anniversary","Valentine's Day","Mother's Day","Sympathy","Wedding","Just Because","Corporate","Other"]
+OCCASIONS = ["Birthday","Anniversary","Valentine's Day","Mother's Day","Sympathy", "Graduation", "Wedding","Just Because","Corporate","Other"]
 CANCELLATION_REASONS = ["Customer request","Out of stock","Wrong order","Payment failed","Other"]
 DELIVERY_FAILURE_REASONS = ["Needs Redelivery","Customer Refused","Address Invalid","Contact Unavailable","Other"]
-COLOR_PREFERENCES = ["Any","Red","Pink","White","Purple","Yellow","Orange","Mixed","Custom"]
-DELIVERY_ZONES = ["Calamba","Los Baños","Calauan","Cabuyao","Sta. Rosa","Biñan","San Pedro","Bay","San Pablo","Alaminos","Quezon","Batangas","Victoria","Pila","Sta. Cruz","Pagsanjan","Lumban","Rizal","Nagcarlan","Liliw","N/A"]
+COLOR_PREFERENCES = ["Any","Red","Pink","White","Purple","Yellow", "Blue", "Green","Orange","Mixed","Custom"]
+DELIVERY_ZONES = ["Calamba","Los Baños","Calauan","Cabuyao","Sta. Rosa","Biñan","San Pedro","Bay","San Pablo","Alaminos","Quezon","Batangas","Victoria","Pila","Sta. Cruz","Pagsanjan","Lumban","Rizal","Nagcarlan","Liliw","N/A", "Pick Up"]
 WASTE_REASONS = ["Wilted","Damaged","Miscalculation","Customer Return","Expired","Other"]
 ARRANGEMENTS = [
     "CHINA ROSES","ECUADORIAN ROSES","PAPER ROSES/LISIATHUS","STARGAZERS",
     "YELLOWIN","CASA BLANCA","CARNATIONS","GERBERA","SUNLIGHT","PEONY",
-    "SUNFLOWER","HYDRANGEAS","CHAMOMILE","TULIPS","MUMS","PINGPONG",
+    "SUNFLOWER","HYDRANGEAS","CHAMOMILE","LIPIDIUM", "CALLA LILY", "ORCHIDS", "AMARATHUS", "SNAPDRAGON", "GYPSO", "STATICE", "TULIPS","MUMS","PINGPONG",
     "Apricot Bloom","Pink Dreams","Purple Serenade","Blush Amour",
     "Sunset Blooms","Barbie Fantasy","Blush Petals","Ruby Whisper",
     "Pink Harmony","Little Whimsy","Sunburst Yellow","Thumbelina Bouquet",
