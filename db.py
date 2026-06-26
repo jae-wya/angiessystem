@@ -330,3 +330,52 @@ def pin_in_use(pin: str, exclude_id: str = None) -> bool:
         if _hash_pin(pin, a.get("pin_salt", "")) == a.get("pin_hash"):
             return True
     return False
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# INVENTORY AUTO-DEDUCTION
+# ─────────────────────────────────────────────────────────────────────────────
+
+def deduct_inventory_for_order(flower_items: list, branch: str) -> list:
+    """
+    Deduct flower quantities from inventory when an order is logged.
+    Matches flower name (case-insensitive) against inventory items for the branch.
+    Returns a list of warning strings for any issues found.
+    """
+    if not flower_items:
+        return []
+
+    inventory = get_inventory()
+    warnings  = []
+
+    for fi in flower_items:
+        fname    = fi.get("flower", "").strip().lower()
+        qty_used = int(fi.get("qty", 1))
+        if not fname:
+            continue
+
+        match = next(
+            (i for i in inventory
+             if i.get("name", "").strip().lower() == fname
+             and i.get("branch", "") == branch),
+            None,
+        )
+
+        if match is None:
+            warnings.append(
+                f"⚠️ **{fi.get('flower')}** not found in inventory for **{branch}**. "
+                f"Add it manually in 📦 Inventory."
+            )
+            continue
+
+        new_qty = max(0, int(match.get("quantity", 0)) - qty_used)
+        update_inventory_item(match["id"], {"quantity": new_qty})
+
+        reorder = int(match.get("reorder_point", 10))
+        if new_qty <= reorder:
+            warnings.append(
+                f"🔴 **{fi.get('flower')}** is now at **{new_qty} {match.get('unit','pcs')}** "
+                f"— at or below reorder point ({reorder}). Consider restocking."
+            )
+
+    return warnings

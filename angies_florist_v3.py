@@ -83,16 +83,16 @@ BRANCH_CODES = {"Main Branch": "MB", "San Pablo Branch": "SB", "Sta. Rosa Branch
 STATUS_FLOW = ["Pending","Confirmed","In Progress","Ready","Delivered","Picked Up","Cancelled","Failed Delivery"]
 SOURCE_PAGES = ["Facebook","Instagram","WhatsApp","TikTok","Website","Walk-in","Other"]
 PAYMENT_METHODS_BALANCE = ["COD","GCash","Bank Transfer","Cash","Maya"]
-PAYMENT_METHODS_DIGITAL = ["GCash", "Cash", "Bank Transfer","Maya"]
-OCCASIONS = ["Birthday","Anniversary","Valentine's Day","Mother's Day","Graduation","Sympathy","Wedding","Just Because","Corporate","Other"]
+PAYMENT_METHODS_DIGITAL = ["GCash","Bank Transfer","Cash","Maya"]
+OCCASIONS = ["Birthday","Anniversary","Valentine's Day","Mother's Day","Sympathy","Wedding","Just Because","Corporate","Other"]
 CANCELLATION_REASONS = ["Customer request","Out of stock","Wrong order","Payment failed","Other"]
 DELIVERY_FAILURE_REASONS = ["Needs Redelivery","Customer Refused","Address Invalid","Contact Unavailable","Other"]
-COLOR_PREFERENCES = ["Any","Red","Pink","White","Purple","Yellow","Blue","Green","Orange","Mixed","Custom"]
+COLOR_PREFERENCES = ["Any","Red","Pink","White","Purple","Yellow","Orange","Mixed","Custom"]
 DELIVERY_ZONES = ["Calamba","Los Baños","Calauan","Cabuyao","Sta. Rosa","Biñan","San Pedro","Bay","San Pablo","Alaminos","Quezon","Batangas","Victoria","Pila","Sta. Cruz","Pagsanjan","Lumban","Rizal","Nagcarlan","Liliw","N/A"]
 WASTE_REASONS = ["Wilted","Damaged","Miscalculation","Customer Return","Expired","Other"]
 ARRANGEMENTS = [
     "CHINA ROSES","ECUADORIAN ROSES","PAPER ROSES/LISIATHUS","STARGAZERS",
-    "YELLOWIN","CASA BLANCA","CARNATIONS","LIPIDIUM", "CALLA LILY","ORCHIDS", "AMARATHUS", "SNAPDRAGON", "STATICE", "GERBERA","SUNLIGHT","PEONY",
+    "YELLOWIN","CASA BLANCA","CARNATIONS","GERBERA","SUNLIGHT","PEONY",
     "SUNFLOWER","HYDRANGEAS","CHAMOMILE","TULIPS","MUMS","PINGPONG",
     "Apricot Bloom","Pink Dreams","Purple Serenade","Blush Amour",
     "Sunset Blooms","Barbie Fantasy","Blush Petals","Ruby Whisper",
@@ -739,6 +739,9 @@ def page_new_order():
                 "created_at": datetime.now().isoformat(),
             })
 
+        # ── Auto inventory deduction ──────────────────────────────────────
+        inv_warnings = db.deduct_inventory_for_order(flower_items, fulfillment_branch)
+
         for k in ("form_price","form_delivery_fee","form_down_payment"):
             st.session_state[k] = 0.0
         st.session_state.pop("new_flower_items", None)
@@ -750,6 +753,12 @@ def page_new_order():
             st.info("📄 Proof of payment uploaded.")
         if delivery_fee == 0 and raw_fee > 0:
             st.success("🚚 Free delivery applied!")
+        if inv_warnings:
+            st.markdown("**📦 Inventory Update:**")
+            for w in inv_warnings:
+                st.warning(w)
+        else:
+            st.success("📦 Inventory updated automatically.")
         st.balloons()
 
 
@@ -1150,20 +1159,44 @@ def page_all_orders():
 def page_florist_board():
     st.markdown("<div class='section-header'>🌹 Florist Production Board</div>", unsafe_allow_html=True)
     st.caption("🔄 Auto-refreshes every 30 seconds")
-    orders = scope_by_branch(db.get_orders())
-    production = sorted(
-        [o for o in orders if o["status"] in ["Confirmed","In Progress"]],
-        key=lambda x: (str(x.get("target_date","")), x.get("target_time",""))
-    )
+    orders   = scope_by_branch(db.get_orders())
+    florists = scope_by_branch(db.get_florists())
+
+    # ── v4: include Pending orders too ──────────────────────────────────
+    production = [o for o in orders if o["status"] in ["Pending","Confirmed","In Progress"]]
+
     if not production:
-        st.success("✅ All clear! No orders in production."); return
-    st.markdown(f"**{len(production)} order(s) in production**")
+        st.success("✅ All clear! No active orders."); return
+    st.markdown(f"**{len(production)} order(s) in production/queue**")
+
+    # ── Sorting controls ─────────────────────────────────────────────────
+    sort_by = st.selectbox(
+        "Sort by",
+        ["🚀 Rush First → Date → Time", "📅 Date (earliest first)", "🕐 Time (earliest first)", "📋 Status (Pending first)"],
+        key="fb_sort", label_visibility="collapsed"
+    )
+
+    def sort_key(o):
+        rush         = 0 if o.get("priority_rush") else 1
+        d            = str(o.get("target_date","9999-99-99"))[:10]
+        t            = o.get("target_time","23:59")
+        try: t       = datetime.strptime(t,"%I:%M %p").strftime("%H:%M")
+        except: pass
+        status_order = {"Pending":0,"Confirmed":1,"In Progress":2}.get(o.get("status",""),3)
+        if sort_by.startswith("🚀"):   return (rush, d, t)
+        elif sort_by.startswith("📅"): return (d, t, rush)
+        elif sort_by.startswith("🕐"): return (t, d, rush)
+        else:                           return (status_order, d, t)
+
+    production = sorted(production, key=sort_key)
 
     for o in production:
-        florist    = o.get("assigned_florist","Unassigned")
+        florist    = o.get("assigned_florist","")
         order_code = o.get("order_code", o.get("id","N/A"))
         priority   = "🚀 RUSH ORDER" if o.get("priority_rush") else "Normal"
         fi_list    = o.get("flower_items",[])
+        status     = o.get("status","")
+        status_col = STATUS_COLOR.get(status,"#888")
         msg_to_val  = o.get("message_card_to","")
         msg_body_val= o.get("message_card_body","")
         msg_from_val= o.get("message_card_from","")
@@ -1176,7 +1209,10 @@ def page_florist_board():
         else:
             arrangement_block = f"<tr><th>Arrangement</th><td colspan='2'><strong>{o.get('arrangement','')}</strong></td></tr><tr><th>Quantity</th><td colspan='2'>{o.get('quantity',1)} pc(s)</td></tr>"
 
-        with st.expander(f"🌸 {order_code} — {o['customer_name']} | {str(o.get('target_date',''))[:10]} | {florist}"):
+        florist_display = f"<strong style='color:#C85C8E;'>{florist}</strong>" if florist else "<em style='color:#FFC107;'>⏳ Unassigned</em>"
+        rush_prefix = "🚀 " if o.get("priority_rush") else ""
+
+        with st.expander(f"{rush_prefix}🌸 {order_code} — {o['customer_name']} | {str(o.get('target_date',''))[:10]} | <span style='color:{status_col};'>{status}</span> | {florist or '⏳ Unassigned'}"):
             st.markdown(f"""
             <div class="print-sheet">
               <h3>🌹 FLORIST PRODUCTION SHEET</h3>
@@ -1190,7 +1226,8 @@ def page_florist_board():
                 <tr><th>Substitutions OK?</th><td colspan='2'>{'✅ Yes' if o.get('allow_substitution') else 'No'} {o.get('substitution_notes','')}</td></tr>
                 <tr><th>Order Type</th><td colspan='2'>{'🚴 DELIVERY' if o['order_type']=='Delivery' else '🛍 PICK-UP'}</td></tr>
                 <tr><th>Priority</th><td colspan='2'><strong style="color:#C85C8E;">{priority}</strong></td></tr>
-                <tr><th>Assigned Florist</th><td colspan='2'><strong style="color:#C85C8E;">{florist}</strong></td></tr>
+                <tr><th>Status</th><td colspan='2'><strong style="color:{status_col};">{status}</strong></td></tr>
+                <tr><th>Assigned Florist</th><td colspan='2'>{florist_display}</td></tr>
                 <tr><th>Special Instructions</th><td colspan='2'><strong>{o.get('notes','None')}</strong></td></tr>
                 <tr><th>Branch</th><td colspan='2'>{o.get('fulfillment_branch', o.get('branch',''))}</td></tr>
                 {msg_card_row}
@@ -1207,6 +1244,24 @@ def page_florist_board():
                 for idx, pic_url in enumerate(inspo_pics):
                     cols[idx % len(cols)].image(pic_url, caption=f"Reference {idx+1}", use_container_width=True)
 
+            # ── Assign florist from board when Pending ────────────────────
+            if status == "Pending":
+                st.markdown("---")
+                fa1, fa2 = st.columns([3,1])
+                florist_labels = [f"{f['name']} ({db.get_florist_active_load(f['name'])}/{f.get('max_concurrent_orders',5)})" for f in florists]
+                florist_label_map = {lbl: f["name"] for lbl, f in zip(florist_labels, florists)}
+                sel_label = fa1.selectbox("Assign Florist", ["— select florist —"] + florist_labels, key=f"fb_assign_{order_code}", label_visibility="collapsed")
+                sel_f = florist_label_map.get(sel_label,"")
+                if sel_f:
+                    chosen = next((f for f in florists if f["name"]==sel_f), None)
+                    if chosen and db.get_florist_active_load(sel_f) >= chosen.get("max_concurrent_orders",5):
+                        fa2.error("⛔ Full")
+                    else:
+                        if fa2.button("✓ Assign", key=f"fb_af_{order_code}", use_container_width=True):
+                            db.update_order(o["id"], {"assigned_florist": sel_f, "florist_assigned_at": datetime.now().isoformat()})
+                            st.rerun()
+
+            # ── Production actions ─────────────────────────────────────────
             c1,c2 = st.columns(2)
             with c1:
                 if o["status"] == "Confirmed":
@@ -1220,9 +1275,9 @@ def page_florist_board():
                     )
                     if finished_pic:
                         if st.button("✅ Mark as READY", key=f"fready_{order_code}"):
-                            ext = finished_pic.name.split(".")[-1].lower()
+                            ext  = finished_pic.name.split(".")[-1].lower()
                             path = f"orders/{order_code}/finished_product/{uuid.uuid4().hex[:8]}.{ext}"
-                            url = db.upload_file(finished_pic.getvalue(), path, content_type=finished_pic.type or "image/jpeg")
+                            url  = db.upload_file(finished_pic.getvalue(), path, content_type=finished_pic.type or "image/jpeg")
                             db.update_order(o["id"], {"finished_product_picture": url, "status": "Ready"})
                             if o.get("order_type") == "Delivery":
                                 st.success(f"✅ Order **{order_code}** marked READY — it will appear on the 🚴 Rider Board!")
@@ -1778,13 +1833,13 @@ def page_reports():
     if not orders:
         st.info("No order data yet."); return
 
-    tab_labels = ["💰 Financial","🌹 Florists","🚴 Riders","📦 Inventory","🏆 Best Sellers","📍 Delivery Cities","📈 Restock Forecast"]
+    tab_labels = ["💰 Financial","🌹 Florists","🚴 Riders","📦 Inventory","🏆 Best Sellers","📍 Delivery Cities","📈 Restock Forecast","📅 Monthly","📆 Quarterly","🗓️ Yearly"]
     show_branch_compare = (CURRENT_ROLE == "Super Admin")
     if show_branch_compare:
         tab_labels.append("🏪 Branch Comparison")
     tabs = st.tabs(tab_labels)
-    tab1,tab2,tab3,tab4,tab5,tab6,tab7 = tabs[:7]
-    tab8 = tabs[7] if show_branch_compare else None
+    tab1,tab2,tab3,tab4,tab5,tab6,tab7,tab8,tab9,tab10 = tabs[:10]
+    tab11 = tabs[10] if show_branch_compare else None
 
     with tab1:
         completed  = [o for o in orders if o["status"] in ["Delivered","Picked Up"]]
@@ -1987,9 +2042,142 @@ def page_reports():
                 mime="text/csv",
             )
 
+    # ── PERIOD REPORT HELPER ─────────────────────────────────────────────────
+    def render_period_report(tab, period_label, group_fn):
+        with tab:
+            st.markdown(f"##### {period_label} Sales & Performance Report")
+            rp_col1, rp_col2 = st.columns(2)
+            rp_branch = rp_col1.selectbox(
+                "Branch", ["All"] + (BRANCHES if (CURRENT_ROLE=="Super Admin" or CURRENT_BRANCH=="All") else [CURRENT_BRANCH]),
+                key=f"rp_branch_{period_label}"
+            )
+            rp_year = rp_col2.number_input(
+                "Year", min_value=2023, max_value=date.today().year+1,
+                value=date.today().year, step=1, key=f"rp_year_{period_label}"
+            )
+            # Filter orders for the selected year and branch
+            yr_orders = [
+                o for o in orders
+                if str(o.get("target_date",""))[:4] == str(rp_year)
+                and (rp_branch=="All" or o.get("fulfillment_branch", o.get("branch",""))==rp_branch)
+            ]
+            if not yr_orders:
+                st.info(f"No orders found for {rp_branch} in {rp_year}."); return
+
+            completed_r = [o for o in yr_orders if o["status"] in ("Delivered","Picked Up")]
+            revenue_r   = sum(float(o.get("total_price",0)) for o in completed_r)
+            waste_r     = [w for w in waste if str(w.get("date",""))[:4]==str(rp_year) and (rp_branch=="All" or w.get("branch","")==rp_branch)]
+            waste_cost_r= sum(float(w.get("cost",0)) for w in waste_r)
+            cod_r       = sum(float(o.get("total_balance",0)) for o in completed_r if o.get("balance_payment_method")=="COD")
+
+            m1,m2,m3,m4,m5 = st.columns(5)
+            m1.metric("📦 Total Orders",   len(yr_orders))
+            m2.metric("✅ Completed",      len(completed_r))
+            m3.metric("💰 Revenue",        f"₱{revenue_r:,.0f}")
+            m4.metric("📉 Waste Cost",     f"₱{waste_cost_r:,.0f}")
+            m5.metric("⚠️ COD Collected",  f"₱{cod_r:,.0f}")
+            st.divider()
+
+            # Group by period
+            period_data = {}
+            for o in completed_r:
+                key = group_fn(o)
+                if key not in period_data:
+                    period_data[key] = {"orders":0,"revenue":0.0}
+                period_data[key]["orders"]  += 1
+                period_data[key]["revenue"] += float(o.get("total_price",0))
+            if period_data:
+                st.markdown("**Revenue by Period**")
+                sorted_keys = sorted(period_data.keys())
+                fig,ax = plt.subplots(figsize=(10,4), facecolor="#FDF6F0")
+                ax.bar(sorted_keys, [period_data[k]["revenue"] for k in sorted_keys], color="#C85C8E", alpha=0.85)
+                ax.set_facecolor("#FDF6F0"); ax.grid(axis="y",alpha=0.3)
+                plt.xticks(rotation=30, ha="right", fontsize=9); ax.set_ylabel("Revenue (₱)")
+                plt.tight_layout(); st.pyplot(fig); plt.close(fig)
+                st.divider()
+                period_rows = [{"Period":k,"Orders":period_data[k]["orders"],"Revenue (₱)":f"₱{period_data[k]['revenue']:,.2f}"} for k in sorted_keys]
+                st.dataframe(pd.DataFrame(period_rows), use_container_width=True, hide_index=True)
+                st.divider()
+
+            # Top arrangements
+            arr_cnt = {}; arr_rev = {}
+            for o in completed_r:
+                a = o.get("arrangement","Unknown")
+                arr_cnt[a] = arr_cnt.get(a,0) + int(o.get("quantity",1))
+                arr_rev[a] = arr_rev.get(a,0) + float(o.get("total_price",0))
+            if arr_cnt:
+                top5 = sorted(arr_cnt.items(), key=lambda x:x[1], reverse=True)[:5]
+                st.markdown("**Top 5 Arrangements**")
+                st.dataframe(pd.DataFrame([{"Arrangement":a,"Units":u,"Revenue":f"₱{arr_rev.get(a,0):,.2f}"} for a,u in top5]), use_container_width=True, hide_index=True)
+                st.divider()
+
+            # Florist performance
+            f_perf = {}
+            for o in completed_r:
+                fn = o.get("assigned_florist","")
+                if fn: f_perf[fn] = f_perf.get(fn,{"orders":0,"revenue":0.0}); f_perf[fn]["orders"]+=1; f_perf[fn]["revenue"]+=float(o.get("total_price",0))
+            if f_perf:
+                st.markdown("**Florist Performance**")
+                st.dataframe(pd.DataFrame([{"Florist":fn,"Completed Orders":d["orders"],"Revenue Handled (₱)":f"₱{d['revenue']:,.2f}"} for fn,d in sorted(f_perf.items(),key=lambda x:x[1]["orders"],reverse=True)]), use_container_width=True, hide_index=True)
+                st.divider()
+
+            # Rider performance
+            r_perf = {}
+            for o in completed_r:
+                rn = o.get("assigned_rider","")
+                if rn:
+                    r_perf[rn] = r_perf.get(rn,{"deliveries":0,"cod":0.0})
+                    r_perf[rn]["deliveries"] += 1
+                    if o.get("balance_payment_method")=="COD": r_perf[rn]["cod"]+=float(o.get("total_balance",0))
+            if r_perf:
+                st.markdown("**Rider Performance**")
+                st.dataframe(pd.DataFrame([{"Rider":rn,"Deliveries":d["deliveries"],"COD Collected (₱)":f"₱{d['cod']:,.2f}"} for rn,d in sorted(r_perf.items(),key=lambda x:x[1]["deliveries"],reverse=True)]), use_container_width=True, hide_index=True)
+                st.divider()
+
+            # Branch breakdown (Super Admin + All branches only)
+            if CURRENT_ROLE=="Super Admin" and rp_branch=="All":
+                b_rev = {}
+                for o in completed_r:
+                    b = o.get("fulfillment_branch", o.get("branch","Unknown"))
+                    b_rev[b] = b_rev.get(b,0) + float(o.get("total_price",0))
+                st.markdown("**Revenue by Branch**")
+                st.dataframe(pd.DataFrame([{"Branch":b,"Revenue (₱)":f"₱{r:,.2f}"} for b,r in sorted(b_rev.items(),key=lambda x:x[1],reverse=True)]), use_container_width=True, hide_index=True)
+                st.divider()
+
+            # Export
+            export_rows = [{
+                "Order Code": o.get("order_code",""), "Customer": o.get("customer_name",""),
+                "Branch": o.get("fulfillment_branch",o.get("branch","")),
+                "Arrangement": o.get("arrangement",""), "Quantity": o.get("quantity",1),
+                "Total Price": o.get("total_price",0), "Status": o.get("status",""),
+                "Florist": o.get("assigned_florist",""), "Rider": o.get("assigned_rider",""),
+                "Target Date": str(o.get("target_date",""))[:10],
+            } for o in yr_orders]
+            st.download_button(
+                f"⬇️ Export {period_label} Report CSV",
+                data=pd.DataFrame(export_rows).to_csv(index=False).encode("utf-8"),
+                file_name=f"report_{period_label.lower().replace(' ','_')}_{rp_year}_{rp_branch.replace(' ','_')}.csv",
+                mime="text/csv", use_container_width=True,
+            )
+
+    # Monthly: group by YYYY-MM (Month Name)
+    render_period_report(tab8, "Monthly",
+        lambda o: date.fromisoformat(str(o.get("target_date","2000-01-01"))[:10]).strftime("%Y-%m (%B)")
+    )
+
+    # Quarterly: group by Q1/Q2/Q3/Q4
+    render_period_report(tab9, "Quarterly",
+        lambda o: f"Q{(date.fromisoformat(str(o.get('target_date','2000-01-01'))[:10]).month-1)//3+1} {str(o.get('target_date','2000'))[:4]}"
+    )
+
+    # Yearly: group by year (single bar)
+    render_period_report(tab10, "Yearly",
+        lambda o: str(o.get("target_date","2000-01-01"))[:4]
+    )
+
     # ── BRANCH COMPARISON (Super Admin only) ────────────────────────────────
     if show_branch_compare:
-        with tab8:
+        with tab11:
             st.markdown("##### 🏪 Branch Comparison")
             st.caption("Compares all branches side-by-side. Visible to Super Admin only.")
 
