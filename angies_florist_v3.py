@@ -84,16 +84,16 @@ STATUS_FLOW = ["Pending","Confirmed","In Progress","Ready","Delivered","Picked U
 SOURCE_PAGES = ["Facebook","Instagram","WhatsApp","TikTok","Website","Walk-in","Other"]
 PAYMENT_METHODS_BALANCE = ["COD","GCash","Bank Transfer","Cash","Maya"]
 PAYMENT_METHODS_DIGITAL = ["GCash","Bank Transfer","Cash","Maya"]
-OCCASIONS = ["Birthday","Anniversary","Valentine's Day","Mother's Day","Sympathy", "Graduation", "Wedding","Just Because","Corporate","Other"]
+OCCASIONS = ["Birthday","Anniversary","Valentine's Day","Graduation","Mother's Day","Sympathy","Wedding","Just Because","Corporate","Other"]
 CANCELLATION_REASONS = ["Customer request","Out of stock","Wrong order","Payment failed","Other"]
 DELIVERY_FAILURE_REASONS = ["Needs Redelivery","Customer Refused","Address Invalid","Contact Unavailable","Other"]
-COLOR_PREFERENCES = ["Any","Red","Pink","White","Purple","Yellow", "Blue", "Green","Orange","Mixed","Custom"]
-DELIVERY_ZONES = ["Calamba","Los Baños","Calauan","Cabuyao","Sta. Rosa","Biñan","San Pedro","Bay","San Pablo","Alaminos","Quezon","Batangas","Victoria","Pila","Sta. Cruz","Pagsanjan","Lumban","Rizal","Nagcarlan","Liliw","N/A", "Pick Up"]
+COLOR_PREFERENCES = ["Any","Red","Pink","White","Purple","Yellow","Blue","Green","Two tone pink","Two tone purple","Two tone yellow","Orange","Mixed","Custom"]
+DELIVERY_ZONES = ["Calamba","Los Baños","Calauan","Cabuyao","Sta. Rosa","Biñan","San Pedro","Bay","San Pablo","Alaminos","Quezon","Batangas","Victoria","Pila","Sta. Cruz","Pagsanjan","Lumban","Rizal","Nagcarlan","Liliw","N/A"]
 WASTE_REASONS = ["Wilted","Damaged","Miscalculation","Customer Return","Expired","Other"]
 ARRANGEMENTS = [
     "CHINA ROSES","ECUADORIAN ROSES","PAPER ROSES/LISIATHUS","STARGAZERS",
-    "YELLOWIN","CASA BLANCA","CARNATIONS","GERBERA","SUNLIGHT","PEONY",
-    "SUNFLOWER","HYDRANGEAS","CHAMOMILE","LIPIDIUM", "CALLA LILY", "ORCHIDS", "AMARATHUS", "SNAPDRAGON", "GYPSO", "STATICE", "TULIPS","MUMS","PINGPONG","DRIED FLOWER",
+    "YELLOWIN","CASA BLANCA","CARNATIONS", "LIPIDIUM","GYPSO","CALLA LILY","AMARATHUS","SNAPDRAGON","STATICE","GERBERA","SUNLIGHT","PEONY",
+    "SUNFLOWER","HYDRANGEAS","CHAMOMILE","TULIPS","MUMS","PINGPONG",
     "Apricot Bloom","Pink Dreams","Purple Serenade","Blush Amour",
     "Sunset Blooms","Barbie Fantasy","Blush Petals","Ruby Whisper",
     "Pink Harmony","Little Whimsy","Sunburst Yellow","Thumbelina Bouquet",
@@ -962,7 +962,14 @@ def page_all_orders():
     f_date   = c4.date_input("Date",  value=None, key="ao_date")
     search   = c5.text_input("🔍 Search", key="ao_search")
 
-    show_all = st.checkbox("Show all orders (including older than 60 days) — may be slower", key="ao_show_all")
+    # ── Time range filter (only useful when a date is selected) ──────────
+    tr1, tr2, tr3 = st.columns([2, 1, 1])
+    with tr1:
+        show_all = st.checkbox("Show all orders (including older than 60 days) — may be slower", key="ao_show_all")
+    with tr2:
+        ao_time_from = st.time_input("Time from", value=None, key="ao_time_from", help="Filter orders from this time onwards")
+    with tr3:
+        ao_time_to   = st.time_input("Time to",   value=None, key="ao_time_to",   help="Filter orders up to this time")
 
     filtered = orders.copy()
     if not show_all and not f_date and f_status == "All":
@@ -976,7 +983,35 @@ def page_all_orders():
         q = search.lower()
         filtered = [o for o in filtered if q in o.get("customer_name","").lower() or q in o.get("order_code","").lower() or q in o.get("arrangement","").lower()]
 
-    filtered = sorted(filtered, key=lambda x: str(x.get("target_date","")), reverse=True)
+    # Apply time range filter
+    def _parse_order_time(o):
+        try: return datetime.strptime(o.get("target_time","12:00 AM"), "%I:%M %p").time()
+        except: return None
+    if ao_time_from:
+        filtered = [o for o in filtered if (t := _parse_order_time(o)) and t >= ao_time_from]
+    if ao_time_to:
+        filtered = [o for o in filtered if (t := _parse_order_time(o)) and t <= ao_time_to]
+
+    def _ao_time_key(o):
+        t = o.get("target_time","23:59")
+        try: return datetime.strptime(t,"%I:%M %p").strftime("%H:%M")
+        except: return t
+    # Sort: newest date first; within same date, earliest time first
+    filtered = sorted(filtered, key=lambda o: (
+        # negate date so newest is first, time ascending within date
+        str(o.get("target_date","0000-00-00"))[:10],
+        _ao_time_key(o)
+    ), reverse=False)
+    # flip date order while keeping time order within each date
+    filtered = sorted(filtered, key=lambda o: str(o.get("target_date",""))[:10], reverse=True)
+    # restore time order within each date using stable sort
+    from itertools import groupby as _gb
+    _date_groups = {}
+    for o in filtered:
+        _date_groups.setdefault(str(o.get("target_date",""))[:10], []).append(o)
+    filtered = []
+    for _d in sorted(_date_groups.keys(), reverse=True):
+        filtered.extend(sorted(_date_groups[_d], key=_ao_time_key))
     col_count, col_export = st.columns([3,1])
     col_count.markdown(f"**{len(filtered)} order(s) found** {'(last 60 days — check *Show all* for older)' if not show_all and not f_date and f_status=='All' else ''}")
     if filtered:
@@ -1167,15 +1202,58 @@ def page_florist_board():
 
     if not production:
         st.success("✅ All clear! No active orders."); return
+
+    # ── Filters — same layout as All Orders ──────────────────────────────
+    branch_opts = BRANCHES if (CURRENT_ROLE == "Super Admin" or CURRENT_BRANCH == "All") else [CURRENT_BRANCH]
+    fb_status_opts = ["All", "Pending", "Confirmed", "In Progress"]
+
+    fc1,fc2,fc3,fc4,fc5,fc6 = st.columns(6)
+    fb_branch = fc1.selectbox("Branch", ["All"] + branch_opts, key="fb_branch")
+    fb_status = fc2.selectbox("Status", fb_status_opts, key="fb_status")
+    fb_type   = fc3.selectbox("Type",   ["All","Delivery","Pick-up"], key="fb_type")
+    fb_date   = fc4.date_input("Date",  value=None, key="fb_date")
+    fb_search = fc5.text_input("🔍 Search", key="fb_search")
+    fb_sort   = fc6.selectbox("Sort by", [
+        "🚀 Rush First → Date → Time",
+        "📅 Date (earliest first)",
+        "🕐 Time (earliest first)",
+        "📋 Status (Pending first)",
+    ], key="fb_sort")
+
+    # ── Time range filter ────────────────────────────────────────────────
+    ft1, ft2 = st.columns(2)
+    fb_time_from = ft1.time_input("Time from", value=None, key="fb_time_from", help="Show orders from this time onwards")
+    fb_time_to   = ft2.time_input("Time to",   value=None, key="fb_time_to",   help="Show orders up to this time")
+
+    # Apply filters
+    if fb_branch != "All":
+        production = [o for o in production if o.get("branch") == fb_branch or o.get("fulfillment_branch") == fb_branch]
+    if fb_status != "All":
+        production = [o for o in production if o.get("status") == fb_status]
+    if fb_type != "All":
+        production = [o for o in production if o.get("order_type") == fb_type]
+    if fb_date:
+        production = [o for o in production if str(o.get("target_date",""))[:10] == fb_date.isoformat()]
+    if fb_search:
+        q = fb_search.lower()
+        production = [o for o in production if
+            q in o.get("customer_name","").lower() or
+            q in o.get("order_code","").lower() or
+            q in o.get("arrangement","").lower() or
+            q in o.get("assigned_florist","").lower()]
+
+    # Apply time range
+    def _fb_parse_time(o):
+        try: return datetime.strptime(o.get("target_time","12:00 AM"), "%I:%M %p").time()
+        except: return None
+    if fb_time_from:
+        production = [o for o in production if (t := _fb_parse_time(o)) and t >= fb_time_from]
+    if fb_time_to:
+        production = [o for o in production if (t := _fb_parse_time(o)) and t <= fb_time_to]
+
     st.markdown(f"**{len(production)} order(s) in production/queue**")
 
-    # ── Sorting controls ─────────────────────────────────────────────────
-    sort_by = st.selectbox(
-        "Sort by",
-        ["🚀 Rush First → Date → Time", "📅 Date (earliest first)", "🕐 Time (earliest first)", "📋 Status (Pending first)"],
-        key="fb_sort", label_visibility="collapsed"
-    )
-
+    # Apply sort
     def sort_key(o):
         rush         = 0 if o.get("priority_rush") else 1
         d            = str(o.get("target_date","9999-99-99"))[:10]
@@ -1183,12 +1261,15 @@ def page_florist_board():
         try: t       = datetime.strptime(t,"%I:%M %p").strftime("%H:%M")
         except: pass
         status_order = {"Pending":0,"Confirmed":1,"In Progress":2}.get(o.get("status",""),3)
-        if sort_by.startswith("🚀"):   return (rush, d, t)
-        elif sort_by.startswith("📅"): return (d, t, rush)
-        elif sort_by.startswith("🕐"): return (t, d, rush)
+        if fb_sort.startswith("🚀"):   return (rush, d, t)
+        elif fb_sort.startswith("📅"): return (d, t)       # date then time
+        elif fb_sort.startswith("🕐"): return (t, d, rush) # time then date
         else:                           return (status_order, d, t)
 
     production = sorted(production, key=sort_key)
+
+    if not production:
+        st.info("No orders match your filters."); return
 
     for o in production:
         florist    = o.get("assigned_florist","")
@@ -1300,29 +1381,94 @@ def page_rider_board():
     rider_names    = [r["name"] for r in riders]
     rider_contacts = {r["name"]: r.get("contact","") for r in riders}
 
-    rider_orders = sorted(
-        [o for o in orders if o.get("order_type")=="Delivery" and o["status"] in ["Ready","Failed Delivery"]],
-        key=lambda x: str(x.get("target_date",""))
-    )
+    # Base: delivery orders that are Ready or Failed Delivery
+    rider_orders = [o for o in orders if o.get("order_type")=="Delivery" and o["status"] in ["Ready","Failed Delivery"]]
 
-    col1,col2 = st.columns([3,1])
-    filter_rider = None
-    with col1:
-        if riders:
-            filter_rider = st.selectbox("Filter by Rider", ["All Riders","Unassigned"]+rider_names)
+    # ── Filters — same layout as All Orders + Rider filter ────────────────
+    branch_opts = BRANCHES if (CURRENT_ROLE == "Super Admin" or CURRENT_BRANCH == "All") else [CURRENT_BRANCH]
+    rb_status_opts = ["All","Ready","Failed Delivery"]
+
+    rc1,rc2,rc3,rc4,rc5 = st.columns(5)
+    rb_branch = rc1.selectbox("Branch", ["All"] + branch_opts, key="rb_branch")
+    rb_status = rc2.selectbox("Status", rb_status_opts, key="rb_status")
+    rb_date   = rc3.date_input("Date",  value=None, key="rb_date")
+    rb_search = rc4.text_input("🔍 Search", key="rb_search")
+    rb_sort   = rc5.selectbox("Sort by", [
+        "📅 Date (earliest first)",
+        "🕐 Time (earliest first)",
+        "🚀 Rush First → Date → Time",
+        "💰 COD first",
+    ], key="rb_sort")
+
+    # ── Time range filter ────────────────────────────────────────────────
+    rt1, rt2 = st.columns(2)
+    rb_time_from = rt1.time_input("Time from", value=None, key="rb_time_from", help="Show orders from this time onwards")
+    rb_time_to   = rt2.time_input("Time to",   value=None, key="rb_time_to",   help="Show orders up to this time")
+
+    # Rider filter on its own row (keeps it prominent)
+    if riders:
+        rb_rider = st.selectbox(
+            "Filter by Rider",
+            ["All Riders","Unassigned"] + rider_names,
+            key="rb_rider"
+        )
+    else:
+        rb_rider = "All Riders"
+
+    # Apply filters
     filtered_orders = rider_orders.copy()
-    if filter_rider and filter_rider != "All Riders":
-        if filter_rider == "Unassigned":
+    if rb_branch != "All":
+        filtered_orders = [o for o in filtered_orders if o.get("branch")==rb_branch or o.get("fulfillment_branch")==rb_branch]
+    if rb_status != "All":
+        filtered_orders = [o for o in filtered_orders if o.get("status")==rb_status]
+    if rb_date:
+        filtered_orders = [o for o in filtered_orders if str(o.get("target_date",""))[:10]==rb_date.isoformat()]
+    if rb_search:
+        q = rb_search.lower()
+        filtered_orders = [o for o in filtered_orders if
+            q in o.get("customer_name","").lower() or
+            q in o.get("order_code","").lower() or
+            q in o.get("arrangement","").lower() or
+            q in (o.get("recipient_name","") or "").lower() or
+            q in o.get("delivery_address","").lower() or
+            q in o.get("assigned_rider","").lower()]
+    if rb_rider != "All Riders":
+        if rb_rider == "Unassigned":
             filtered_orders = [o for o in filtered_orders if not o.get("assigned_rider")]
         else:
-            filtered_orders = [o for o in filtered_orders if o.get("assigned_rider")==filter_rider]
+            filtered_orders = [o for o in filtered_orders if o.get("assigned_rider")==rb_rider]
 
+    # Apply time range filter
+    def _rb_parse_time(o):
+        try: return datetime.strptime(o.get("target_time","12:00 AM"), "%I:%M %p").time()
+        except: return None
+    if rb_time_from:
+        filtered_orders = [o for o in filtered_orders if (t := _rb_parse_time(o)) and t >= rb_time_from]
+    if rb_time_to:
+        filtered_orders = [o for o in filtered_orders if (t := _rb_parse_time(o)) and t <= rb_time_to]
+
+    # Apply sort
+    def rb_sort_key(o):
+        d    = str(o.get("target_date","9999-99-99"))[:10]
+        t    = o.get("target_time","23:59")
+        try: t = datetime.strptime(t,"%I:%M %p").strftime("%H:%M")
+        except: pass
+        rush = 0 if o.get("priority_rush") else 1
+        cod  = 0 if (o.get("balance_payment_method")=="COD" and float(o.get("total_balance",0))>0) else 1
+        if rb_sort.startswith("📅"):   return (d, t)        # date then time
+        elif rb_sort.startswith("🕐"): return (t, d)        # time then date
+        elif rb_sort.startswith("🚀"): return (rush, d, t)  # rush then date then time
+        else:                           return (cod, d, t)   # COD then date then time
+
+    filtered_orders = sorted(filtered_orders, key=rb_sort_key)
+
+    # COD total for filtered orders
     cod_total = sum(float(o.get("total_balance",0)) for o in filtered_orders if o.get("balance_payment_method")=="COD" and o.get("total_balance",0)>0)
-    with col2:
-        st.metric("💰 COD to Collect", f"₱{cod_total:,.2f}")
+    st.metric("💰 COD to Collect", f"₱{cod_total:,.2f}")
 
     if not filtered_orders:
-        st.info("No delivery orders ready for riders yet."); return
+        st.info("No delivery orders match your filters." if rider_orders else "No delivery orders ready for riders yet.")
+        return
     st.success(f"🚴 {len(filtered_orders)} delivery order(s) ready")
     st.divider()
 
