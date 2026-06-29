@@ -84,15 +84,15 @@ STATUS_FLOW = ["Pending","Confirmed","In Progress","Ready","Delivered","Picked U
 SOURCE_PAGES = ["Facebook","Instagram","WhatsApp","TikTok","Website","Walk-in","Other"]
 PAYMENT_METHODS_BALANCE = ["COD","GCash","Bank Transfer","Cash","Maya"]
 PAYMENT_METHODS_DIGITAL = ["GCash","Bank Transfer","Cash","Maya"]
-OCCASIONS = ["Birthday","Anniversary","Valentine's Day","Graduation","Mother's Day","Sympathy","Wedding","Just Because","Corporate","Other"]
+OCCASIONS = ["Birthday","Anniversary","Valentine's Day","Mother's Day","Sympathy","Wedding","Just Because","Corporate","Other"]
 CANCELLATION_REASONS = ["Customer request","Out of stock","Wrong order","Payment failed","Other"]
 DELIVERY_FAILURE_REASONS = ["Needs Redelivery","Customer Refused","Address Invalid","Contact Unavailable","Other"]
-COLOR_PREFERENCES = ["Any","Red","Pink","White","Purple","Yellow","Blue","Green","Two tone pink","Two tone purple","Two tone yellow","Orange","Mixed","Custom"]
+COLOR_PREFERENCES = ["Any","Red","Pink","White","Purple","Blue", "Green","Yellow","Orange","Mixed","Custom"]
 DELIVERY_ZONES = ["Calamba","Los Baños","Calauan","Cabuyao","Sta. Rosa","Biñan","San Pedro","Bay","San Pablo","Alaminos","Quezon","Batangas","Victoria","Pila","Sta. Cruz","Pagsanjan","Lumban","Rizal","Nagcarlan","Liliw","N/A"]
 WASTE_REASONS = ["Wilted","Damaged","Miscalculation","Customer Return","Expired","Other"]
 ARRANGEMENTS = [
     "CHINA ROSES","ECUADORIAN ROSES","PAPER ROSES/LISIATHUS","STARGAZERS",
-    "YELLOWIN","CASA BLANCA","CARNATIONS", "LIPIDIUM","GYPSO","CALLA LILY","AMARATHUS","SNAPDRAGON","STATICE","GERBERA","SUNLIGHT","PEONY",
+    "YELLOWIN","CASA BLANCA","CARNATIONS","LIPIDIUM","GYPSO","CALLA LILY","ORCHIDS","AMARATHUS","SNAPDRAGON","STATICE","GERBERA","SUNLIGHT","PEONY",
     "SUNFLOWER","HYDRANGEAS","CHAMOMILE","TULIPS","MUMS","PINGPONG",
     "Apricot Bloom","Pink Dreams","Purple Serenade","Blush Amour",
     "Sunset Blooms","Barbie Fantasy","Blush Petals","Ruby Whisper",
@@ -1342,20 +1342,34 @@ def page_florist_board():
                             db.update_order(o["id"], {"assigned_florist": sel_f, "florist_assigned_at": datetime.now().isoformat()})
                             st.rerun()
 
-            # ── Production actions ─────────────────────────────────────────
-            c1,c2 = st.columns(2)
-            with c1:
-                if o["status"] == "Confirmed":
-                    if st.button("🌹 Start Production", key=f"fstart_{order_code}"):
-                        db.update_order_status(o["id"],"In Progress"); st.rerun()
-            with c2:
-                if o["status"] == "In Progress":
+            # ── Full status workflow ───────────────────────────────────────
+            st.markdown("---")
+            ac1, ac2, ac3 = st.columns(3)
+
+            # Pending → Confirmed
+            with ac1:
+                if status == "Pending":
+                    if not florist:
+                        st.caption("⏳ Assign florist first")
+                    else:
+                        if st.button("✅ Confirm Order", key=f"fb_conf_{order_code}", use_container_width=True):
+                            db.update_order_status(o["id"], "Confirmed"); st.rerun()
+
+            # Confirmed → In Progress
+            with ac2:
+                if status == "Confirmed":
+                    if st.button("🌹 Start Production", key=f"fstart_{order_code}", use_container_width=True):
+                        db.update_order_status(o["id"], "In Progress"); st.rerun()
+
+            # In Progress → Ready
+            with ac3:
+                if status == "In Progress":
                     finished_pic = st.file_uploader(
                         "📸 Upload Finished Product Picture",
                         type=["jpg","jpeg","png"], key=f"finished_{order_code}",
                     )
                     if finished_pic:
-                        if st.button("✅ Mark as READY", key=f"fready_{order_code}"):
+                        if st.button("✅ Mark as READY", key=f"fready_{order_code}", use_container_width=True):
                             ext  = finished_pic.name.split(".")[-1].lower()
                             path = f"orders/{order_code}/finished_product/{uuid.uuid4().hex[:8]}.{ext}"
                             url  = db.upload_file(finished_pic.getvalue(), path, content_type=finished_pic.type or "image/jpeg")
