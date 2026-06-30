@@ -618,7 +618,7 @@ def page_new_order():
         down_payment = st.number_input("Down Payment (₱)", min_value=0.0, step=50.0, value=st.session_state.get("form_down_payment",0.0))
 
         proof_of_payment = st.file_uploader(
-            "📄 Proof of Payment", type=["pdf","jpg","jpeg","png"], key="payment_proof"
+            "📄 Proof of Payment", type=["pdf","jpg","jpeg","png"], accept_multiple_files=True, key="payment_proof"
         )
 
         st.markdown("**Split / Secondary Payment**")
