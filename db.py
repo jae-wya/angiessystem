@@ -367,12 +367,19 @@ def deduct_inventory_for_order(flower_items: list, branch: str) -> list:
         )
 
     def _deduct(item: dict, qty_used: int, display_name: str):
-        """Deduct qty from an inventory item and append any stock warnings."""
+        """Deduct qty from an inventory item and append any stock warnings.
+        Allows quantity to go negative to show exactly how short the stock
+        is (e.g. -6 means 6 pcs were used beyond what was available)."""
         current_qty = int(item.get("quantity", 0))
-        new_qty     = max(0, current_qty - qty_used)
+        new_qty     = current_qty - qty_used
         update_inventory_item(item["id"], {"quantity": new_qty})
         reorder = int(item.get("reorder_point", 10))
-        if new_qty == 0:
+        if new_qty < 0:
+            warnings.append(
+                f"🔴🔴 **{display_name}** is now **NEGATIVE STOCK ({new_qty} {item.get('unit','pcs')})** "
+                f"at **{branch}** — you used more than what's on hand. Restock urgently and double-check this order."
+            )
+        elif new_qty == 0:
             warnings.append(
                 f"🔴 **{display_name}** is now **OUT OF STOCK** at **{branch}**. "
                 f"Please restock immediately."
