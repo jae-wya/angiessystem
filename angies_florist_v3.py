@@ -92,7 +92,7 @@ DELIVERY_ZONES = ["Calamba","Los Baños","Calauan","Cabuyao","Sta. Rosa","Biñan
 WASTE_REASONS = ["Wilted","Damaged","Miscalculation","Customer Return","Expired","Other"]
 ARRANGEMENTS = [
     "CHINA ROSES","ECUADORIAN ROSES","PAPER ROSES/LISIATHUS","STARGAZERS",
-    "YELLOWIN","CASA BLANCA","CARNATIONS","LIPIDIUM","GYPSO","CALLA LILY","ORCHIDS","AMARATHUS","SNAPDRAGON","STATICE","GERBERA","SUNLIGHT","PEONY",
+    "YELLOWIN","CASA BLANCA","CARNATIONS","LIPIDIUM","GYPSO","CALLA LILY","ORCHIDS","MISTY BLUE","MISTY WHITE","AMARATHUS","SNAPDRAGON","STATICE","GERBERA","SUNLIGHT","PEONY",
     "SUNFLOWER","HYDRANGEAS","CHAMOMILE","TULIPS","MUMS","PINGPONG",
     "Apricot Bloom","Pink Dreams","Purple Serenade","Blush Amour",
     "Sunset Blooms","Barbie Fantasy","Blush Petals","Ruby Whisper",
