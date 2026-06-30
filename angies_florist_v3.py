@@ -84,15 +84,15 @@ STATUS_FLOW = ["Pending","Confirmed","In Progress","Ready","Delivered","Picked U
 SOURCE_PAGES = ["Facebook","Instagram","WhatsApp","TikTok","Website","Walk-in","Other"]
 PAYMENT_METHODS_BALANCE = ["COD","GCash","Bank Transfer","Cash","Maya"]
 PAYMENT_METHODS_DIGITAL = ["GCash","Bank Transfer","Cash","Maya"]
-OCCASIONS = ["Birthday","Anniversary","Valentine's Day","Mother's Day","Sympathy","Wedding","Just Because","Corporate","Other"]
+OCCASIONS = ["Birthday","Anniversary","Valentine's Day","Mother's Day","Graduation","Sympathy","Wedding","Just Because","Corporate","Other"]
 CANCELLATION_REASONS = ["Customer request","Out of stock","Wrong order","Payment failed","Other"]
 DELIVERY_FAILURE_REASONS = ["Needs Redelivery","Customer Refused","Address Invalid","Contact Unavailable","Other"]
-COLOR_PREFERENCES = ["Any","Red","Pink","White","Purple","Blue", "Green","Yellow","Orange","Mixed","Custom"]
+COLOR_PREFERENCES = ["Any","Red","Pink","White","Blue","Green","Purple","Yellow","Orange","Mixed","Custom"]
 DELIVERY_ZONES = ["Calamba","Los Baños","Calauan","Cabuyao","Sta. Rosa","Biñan","San Pedro","Bay","San Pablo","Alaminos","Quezon","Batangas","Victoria","Pila","Sta. Cruz","Pagsanjan","Lumban","Rizal","Nagcarlan","Liliw","N/A","PICK UP"]
 WASTE_REASONS = ["Wilted","Damaged","Miscalculation","Customer Return","Expired","Other"]
 ARRANGEMENTS = [
     "CHINA ROSES","ECUADORIAN ROSES","PAPER ROSES/LISIATHUS","STARGAZERS",
-    "YELLOWIN","CASA BLANCA","CARNATIONS","LIPIDIUM","GYPSO","CALLA LILY","ORCHIDS","MISTY BLUE","MISTY WHITE","AMARATHUS","SNAPDRAGON","STATICE","GERBERA","SUNLIGHT","PEONY",
+    "YELLOWIN","CASA BLANCA","CARNATIONS","LIPIDIUM","CALLA LILLY","GYPSO","STATICE","MISTY WHITE","MISTY BLUE","ORCHIDS","AMARATHUS","SNAPDRAGON","GERBERA","SUNLIGHT","PEONY",
     "SUNFLOWER","HYDRANGEAS","CHAMOMILE","TULIPS","MUMS","PINGPONG",
     "Apricot Bloom","Pink Dreams","Purple Serenade","Blush Amour",
     "Sunset Blooms","Barbie Fantasy","Blush Petals","Ruby Whisper",
@@ -1791,7 +1791,7 @@ def page_inventory():
     for item in sorted(filtered, key=lambda x: x.get("quantity",0)):
         qty     = item.get("quantity",0)
         reorder = item.get("reorder_point",10)
-        status  = "🔴 Low" if qty<=reorder else "🟡 Medium" if qty<=reorder*2 else "🟢 Optimal"
+        status  = "🔴🔴 NEGATIVE" if qty<0 else "🔴 Low" if qty<=reorder else "🟡 Medium" if qty<=reorder*2 else "🟢 Optimal"
         total_v = qty * item.get("unit_cost",0)
         ic1,ic2,ic3,ic4,ic5,ic6 = st.columns([2.5,1.2,0.8,0.8,1,0.6])
         ic1.write(f"**{item['name']}** — {item.get('branch','')}")
@@ -1799,7 +1799,7 @@ def page_inventory():
         ic3.write(str(qty))
         ic4.write(status)
         with ic5:
-            new_qty = st.number_input("qty", value=qty, min_value=0, label_visibility="collapsed", key=f"iq_{item['id']}")
+            new_qty = st.number_input("qty", value=qty, min_value=min(0, qty), label_visibility="collapsed", key=f"iq_{item['id']}")
             if new_qty != qty:
                 db.update_inventory_item(item["id"],{"quantity": new_qty}); st.rerun()
         with ic6:
