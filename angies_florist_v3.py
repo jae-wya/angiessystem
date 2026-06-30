@@ -618,7 +618,7 @@ def page_new_order():
         down_payment = st.number_input("Down Payment (₱)", min_value=0.0, step=50.0, value=st.session_state.get("form_down_payment",0.0))
 
         proof_of_payment = st.file_uploader(
-            "📄 Proof of Payment", type=["pdf","jpg","jpeg","png"], accept_multiple_files=True, key="payment_proof"
+            "📄 Proof of Payment", type=["pdf","jpg","jpeg","png"], key="payment_proof"
         )
 
         st.markdown("**Split / Secondary Payment**")
@@ -847,7 +847,7 @@ def page_edit_order():
         down_payment = st.number_input("Down Payment (₱)",   min_value=0.0, step=50.0, value=float(order.get("down_payment_amount",0)))
         proof_replace = st.file_uploader(
             "📄 Replace Proof of Payment (leave empty to keep existing)",
-            type=["pdf","jpg","jpeg","png"], accept_multiple_files=True, key="edit_proof",
+            type=["pdf","jpg","jpeg","png"], key="edit_proof",
         )
         bm_default = order.get("balance_payment_method", PAYMENT_METHODS_BALANCE[0])
         bm_idx = PAYMENT_METHODS_BALANCE.index(bm_default) if bm_default in PAYMENT_METHODS_BALANCE else 0
