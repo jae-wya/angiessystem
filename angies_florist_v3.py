@@ -84,15 +84,15 @@ STATUS_FLOW = ["Pending","Confirmed","In Progress","Ready","Delivered","Picked U
 SOURCE_PAGES = ["Facebook","Instagram","WhatsApp","TikTok","Website","Walk-in","Other"]
 PAYMENT_METHODS_BALANCE = ["COD","GCash","Bank Transfer","Cash","Maya"]
 PAYMENT_METHODS_DIGITAL = ["GCash","Bank Transfer","Cash","Maya"]
-OCCASIONS = ["Birthday","Anniversary","Valentine's Day","Mother's Day","Graduation","Sympathy","Wedding","Just Because","Corporate","Other"]
+OCCASIONS = ["Birthday","Anniversary","Valentine's Day","Mother's Day","Sympathy","Wedding","Just Because","Corporate","Other"]
 CANCELLATION_REASONS = ["Customer request","Out of stock","Wrong order","Payment failed","Other"]
 DELIVERY_FAILURE_REASONS = ["Needs Redelivery","Customer Refused","Address Invalid","Contact Unavailable","Other"]
-COLOR_PREFERENCES = ["Red","Two tone Red","Pink","White","Blue","Green","Purple","Yellow","Orange","Mixed","Custom"]
-DELIVERY_ZONES = ["Calamba","Los Baños","Majayjay","Calauan","Cabuyao","Sta. Rosa","Biñan","San Pedro","Bay","San Pablo","Alaminos","Quezon","Batangas","Victoria","Pila","Sta. Cruz","Pagsanjan","Lumban","Rizal","Nagcarlan","Liliw","N/A","PICK UP"]
+COLOR_PREFERENCES = ["Any","Red","Pink","White","Purple","Yellow","Orange","Mixed","Custom"]
+DELIVERY_ZONES = ["Calamba","Los Baños","Calauan","Cabuyao","Sta. Rosa","Biñan","San Pedro","Bay","San Pablo","Alaminos","Quezon","Batangas","Victoria","Pila","Sta. Cruz","Pagsanjan","Lumban","Rizal","Nagcarlan","Liliw","N/A"]
 WASTE_REASONS = ["Wilted","Damaged","Miscalculation","Customer Return","Expired","Other"]
 ARRANGEMENTS = [
     "CHINA ROSES","ECUADORIAN ROSES","PAPER ROSES/LISIATHUS","STARGAZERS",
-    "YELLOWIN","CASA BLANCA","CARNATIONS","LIPIDIUM","CALLA LILLY","GYPSO","STATICE","MISTY WHITE","MISTY BLUE","ORCHIDS","AMARATHUS","SNAPDRAGON","GERBERA","SUNLIGHT","PEONY",
+    "YELLOWIN","CASA BLANCA","CARNATIONS","GERBERA","SUNLIGHT","PEONY",
     "SUNFLOWER","HYDRANGEAS","CHAMOMILE","TULIPS","MUMS","PINGPONG",
     "Apricot Bloom","Pink Dreams","Purple Serenade","Blush Amour",
     "Sunset Blooms","Barbie Fantasy","Blush Petals","Ruby Whisper",
@@ -1808,6 +1808,155 @@ def page_inventory():
         with st.expander(f"📋 Details — {item['name']}", expanded=False):
             st.write(f"- **Category:** {item.get('category','')}  \n- **Branch:** {item.get('branch','')}  \n- **Unit Cost:** ₱{item.get('unit_cost',0):,.2f}  \n- **Total Value:** ₱{total_v:,.2f}  \n- **Reorder Point:** {reorder} {item.get('unit','')}  \n- **Notes:** {item.get('notes','—')}  \n- **Added:** {str(item.get('created_at',''))[:10]}")
         st.divider()
+
+    # ── BACKFILL SECTION (Super Admin only) ───────────────────────────────────
+    if CURRENT_ROLE == "Super Admin":
+        st.divider()
+        st.markdown("#### 🔁 Inventory Backfill from Past Orders")
+        st.caption("Super Admin only — one-time tool to deduct all past orders from current inventory.")
+        st.warning(
+            "⚠️ **This is a one-time, irreversible operation.** "
+            "It will go through ALL orders ever logged and deduct the flowers used "
+            "from the current inventory — including orders that were Cancelled or still Pending. "
+            "Preview the table below carefully before applying."
+        )
+
+        if st.button("🔍 Preview Backfill Deductions", key="bf_preview_btn", type="primary"):
+            st.session_state["bf_preview_ready"] = True
+
+        if st.session_state.get("bf_preview_ready"):
+            all_orders    = db.get_orders()
+            all_inventory = db.get_inventory()
+
+            # Aggregate total deductions per (flower_color_name, branch)
+            deduction_map = {}
+            for o in all_orders:
+                branch_o = o.get("fulfillment_branch", o.get("branch",""))
+                for fi in (o.get("flower_items") or []):
+                    flower_name = fi.get("flower","").strip()
+                    qty_used    = int(fi.get("qty",1))
+                    colors      = [c for c in fi.get("colors",[]) if c and c.lower()!="any"]
+                    if not flower_name: continue
+                    if not colors:
+                        key = (flower_name.upper(), branch_o)
+                        deduction_map[key] = deduction_map.get(key,0) + qty_used
+                    else:
+                        for color in colors:
+                            key = (f"{color.upper()} {flower_name.upper()}", branch_o)
+                            deduction_map[key] = deduction_map.get(key,0) + qty_used
+
+            if not deduction_map:
+                st.info("No flower items found in any past orders. Nothing to backfill.")
+                return
+
+            # Build preview rows
+            preview_rows = []
+            for (item_name, branch_o), total_deduct in sorted(deduction_map.items()):
+                # Find current inventory item
+                inv_match = next(
+                    (i for i in all_inventory
+                     if i.get("name","").strip().upper() == item_name
+                     and i.get("branch","") == branch_o),
+                    None,
+                )
+                # Try base flower name if color-specific not found
+                if inv_match is None and " " in item_name:
+                    base_name = " ".join(item_name.split(" ")[1:])
+                    inv_match = next(
+                        (i for i in all_inventory
+                         if i.get("name","").strip().upper() == base_name
+                         and i.get("branch","") == branch_o),
+                        None,
+                    )
+                current_stock = int(inv_match.get("quantity",0)) if inv_match else "Not in inventory"
+                stock_after   = (current_stock - total_deduct) if isinstance(current_stock, int) else "Will be auto-created at 0"
+                preview_rows.append({
+                    "Flower / Color Item": item_name,
+                    "Branch": branch_o,
+                    "Total Qty to Deduct": total_deduct,
+                    "Current Stock": current_stock,
+                    "Stock After Backfill": stock_after,
+                })
+
+            df_preview = pd.DataFrame(preview_rows)
+
+            # Color-code by outcome
+            def _highlight(row):
+                after = row["Stock After Backfill"]
+                if isinstance(after, int) and after < 0:
+                    return ["background-color: #FFEBEE"] * len(row)
+                elif isinstance(after, int) and after == 0:
+                    return ["background-color: #FFF3E0"] * len(row)
+                elif not isinstance(after, int):
+                    return ["background-color: #F3E5F5"] * len(row)
+                return [""] * len(row)
+
+            st.markdown("**Preview — what will change:**")
+            st.dataframe(df_preview.style.apply(_highlight, axis=1), use_container_width=True, hide_index=True)
+
+            # Legend
+            st.markdown(
+                "🔴 Red rows = will go negative &nbsp;|&nbsp; "
+                "🟠 Orange rows = will hit 0 &nbsp;|&nbsp; "
+                "🟣 Purple rows = flower not in inventory (will be auto-created)"
+            )
+            st.divider()
+
+            # Confirm and apply
+            st.markdown("**Satisfied with the preview? Apply the deduction:**")
+            confirm = st.checkbox("✅ I have reviewed the preview and want to apply this backfill", key="bf_confirm")
+            if confirm:
+                if st.button("🚀 Apply Backfill Now", key="bf_apply_btn", type="primary"):
+                    with st.spinner("Applying backfill deductions..."):
+                        total_warnings = []
+                        for (item_name, branch_o), total_deduct in deduction_map.items():
+                            # Re-fetch fresh inventory to avoid stale reads
+                            fresh_inv = db.get_inventory()
+                            inv_match = next(
+                                (i for i in fresh_inv
+                                 if i.get("name","").strip().upper() == item_name
+                                 and i.get("branch","") == branch_o),
+                                None,
+                            )
+                            if inv_match is None and " " in item_name:
+                                base_name = " ".join(item_name.split(" ")[1:])
+                                inv_match = next(
+                                    (i for i in fresh_inv
+                                     if i.get("name","").strip().upper() == base_name
+                                     and i.get("branch","") == branch_o),
+                                    None,
+                                )
+                            if inv_match:
+                                new_qty = int(inv_match.get("quantity",0)) - total_deduct
+                                db.update_inventory_item(inv_match["id"], {"quantity": new_qty})
+                            else:
+                                # Auto-create with negative stock
+                                new_qty = -total_deduct
+                                db.save_inventory_item({
+                                    "id": str(uuid.uuid4())[:8],
+                                    "name": item_name,
+                                    "category": "🌹 Flowers",
+                                    "branch": branch_o,
+                                    "quantity": new_qty,
+                                    "unit": "pcs",
+                                    "unit_cost": 0.0,
+                                    "reorder_point": 10,
+                                    "notes": "Auto-created by inventory backfill. Please update unit cost.",
+                                    "created_at": datetime.now().isoformat(),
+                                })
+                            if new_qty < 0:
+                                total_warnings.append(f"🔴🔴 **{item_name}** ({branch_o}): {new_qty} pcs")
+                            elif new_qty == 0:
+                                total_warnings.append(f"🔴 **{item_name}** ({branch_o}): OUT OF STOCK")
+
+                    db._invalidate_all()
+                    st.success("✅ Backfill complete! All past orders have been deducted from inventory.")
+                    if total_warnings:
+                        st.markdown("**⚠️ Items that went to 0 or negative:**")
+                        for w in total_warnings:
+                            st.warning(w)
+                    st.session_state["bf_preview_ready"] = False
+                    st.rerun()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
