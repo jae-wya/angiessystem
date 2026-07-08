@@ -84,15 +84,15 @@ STATUS_FLOW = ["Pending","Confirmed","In Progress","Ready","Delivered","Picked U
 SOURCE_PAGES = ["Facebook","Instagram","WhatsApp","TikTok","Website","Walk-in","Other"]
 PAYMENT_METHODS_BALANCE = ["COD","GCash","Bank Transfer","Cash","Maya"]
 PAYMENT_METHODS_DIGITAL = ["GCash","Bank Transfer","Cash","Maya"]
-OCCASIONS = ["Birthday","Anniversary","Valentine's Day","Mother's Day","Graduation","Sympathy","Wedding","Just Because","Corporate","Other"]
+OCCASIONS = ["Birthday","Anniversary","Valentine's Day","Mother's Day","Sympathy","Wedding","Just Because","Corporate","Other"]
 CANCELLATION_REASONS = ["Customer request","Out of stock","Wrong order","Payment failed","Other"]
 DELIVERY_FAILURE_REASONS = ["Needs Redelivery","Customer Refused","Address Invalid","Contact Unavailable","Other"]
-COLOR_PREFERENCES = ["Any","Red","Pink","White","Blue","Green","Purple","Yellow","Orange","Mixed","Custom"]
-DELIVERY_ZONES = ["Calamba","Los Baños","Calauan","Cabuyao","Sta. Rosa","Biñan","San Pedro","Bay","Magdalena","San Pablo","Alaminos","Quezon","Batangas","Victoria","Pila","Sta. Cruz","Pagsanjan","Lumban","Rizal","Nagcarlan","Liliw","N/A","PICK UP"]
+COLOR_PREFERENCES = ["Any","Red","Pink","White","Purple","Yellow","Orange","Mixed","Custom"]
+DELIVERY_ZONES = ["Calamba","Los Baños","Calauan","Cabuyao","Sta. Rosa","Biñan","San Pedro","Bay","San Pablo","Alaminos","Quezon","Batangas","Victoria","Pila","Sta. Cruz","Pagsanjan","Lumban","Rizal","Nagcarlan","Liliw","N/A"]
 WASTE_REASONS = ["Wilted","Damaged","Miscalculation","Customer Return","Expired","Other"]
 ARRANGEMENTS = [
     "CHINA ROSES","ECUADORIAN ROSES","PAPER ROSES/LISIATHUS","STARGAZERS",
-    "YELLOWIN","CASA BLANCA","CARNATIONS","GERBERA","SUNLIGHT","PEONY","LIPIDIUM","STATICE","GYPSO","MISTY WHITE","MISTY BLUE","AMARATHUS","CALLA LILY",
+    "YELLOWIN","CASA BLANCA","CARNATIONS","GERBERA","SUNLIGHT","PEONY",
     "SUNFLOWER","HYDRANGEAS","CHAMOMILE","TULIPS","MUMS","PINGPONG",
     "Apricot Bloom","Pink Dreams","Purple Serenade","Blush Amour",
     "Sunset Blooms","Barbie Fantasy","Blush Petals","Ruby Whisper",
@@ -496,6 +496,26 @@ def page_dashboard():
     c2.metric("📉 Total Waste Cost", f"₱{waste_cost:,.0f}")
     c3.metric("📈 Net Profit Margin",f"{profit_margin:.1f}%")
 
+    # Stock alerts for managers
+    if CURRENT_ROLE in ("Branch Manager","Super Admin"):
+        neg_items  = [i for i in inventory if int(i.get("quantity",0)) < 0]
+        zero_items = [i for i in inventory if int(i.get("quantity",0)) == 0]
+        low_items  = [i for i in inventory if 0 < int(i.get("quantity",0)) <= int(i.get("reorder_point",10))]
+        if neg_items or zero_items or low_items:
+            st.divider()
+            st.markdown("#### ⚠️ Inventory Alerts")
+            if neg_items:
+                with st.expander(f"🔴🔴 {len(neg_items)} item(s) in NEGATIVE STOCK — urgent restock needed", expanded=True):
+                    for i in sorted(neg_items, key=lambda x: int(x.get("quantity",0))):
+                        st.error(f"**{i['name']}** ({i.get('branch','')}) — **{i.get('quantity',0)} pcs**")
+            if zero_items:
+                with st.expander(f"🔴 {len(zero_items)} item(s) OUT OF STOCK"):
+                    for i in zero_items:
+                        st.warning(f"**{i['name']}** ({i.get('branch','')}) — OUT OF STOCK")
+            if low_items:
+                with st.expander(f"🟡 {len(low_items)} item(s) LOW STOCK"):
+                    for i in sorted(low_items, key=lambda x: int(x.get("quantity",0))):
+                        st.warning(f"**{i['name']}** ({i.get('branch','')}) — {i.get('quantity',0)} pcs (reorder at {i.get('reorder_point',10)})")
     st.divider()
     st.markdown("#### 📋 Shareable Recap")
     st.caption("Quick copy-paste summary for group chats / end-of-day reports.")
@@ -739,9 +759,11 @@ def page_new_order():
                 "created_at": datetime.now().isoformat(),
             })
 
-        # ── Auto inventory deduction ──────────────────────────────────────
-        inv_warnings = db.deduct_inventory_for_order(flower_items, fulfillment_branch)
-
+        # Auto inventory deduction
+        inv_warnings = db.deduct_inventory_for_order(
+            flower_items, fulfillment_branch,
+            order_id=order_code, logged_by=CURRENT_USER.get("name","")
+        )
         for k in ("form_price","form_delivery_fee","form_down_payment"):
             st.session_state[k] = 0.0
         st.session_state.pop("new_flower_items", None)
@@ -755,8 +777,7 @@ def page_new_order():
             st.success("🚚 Free delivery applied!")
         if inv_warnings:
             st.markdown("**📦 Inventory Update:**")
-            for w in inv_warnings:
-                st.warning(w)
+            for w in inv_warnings: st.warning(w)
         else:
             st.success("📦 Inventory updated automatically.")
         st.balloons()
@@ -933,6 +954,19 @@ def page_edit_order():
             "payment_status": "Fully Paid" if total_balance == 0 else "Partially Paid",
             "updated_at": datetime.now().isoformat(),
         })
+        # Inventory adjustment on edit
+        old_fi = order.get("flower_items", [])
+        old_br = order.get("fulfillment_branch", order.get("branch",""))
+        if old_fi and efi and old_fi != efi:
+            ret = db.return_inventory_for_order(old_fi, old_br,
+                reason="Order edit — returning old flowers",
+                order_id=order_code, logged_by=CURRENT_USER.get("name",""))
+            ded = db.deduct_inventory_for_order(efi, fulfillment_branch,
+                order_id=order_code, logged_by=CURRENT_USER.get("name",""))
+            if ret or ded:
+                st.markdown("**📦 Inventory adjusted:**")
+                for r in ret: st.info(r)
+                for d in ded: st.warning(d)
         st.success(f"✅ Order **{order_code}** updated successfully!")
         st.session_state.edit_order_id = None
         st.session_state.active_page   = "All Orders"
@@ -962,14 +996,7 @@ def page_all_orders():
     f_date   = c4.date_input("Date",  value=None, key="ao_date")
     search   = c5.text_input("🔍 Search", key="ao_search")
 
-    # ── Time range filter (only useful when a date is selected) ──────────
-    tr1, tr2, tr3 = st.columns([2, 1, 1])
-    with tr1:
-        show_all = st.checkbox("Show all orders (including older than 60 days) — may be slower", key="ao_show_all")
-    with tr2:
-        ao_time_from = st.time_input("Time from", value=None, key="ao_time_from", help="Filter orders from this time onwards")
-    with tr3:
-        ao_time_to   = st.time_input("Time to",   value=None, key="ao_time_to",   help="Filter orders up to this time")
+    show_all = st.checkbox("Show all orders (including older than 60 days) — may be slower", key="ao_show_all")
 
     filtered = orders.copy()
     if not show_all and not f_date and f_status == "All":
@@ -983,35 +1010,14 @@ def page_all_orders():
         q = search.lower()
         filtered = [o for o in filtered if q in o.get("customer_name","").lower() or q in o.get("order_code","").lower() or q in o.get("arrangement","").lower()]
 
-    # Apply time range filter
-    def _parse_order_time(o):
-        try: return datetime.strptime(o.get("target_time","12:00 AM"), "%I:%M %p").time()
-        except: return None
-    if ao_time_from:
-        filtered = [o for o in filtered if (t := _parse_order_time(o)) and t >= ao_time_from]
-    if ao_time_to:
-        filtered = [o for o in filtered if (t := _parse_order_time(o)) and t <= ao_time_to]
-
-    def _ao_time_key(o):
-        t = o.get("target_time","23:59")
+    def _ao_time(o):
+        t=o.get("target_time","23:59")
         try: return datetime.strptime(t,"%I:%M %p").strftime("%H:%M")
         except: return t
-    # Sort: newest date first; within same date, earliest time first
-    filtered = sorted(filtered, key=lambda o: (
-        # negate date so newest is first, time ascending within date
-        str(o.get("target_date","0000-00-00"))[:10],
-        _ao_time_key(o)
-    ), reverse=False)
-    # flip date order while keeping time order within each date
-    filtered = sorted(filtered, key=lambda o: str(o.get("target_date",""))[:10], reverse=True)
-    # restore time order within each date using stable sort
-    from itertools import groupby as _gb
-    _date_groups = {}
-    for o in filtered:
-        _date_groups.setdefault(str(o.get("target_date",""))[:10], []).append(o)
-    filtered = []
-    for _d in sorted(_date_groups.keys(), reverse=True):
-        filtered.extend(sorted(_date_groups[_d], key=_ao_time_key))
+    _date_groups={}
+    for o in filtered: _date_groups.setdefault(str(o.get("target_date",""))[:10],[]).append(o)
+    filtered=[]
+    for _d in sorted(_date_groups.keys(),reverse=True): filtered.extend(sorted(_date_groups[_d],key=_ao_time))
     col_count, col_export = st.columns([3,1])
     col_count.markdown(f"**{len(filtered)} order(s) found** {'(last 60 days — check *Show all* for older)' if not show_all and not f_date and f_status=='All' else ''}")
     if filtered:
@@ -1122,6 +1128,15 @@ def page_all_orders():
                     ok_col, abort_col = st.columns(2)
                     if ok_col.button("✅ Confirm Cancellation", key=f"cok_{order_code}"):
                         db.update_order(o["id"],{"status":"Cancelled","cancellation_reason":cancel_reason,"cancellation_notes":cancel_notes})
+                        # Auto-return stock
+                        if o.get("flower_items"):
+                            ret = db.return_inventory_for_order(
+                                o["flower_items"],
+                                o.get("fulfillment_branch", o.get("branch","")),
+                                reason=f"Order cancelled ({cancel_reason})",
+                                order_id=order_code, logged_by=CURRENT_USER.get("name","")
+                            )
+                            for r in ret: st.success(r)
                         st.session_state.pop(f"cancelling_{order_code}", None); st.rerun()
                     if abort_col.button("↩️ Keep Order", key=f"cabort_{order_code}"):
                         st.session_state.pop(f"cancelling_{order_code}", None); st.rerun()
@@ -1196,88 +1211,50 @@ def page_florist_board():
     st.caption("🔄 Auto-refreshes every 30 seconds")
     orders   = scope_by_branch(db.get_orders())
     florists = scope_by_branch(db.get_florists())
-
-    # ── v4: include Pending orders too ──────────────────────────────────
     production = [o for o in orders if o["status"] in ["Pending","Confirmed","In Progress"]]
-
     if not production:
         st.success("✅ All clear! No active orders."); return
-
-    # ── Filters — same layout as All Orders ──────────────────────────────
-    branch_opts = BRANCHES if (CURRENT_ROLE == "Super Admin" or CURRENT_BRANCH == "All") else [CURRENT_BRANCH]
-    fb_status_opts = ["All", "Pending", "Confirmed", "In Progress"]
-
+    branch_opts_fb = BRANCHES if (CURRENT_ROLE=="Super Admin" or CURRENT_BRANCH=="All") else [CURRENT_BRANCH]
     fc1,fc2,fc3,fc4,fc5,fc6 = st.columns(6)
-    fb_branch = fc1.selectbox("Branch", ["All"] + branch_opts, key="fb_branch")
-    fb_status = fc2.selectbox("Status", fb_status_opts, key="fb_status")
-    fb_type   = fc3.selectbox("Type",   ["All","Delivery","Pick-up"], key="fb_type")
-    fb_date   = fc4.date_input("Date",  value=None, key="fb_date")
-    fb_search = fc5.text_input("🔍 Search", key="fb_search")
-    fb_sort   = fc6.selectbox("Sort by", [
-        "🚀 Rush First → Date → Time",
-        "📅 Date (earliest first)",
-        "🕐 Time (earliest first)",
-        "📋 Status (Pending first)",
-    ], key="fb_sort")
-
-    # ── Time range filter ────────────────────────────────────────────────
-    ft1, ft2 = st.columns(2)
-    fb_time_from = ft1.time_input("Time from", value=None, key="fb_time_from", help="Show orders from this time onwards")
-    fb_time_to   = ft2.time_input("Time to",   value=None, key="fb_time_to",   help="Show orders up to this time")
-
-    # Apply filters
-    if fb_branch != "All":
-        production = [o for o in production if o.get("branch") == fb_branch or o.get("fulfillment_branch") == fb_branch]
-    if fb_status != "All":
-        production = [o for o in production if o.get("status") == fb_status]
-    if fb_type != "All":
-        production = [o for o in production if o.get("order_type") == fb_type]
-    if fb_date:
-        production = [o for o in production if str(o.get("target_date",""))[:10] == fb_date.isoformat()]
+    fb_branch = fc1.selectbox("Branch",["All"]+branch_opts_fb,key="fb_branch")
+    fb_status = fc2.selectbox("Status",["All","Pending","Confirmed","In Progress"],key="fb_status")
+    fb_type   = fc3.selectbox("Type",["All","Delivery","Pick-up"],key="fb_type")
+    fb_date   = fc4.date_input("Date",value=None,key="fb_date")
+    fb_search = fc5.text_input("🔍 Search",key="fb_search")
+    fb_sort   = fc6.selectbox("Sort by",["🚀 Rush First → Date → Time","📅 Date (earliest first)","🕐 Time (earliest first)","📋 Status (Pending first)"],key="fb_sort")
+    ft1,ft2 = st.columns(2)
+    fb_time_from = ft1.time_input("Time from",value=None,key="fb_time_from")
+    fb_time_to   = ft2.time_input("Time to",value=None,key="fb_time_to")
+    if fb_branch!="All": production=[o for o in production if o.get("branch")==fb_branch or o.get("fulfillment_branch")==fb_branch]
+    if fb_status!="All": production=[o for o in production if o.get("status")==fb_status]
+    if fb_type!="All":   production=[o for o in production if o.get("order_type")==fb_type]
+    if fb_date:          production=[o for o in production if str(o.get("target_date",""))[:10]==fb_date.isoformat()]
     if fb_search:
-        q = fb_search.lower()
-        production = [o for o in production if
-            q in o.get("customer_name","").lower() or
-            q in o.get("order_code","").lower() or
-            q in o.get("arrangement","").lower() or
-            q in o.get("assigned_florist","").lower()]
-
-    # Apply time range
-    def _fb_parse_time(o):
-        try: return datetime.strptime(o.get("target_time","12:00 AM"), "%I:%M %p").time()
+        q=fb_search.lower(); production=[o for o in production if q in o.get("customer_name","").lower() or q in o.get("order_code","").lower() or q in o.get("arrangement","").lower() or q in o.get("assigned_florist","").lower()]
+    def _fb_t(o):
+        try: return datetime.strptime(o.get("target_time","12:00 AM"),"%I:%M %p").time()
         except: return None
-    if fb_time_from:
-        production = [o for o in production if (t := _fb_parse_time(o)) and t >= fb_time_from]
-    if fb_time_to:
-        production = [o for o in production if (t := _fb_parse_time(o)) and t <= fb_time_to]
-
-    st.markdown(f"**{len(production)} order(s) in production/queue**")
-
-    # Apply sort
+    if fb_time_from: production=[o for o in production if (t:=_fb_t(o)) and t>=fb_time_from]
+    if fb_time_to:   production=[o for o in production if (t:=_fb_t(o)) and t<=fb_time_to]
     def sort_key(o):
-        rush         = 0 if o.get("priority_rush") else 1
-        d            = str(o.get("target_date","9999-99-99"))[:10]
-        t            = o.get("target_time","23:59")
-        try: t       = datetime.strptime(t,"%I:%M %p").strftime("%H:%M")
+        rush=0 if o.get("priority_rush") else 1; d=str(o.get("target_date","9999-99-99"))[:10]
+        t=o.get("target_time","23:59")
+        try: t=datetime.strptime(t,"%I:%M %p").strftime("%H:%M")
         except: pass
-        status_order = {"Pending":0,"Confirmed":1,"In Progress":2}.get(o.get("status",""),3)
-        if fb_sort.startswith("🚀"):   return (rush, d, t)
-        elif fb_sort.startswith("📅"): return (d, t)       # date then time
-        elif fb_sort.startswith("🕐"): return (t, d, rush) # time then date
-        else:                           return (status_order, d, t)
-
-    production = sorted(production, key=sort_key)
-
-    if not production:
-        st.info("No orders match your filters."); return
+        s={"Pending":0,"Confirmed":1,"In Progress":2}.get(o.get("status",""),3)
+        if fb_sort.startswith("🚀"): return (rush,d,t)
+        elif fb_sort.startswith("📅"): return (d,t)
+        elif fb_sort.startswith("🕐"): return (t,d)
+        else: return (s,d,t)
+    production=sorted(production,key=sort_key)
+    if not production: st.info("No orders match."); return
+    st.markdown(f"**{len(production)} order(s) in production**")
 
     for o in production:
-        florist    = o.get("assigned_florist","")
+        florist    = o.get("assigned_florist","Unassigned")
         order_code = o.get("order_code", o.get("id","N/A"))
         priority   = "🚀 RUSH ORDER" if o.get("priority_rush") else "Normal"
         fi_list    = o.get("flower_items",[])
-        status     = o.get("status","")
-        status_col = STATUS_COLOR.get(status,"#888")
         msg_to_val  = o.get("message_card_to","")
         msg_body_val= o.get("message_card_body","")
         msg_from_val= o.get("message_card_from","")
@@ -1290,10 +1267,7 @@ def page_florist_board():
         else:
             arrangement_block = f"<tr><th>Arrangement</th><td colspan='2'><strong>{o.get('arrangement','')}</strong></td></tr><tr><th>Quantity</th><td colspan='2'>{o.get('quantity',1)} pc(s)</td></tr>"
 
-        florist_display = f"<strong style='color:#C85C8E;'>{florist}</strong>" if florist else "<em style='color:#FFC107;'>⏳ Unassigned</em>"
-        rush_prefix = "🚀 " if o.get("priority_rush") else ""
-
-        with st.expander(f"{rush_prefix}🌸 {order_code} — {o['customer_name']} | {str(o.get('target_date',''))[:10]} | <span style='color:{status_col};'>{status}</span> | {florist or '⏳ Unassigned'}"):
+        with st.expander(f"🌸 {order_code} — {o['customer_name']} | {str(o.get('target_date',''))[:10]} | {florist}"):
             st.markdown(f"""
             <div class="print-sheet">
               <h3>🌹 FLORIST PRODUCTION SHEET</h3>
@@ -1307,8 +1281,7 @@ def page_florist_board():
                 <tr><th>Substitutions OK?</th><td colspan='2'>{'✅ Yes' if o.get('allow_substitution') else 'No'} {o.get('substitution_notes','')}</td></tr>
                 <tr><th>Order Type</th><td colspan='2'>{'🚴 DELIVERY' if o['order_type']=='Delivery' else '🛍 PICK-UP'}</td></tr>
                 <tr><th>Priority</th><td colspan='2'><strong style="color:#C85C8E;">{priority}</strong></td></tr>
-                <tr><th>Status</th><td colspan='2'><strong style="color:{status_col};">{status}</strong></td></tr>
-                <tr><th>Assigned Florist</th><td colspan='2'>{florist_display}</td></tr>
+                <tr><th>Assigned Florist</th><td colspan='2'><strong style="color:#C85C8E;">{florist}</strong></td></tr>
                 <tr><th>Special Instructions</th><td colspan='2'><strong>{o.get('notes','None')}</strong></td></tr>
                 <tr><th>Branch</th><td colspan='2'>{o.get('fulfillment_branch', o.get('branch',''))}</td></tr>
                 {msg_card_row}
@@ -1325,54 +1298,33 @@ def page_florist_board():
                 for idx, pic_url in enumerate(inspo_pics):
                     cols[idx % len(cols)].image(pic_url, caption=f"Reference {idx+1}", use_container_width=True)
 
-            # ── Assign florist from board when Pending ────────────────────
-            if status == "Pending":
-                st.markdown("---")
-                fa1, fa2 = st.columns([3,1])
-                florist_labels = [f"{f['name']} ({db.get_florist_active_load(f['name'])}/{f.get('max_concurrent_orders',5)})" for f in florists]
-                florist_label_map = {lbl: f["name"] for lbl, f in zip(florist_labels, florists)}
-                sel_label = fa1.selectbox("Assign Florist", ["— select florist —"] + florist_labels, key=f"fb_assign_{order_code}", label_visibility="collapsed")
-                sel_f = florist_label_map.get(sel_label,"")
-                if sel_f:
-                    chosen = next((f for f in florists if f["name"]==sel_f), None)
-                    if chosen and db.get_florist_active_load(sel_f) >= chosen.get("max_concurrent_orders",5):
-                        fa2.error("⛔ Full")
-                    else:
-                        if fa2.button("✓ Assign", key=f"fb_af_{order_code}", use_container_width=True):
-                            db.update_order(o["id"], {"assigned_florist": sel_f, "florist_assigned_at": datetime.now().isoformat()})
-                            st.rerun()
-
             # ── Full status workflow ───────────────────────────────────────
             st.markdown("---")
             ac1, ac2, ac3 = st.columns(3)
 
-            # Pending → Confirmed
             with ac1:
-                if status == "Pending":
-                    if not florist:
+                if o["status"] == "Pending":
+                    florist_assigned = o.get("assigned_florist","")
+                    if not florist_assigned:
                         st.caption("⏳ Assign florist first")
                     else:
                         if st.button("✅ Confirm Order", key=f"fb_conf_{order_code}", use_container_width=True):
-                            db.update_order_status(o["id"], "Confirmed"); st.rerun()
-
-            # Confirmed → In Progress
+                            db.update_order_status(o["id"],"Confirmed"); st.rerun()
             with ac2:
-                if status == "Confirmed":
+                if o["status"] == "Confirmed":
                     if st.button("🌹 Start Production", key=f"fstart_{order_code}", use_container_width=True):
-                        db.update_order_status(o["id"], "In Progress"); st.rerun()
-
-            # In Progress → Ready
+                        db.update_order_status(o["id"],"In Progress"); st.rerun()
             with ac3:
-                if status == "In Progress":
+                if o["status"] == "In Progress":
                     finished_pic = st.file_uploader(
                         "📸 Upload Finished Product Picture",
                         type=["jpg","jpeg","png"], key=f"finished_{order_code}",
                     )
                     if finished_pic:
                         if st.button("✅ Mark as READY", key=f"fready_{order_code}", use_container_width=True):
-                            ext  = finished_pic.name.split(".")[-1].lower()
+                            ext = finished_pic.name.split(".")[-1].lower()
                             path = f"orders/{order_code}/finished_product/{uuid.uuid4().hex[:8]}.{ext}"
-                            url  = db.upload_file(finished_pic.getvalue(), path, content_type=finished_pic.type or "image/jpeg")
+                            url = db.upload_file(finished_pic.getvalue(), path, content_type=finished_pic.type or "image/jpeg")
                             db.update_order(o["id"], {"finished_product_picture": url, "status": "Ready"})
                             if o.get("order_type") == "Delivery":
                                 st.success(f"✅ Order **{order_code}** marked READY — it will appear on the 🚴 Rider Board!")
@@ -1394,95 +1346,47 @@ def page_rider_board():
     riders  = scope_by_branch(db.get_riders())
     rider_names    = [r["name"] for r in riders]
     rider_contacts = {r["name"]: r.get("contact","") for r in riders}
-
-    # Base: delivery orders that are Ready or Failed Delivery
     rider_orders = [o for o in orders if o.get("order_type")=="Delivery" and o["status"] in ["Ready","Failed Delivery"]]
-
-    # ── Filters — same layout as All Orders + Rider filter ────────────────
-    branch_opts = BRANCHES if (CURRENT_ROLE == "Super Admin" or CURRENT_BRANCH == "All") else [CURRENT_BRANCH]
-    rb_status_opts = ["All","Ready","Failed Delivery"]
-
+    branch_opts_rb = BRANCHES if (CURRENT_ROLE=="Super Admin" or CURRENT_BRANCH=="All") else [CURRENT_BRANCH]
     rc1,rc2,rc3,rc4,rc5 = st.columns(5)
-    rb_branch = rc1.selectbox("Branch", ["All"] + branch_opts, key="rb_branch")
-    rb_status = rc2.selectbox("Status", rb_status_opts, key="rb_status")
-    rb_date   = rc3.date_input("Date",  value=None, key="rb_date")
-    rb_search = rc4.text_input("🔍 Search", key="rb_search")
-    rb_sort   = rc5.selectbox("Sort by", [
-        "📅 Date (earliest first)",
-        "🕐 Time (earliest first)",
-        "🚀 Rush First → Date → Time",
-        "💰 COD first",
-    ], key="rb_sort")
-
-    # ── Time range filter ────────────────────────────────────────────────
-    rt1, rt2 = st.columns(2)
-    rb_time_from = rt1.time_input("Time from", value=None, key="rb_time_from", help="Show orders from this time onwards")
-    rb_time_to   = rt2.time_input("Time to",   value=None, key="rb_time_to",   help="Show orders up to this time")
-
-    # Rider filter on its own row (keeps it prominent)
-    if riders:
-        rb_rider = st.selectbox(
-            "Filter by Rider",
-            ["All Riders","Unassigned"] + rider_names,
-            key="rb_rider"
-        )
-    else:
-        rb_rider = "All Riders"
-
-    # Apply filters
+    rb_branch = rc1.selectbox("Branch",["All"]+branch_opts_rb,key="rb_branch")
+    rb_status = rc2.selectbox("Status",["All","Ready","Failed Delivery"],key="rb_status")
+    rb_date   = rc3.date_input("Date",value=None,key="rb_date")
+    rb_search = rc4.text_input("🔍 Search",key="rb_search")
+    rb_sort   = rc5.selectbox("Sort by",["📅 Date (earliest first)","🕐 Time (earliest first)","🚀 Rush First → Date → Time","💰 COD first"],key="rb_sort")
+    rt1,rt2 = st.columns(2)
+    rb_time_from = rt1.time_input("Time from",value=None,key="rb_time_from")
+    rb_time_to   = rt2.time_input("Time to",value=None,key="rb_time_to")
+    rb_rider = st.selectbox("Filter by Rider",["All Riders","Unassigned"]+rider_names,key="rb_rider") if riders else "All Riders"
     filtered_orders = rider_orders.copy()
-    if rb_branch != "All":
-        filtered_orders = [o for o in filtered_orders if o.get("branch")==rb_branch or o.get("fulfillment_branch")==rb_branch]
-    if rb_status != "All":
-        filtered_orders = [o for o in filtered_orders if o.get("status")==rb_status]
-    if rb_date:
-        filtered_orders = [o for o in filtered_orders if str(o.get("target_date",""))[:10]==rb_date.isoformat()]
+    if rb_branch!="All": filtered_orders=[o for o in filtered_orders if o.get("branch")==rb_branch or o.get("fulfillment_branch")==rb_branch]
+    if rb_status!="All": filtered_orders=[o for o in filtered_orders if o.get("status")==rb_status]
+    if rb_date:          filtered_orders=[o for o in filtered_orders if str(o.get("target_date",""))[:10]==rb_date.isoformat()]
     if rb_search:
-        q = rb_search.lower()
-        filtered_orders = [o for o in filtered_orders if
-            q in o.get("customer_name","").lower() or
-            q in o.get("order_code","").lower() or
-            q in o.get("arrangement","").lower() or
-            q in (o.get("recipient_name","") or "").lower() or
-            q in o.get("delivery_address","").lower() or
-            q in o.get("assigned_rider","").lower()]
-    if rb_rider != "All Riders":
-        if rb_rider == "Unassigned":
-            filtered_orders = [o for o in filtered_orders if not o.get("assigned_rider")]
-        else:
-            filtered_orders = [o for o in filtered_orders if o.get("assigned_rider")==rb_rider]
-
-    # Apply time range filter
-    def _rb_parse_time(o):
-        try: return datetime.strptime(o.get("target_time","12:00 AM"), "%I:%M %p").time()
+        q=rb_search.lower(); filtered_orders=[o for o in filtered_orders if q in o.get("customer_name","").lower() or q in o.get("order_code","").lower() or q in o.get("arrangement","").lower() or q in (o.get("recipient_name","") or "").lower() or q in o.get("delivery_address","").lower() or q in o.get("assigned_rider","").lower()]
+    if rb_rider!="All Riders":
+        if rb_rider=="Unassigned": filtered_orders=[o for o in filtered_orders if not o.get("assigned_rider")]
+        else: filtered_orders=[o for o in filtered_orders if o.get("assigned_rider")==rb_rider]
+    def _rb_t(o):
+        try: return datetime.strptime(o.get("target_time","12:00 AM"),"%I:%M %p").time()
         except: return None
-    if rb_time_from:
-        filtered_orders = [o for o in filtered_orders if (t := _rb_parse_time(o)) and t >= rb_time_from]
-    if rb_time_to:
-        filtered_orders = [o for o in filtered_orders if (t := _rb_parse_time(o)) and t <= rb_time_to]
-
-    # Apply sort
+    if rb_time_from: filtered_orders=[o for o in filtered_orders if (t:=_rb_t(o)) and t>=rb_time_from]
+    if rb_time_to:   filtered_orders=[o for o in filtered_orders if (t:=_rb_t(o)) and t<=rb_time_to]
     def rb_sort_key(o):
-        d    = str(o.get("target_date","9999-99-99"))[:10]
-        t    = o.get("target_time","23:59")
-        try: t = datetime.strptime(t,"%I:%M %p").strftime("%H:%M")
+        d=str(o.get("target_date","9999-99-99"))[:10]
+        t=o.get("target_time","23:59")
+        try: t=datetime.strptime(t,"%I:%M %p").strftime("%H:%M")
         except: pass
-        rush = 0 if o.get("priority_rush") else 1
-        cod  = 0 if (o.get("balance_payment_method")=="COD" and float(o.get("total_balance",0))>0) else 1
-        if rb_sort.startswith("📅"):   return (d, t)        # date then time
-        elif rb_sort.startswith("🕐"): return (t, d)        # time then date
-        elif rb_sort.startswith("🚀"): return (rush, d, t)  # rush then date then time
-        else:                           return (cod, d, t)   # COD then date then time
-
-    filtered_orders = sorted(filtered_orders, key=rb_sort_key)
-
-    # COD total for filtered orders
-    cod_total = sum(float(o.get("total_balance",0)) for o in filtered_orders if o.get("balance_payment_method")=="COD" and o.get("total_balance",0)>0)
-    st.metric("💰 COD to Collect", f"₱{cod_total:,.2f}")
-
-    if not filtered_orders:
-        st.info("No delivery orders match your filters." if rider_orders else "No delivery orders ready for riders yet.")
-        return
+        rush=0 if o.get("priority_rush") else 1
+        cod=0 if (o.get("balance_payment_method")=="COD" and float(o.get("total_balance",0))>0) else 1
+        if rb_sort.startswith("📅"):   return (d,t)
+        elif rb_sort.startswith("🕐"): return (t,d)
+        elif rb_sort.startswith("🚀"): return (rush,d,t)
+        else:                           return (cod,d,t)
+    filtered_orders=sorted(filtered_orders,key=rb_sort_key)
+    cod_total=sum(float(o.get("total_balance",0)) for o in filtered_orders if o.get("balance_payment_method")=="COD" and o.get("total_balance",0)>0)
+    st.metric("💰 COD to Collect",f"₱{cod_total:,.2f}")
+    if not filtered_orders: st.info("No delivery orders match." if rider_orders else "No delivery orders ready yet."); return
     st.success(f"🚴 {len(filtered_orders)} delivery order(s) ready")
     st.divider()
 
@@ -1809,154 +1713,129 @@ def page_inventory():
             st.write(f"- **Category:** {item.get('category','')}  \n- **Branch:** {item.get('branch','')}  \n- **Unit Cost:** ₱{item.get('unit_cost',0):,.2f}  \n- **Total Value:** ₱{total_v:,.2f}  \n- **Reorder Point:** {reorder} {item.get('unit','')}  \n- **Notes:** {item.get('notes','—')}  \n- **Added:** {str(item.get('created_at',''))[:10]}")
         st.divider()
 
-    # ── BACKFILL SECTION (Super Admin only) ───────────────────────────────────
+    # ── Audit Log tab ──────────────────────────────────────────────────────
+    st.divider()
+    st.markdown("#### 📋 Inventory Movement Log")
+    st.caption("Every stock change — orders, cancellations, edits, waste, backfill — is recorded here.")
+    logs = db.get_inventory_logs()
+    if CURRENT_ROLE not in ("Super Admin","Branch Manager"):
+        logs = [l for l in logs if l.get("branch") == CURRENT_BRANCH]
+    if not logs:
+        st.info("No inventory movements recorded yet.")
+    else:
+        log_search = st.text_input("🔍 Filter logs", key="inv_log_search", placeholder="Search by flower, reason, order ID...")
+        if log_search:
+            q = log_search.lower()
+            logs = [l for l in logs if q in l.get("item_name","").lower() or q in l.get("reason","").lower() or q in l.get("order_id","").lower()]
+        df_logs = pd.DataFrame(sorted(logs, key=lambda x: x.get("created_at",""), reverse=True))
+        df_logs = df_logs.rename(columns={
+            "item_name":"Item","branch":"Branch","change_qty":"Change",
+            "qty_before":"Before","qty_after":"After","reason":"Reason",
+            "order_id":"Order","logged_by":"By","created_at":"When"
+        })
+        keep = [c for c in ["When","Item","Branch","Change","Before","After","Reason","Order","By"] if c in df_logs.columns]
+        df_logs = df_logs[keep]
+        df_logs["When"] = df_logs["When"].apply(lambda x: str(x)[:19])
+        st.dataframe(df_logs, use_container_width=True, hide_index=True)
+        st.download_button("⬇️ Export Audit Log CSV",
+            data=df_logs.to_csv(index=False).encode("utf-8"),
+            file_name=f"inventory_log_{__import__('datetime').datetime.now().strftime('%Y%m%d')}.csv",
+            mime="text/csv")
+
+    # ── Backfill (Super Admin only) ────────────────────────────────────────
     if CURRENT_ROLE == "Super Admin":
         st.divider()
         st.markdown("#### 🔁 Inventory Backfill from Past Orders")
-        st.caption("Super Admin only — one-time tool to deduct all past orders from current inventory.")
-        st.warning(
-            "⚠️ **This is a one-time, irreversible operation.** "
-            "It will go through ALL orders ever logged and deduct the flowers used "
-            "from the current inventory — including orders that were Cancelled or still Pending. "
-            "Preview the table below carefully before applying."
-        )
-
-        if st.button("🔍 Preview Backfill Deductions", key="bf_preview_btn", type="primary"):
-            st.session_state["bf_preview_ready"] = True
-
-        if st.session_state.get("bf_preview_ready"):
-            all_orders    = db.get_orders()
-            all_inventory = db.get_inventory()
-
-            # Aggregate total deductions per (flower_color_name, branch)
-            deduction_map = {}
-            for o in all_orders:
-                branch_o = o.get("fulfillment_branch", o.get("branch",""))
-                for fi in (o.get("flower_items") or []):
-                    flower_name = fi.get("flower","").strip()
-                    qty_used    = int(fi.get("qty",1))
-                    colors      = [c for c in fi.get("colors",[]) if c and c.lower()!="any"]
-                    if not flower_name: continue
-                    if not colors:
-                        key = (flower_name.upper(), branch_o)
-                        deduction_map[key] = deduction_map.get(key,0) + qty_used
-                    else:
-                        for color in colors:
-                            key = (f"{color.upper()} {flower_name.upper()}", branch_o)
+        st.caption("One-time tool — deducts ALL past orders from current inventory.")
+        backfill_flag = db.get_system_flag("inventory_backfill_applied")
+        if backfill_flag:
+            st.success(f"✅ Backfill already applied on **{backfill_flag}**. Cannot run again to prevent double-deduction.")
+        else:
+            st.warning("⚠️ **Irreversible.** Reviews ALL orders ever logged. Preview carefully before applying.")
+            if st.button("🔍 Preview Backfill Deductions", key="bf_preview_btn", type="primary"):
+                st.session_state["bf_preview_ready"] = True
+            if st.session_state.get("bf_preview_ready"):
+                all_orders    = db.get_orders()
+                all_inventory = db.get_inventory()
+                deduction_map = {}
+                for o in all_orders:
+                    branch_o = o.get("fulfillment_branch", o.get("branch",""))
+                    for fi in (o.get("flower_items") or []):
+                        fname    = fi.get("flower","").strip()
+                        qty_used = int(fi.get("qty",1))
+                        colors   = [c for c in fi.get("colors",[]) if c and c.lower()!="any"]
+                        if not fname: continue
+                        if not colors:
+                            key = (fname.upper(), branch_o)
                             deduction_map[key] = deduction_map.get(key,0) + qty_used
-
-            if not deduction_map:
-                st.info("No flower items found in any past orders. Nothing to backfill.")
-                return
-
-            # Build preview rows
-            preview_rows = []
-            for (item_name, branch_o), total_deduct in sorted(deduction_map.items()):
-                # Find current inventory item
-                inv_match = next(
-                    (i for i in all_inventory
-                     if i.get("name","").strip().upper() == item_name
-                     and i.get("branch","") == branch_o),
-                    None,
-                )
-                # Try base flower name if color-specific not found
-                if inv_match is None and " " in item_name:
-                    base_name = " ".join(item_name.split(" ")[1:])
-                    inv_match = next(
-                        (i for i in all_inventory
-                         if i.get("name","").strip().upper() == base_name
-                         and i.get("branch","") == branch_o),
-                        None,
-                    )
-                current_stock = int(inv_match.get("quantity",0)) if inv_match else "Not in inventory"
-                stock_after   = (current_stock - total_deduct) if isinstance(current_stock, int) else "Will be auto-created at 0"
-                preview_rows.append({
-                    "Flower / Color Item": item_name,
-                    "Branch": branch_o,
-                    "Total Qty to Deduct": total_deduct,
-                    "Current Stock": current_stock,
-                    "Stock After Backfill": stock_after,
-                })
-
-            df_preview = pd.DataFrame(preview_rows)
-
-            # Color-code by outcome
-            def _highlight(row):
-                after = row["Stock After Backfill"]
-                if isinstance(after, int) and after < 0:
-                    return ["background-color: #FFEBEE"] * len(row)
-                elif isinstance(after, int) and after == 0:
-                    return ["background-color: #FFF3E0"] * len(row)
-                elif not isinstance(after, int):
-                    return ["background-color: #F3E5F5"] * len(row)
-                return [""] * len(row)
-
-            st.markdown("**Preview — what will change:**")
-            st.dataframe(df_preview.style.apply(_highlight, axis=1), use_container_width=True, hide_index=True)
-
-            # Legend
-            st.markdown(
-                "🔴 Red rows = will go negative &nbsp;|&nbsp; "
-                "🟠 Orange rows = will hit 0 &nbsp;|&nbsp; "
-                "🟣 Purple rows = flower not in inventory (will be auto-created)"
-            )
-            st.divider()
-
-            # Confirm and apply
-            st.markdown("**Satisfied with the preview? Apply the deduction:**")
-            confirm = st.checkbox("✅ I have reviewed the preview and want to apply this backfill", key="bf_confirm")
-            if confirm:
-                if st.button("🚀 Apply Backfill Now", key="bf_apply_btn", type="primary"):
-                    with st.spinner("Applying backfill deductions..."):
-                        total_warnings = []
-                        for (item_name, branch_o), total_deduct in deduction_map.items():
-                            # Re-fetch fresh inventory to avoid stale reads
-                            fresh_inv = db.get_inventory()
-                            inv_match = next(
-                                (i for i in fresh_inv
-                                 if i.get("name","").strip().upper() == item_name
-                                 and i.get("branch","") == branch_o),
-                                None,
-                            )
-                            if inv_match is None and " " in item_name:
-                                base_name = " ".join(item_name.split(" ")[1:])
-                                inv_match = next(
-                                    (i for i in fresh_inv
-                                     if i.get("name","").strip().upper() == base_name
-                                     and i.get("branch","") == branch_o),
-                                    None,
-                                )
-                            if inv_match:
-                                new_qty = int(inv_match.get("quantity",0)) - total_deduct
-                                db.update_inventory_item(inv_match["id"], {"quantity": new_qty})
-                            else:
-                                # Auto-create with negative stock
-                                new_qty = -total_deduct
-                                db.save_inventory_item({
-                                    "id": str(uuid.uuid4())[:8],
-                                    "name": item_name,
-                                    "category": "🌹 Flowers",
-                                    "branch": branch_o,
-                                    "quantity": new_qty,
-                                    "unit": "pcs",
-                                    "unit_cost": 0.0,
-                                    "reorder_point": 10,
-                                    "notes": "Auto-created by inventory backfill. Please update unit cost.",
-                                    "created_at": datetime.now().isoformat(),
-                                })
-                            if new_qty < 0:
-                                total_warnings.append(f"🔴🔴 **{item_name}** ({branch_o}): {new_qty} pcs")
-                            elif new_qty == 0:
-                                total_warnings.append(f"🔴 **{item_name}** ({branch_o}): OUT OF STOCK")
-
-                    db._invalidate_all()
-                    st.success("✅ Backfill complete! All past orders have been deducted from inventory.")
-                    if total_warnings:
-                        st.markdown("**⚠️ Items that went to 0 or negative:**")
-                        for w in total_warnings:
-                            st.warning(w)
-                    st.session_state["bf_preview_ready"] = False
-                    st.rerun()
+                        else:
+                            for color in colors:
+                                key = (f"{color.upper()} {fname.upper()}", branch_o)
+                                deduction_map[key] = deduction_map.get(key,0) + qty_used
+                if not deduction_map:
+                    st.info("No flower items found. Nothing to backfill.")
+                else:
+                    preview_rows = []
+                    for (item_name, branch_o), total_d in sorted(deduction_map.items()):
+                        inv_match = next((i for i in all_inventory
+                            if i.get("name","").strip().upper()==item_name
+                            and i.get("branch","")==branch_o), None)
+                        if inv_match is None and " " in item_name:
+                            base = " ".join(item_name.split(" ")[1:])
+                            inv_match = next((i for i in all_inventory
+                                if i.get("name","").strip().upper()==base
+                                and i.get("branch","")==branch_o), None)
+                        curr  = int(inv_match.get("quantity",0)) if inv_match else "Not in inventory"
+                        after = (curr - total_d) if isinstance(curr,int) else f"Will be created at -{total_d}"
+                        preview_rows.append({"Flower":item_name,"Branch":branch_o,
+                            "Total to Deduct":total_d,"Current Stock":curr,"Stock After":after})
+                    df_preview = pd.DataFrame(preview_rows)
+                    def _hl(row):
+                        a = row["Stock After"]
+                        if isinstance(a,int) and a < 0:  return ["background-color:#FFEBEE"]*len(row)
+                        if isinstance(a,int) and a == 0: return ["background-color:#FFF3E0"]*len(row)
+                        if not isinstance(a,int):        return ["background-color:#F3E5F5"]*len(row)
+                        return [""]*len(row)
+                    st.dataframe(df_preview.style.apply(_hl,axis=1), use_container_width=True, hide_index=True)
+                    st.markdown("🔴 Red = goes negative &nbsp;|&nbsp; 🟠 Orange = hits 0 &nbsp;|&nbsp; 🟣 Purple = auto-created")
+                    st.divider()
+                    confirm = st.checkbox("✅ I reviewed the preview and want to apply this backfill", key="bf_confirm")
+                    if confirm:
+                        if st.button("🚀 Apply Backfill Now", key="bf_apply_btn", type="primary"):
+                            with st.spinner("Applying backfill..."):
+                                total_warnings = []
+                                for (item_name, branch_o), total_d in deduction_map.items():
+                                    fresh = db.get_inventory()
+                                    match = next((i for i in fresh
+                                        if i.get("name","").strip().upper()==item_name
+                                        and i.get("branch","")==branch_o), None)
+                                    if match is None and " " in item_name:
+                                        base = " ".join(item_name.split(" ")[1:])
+                                        match = next((i for i in fresh
+                                            if i.get("name","").strip().upper()==base
+                                            and i.get("branch","")==branch_o), None)
+                                    if match:
+                                        nq = int(match.get("quantity",0)) - total_d
+                                        db.update_inventory_item(match["id"], {"quantity": nq})
+                                        db.log_inventory_change(match["name"], branch_o, -total_d,
+                                            int(match.get("quantity",0)), nq, "Inventory backfill", "", CURRENT_USER.get("name",""))
+                                    else:
+                                        nq = -total_d
+                                        db.save_inventory_item({"id": str(uuid.uuid4())[:8],"name":item_name,
+                                            "category":"🌹 Flowers","branch":branch_o,"quantity":nq,
+                                            "unit":"pcs","unit_cost":0.0,"reorder_point":10,
+                                            "notes":"Auto-created by backfill.","created_at":datetime.now().isoformat()})
+                                        db.log_inventory_change(item_name, branch_o, -total_d, 0, nq,
+                                            "Inventory backfill (auto-created)", "", CURRENT_USER.get("name",""))
+                                    if nq <= 0: total_warnings.append(f"{'🔴🔴' if nq<0 else '🔴'} **{item_name}** ({branch_o}): {nq} pcs")
+                                db.set_system_flag("inventory_backfill_applied", datetime.now().strftime("%Y-%m-%d %H:%M"))
+                                db._invalidate_all()
+                            st.success("✅ Backfill complete!")
+                            if total_warnings:
+                                st.markdown("**Items at 0 or negative after backfill:**")
+                                for w in total_warnings: st.warning(w)
+                            st.session_state["bf_preview_ready"] = False
+                            st.rerun()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2007,6 +1886,13 @@ def page_waste_tracker():
                         "date": wdate.isoformat(), "logged_at": datetime.now().isoformat(),
                     })
                     st.success("✅ Waste entry logged!")
+                    waste_warns = db.deduct_inventory_for_waste(
+                        item, qty, branch, logged_by=CURRENT_USER.get("name","")
+                    )
+                    if waste_warns:
+                        for w in waste_warns: st.warning(w)
+                    else:
+                        st.info(f"📦 Deducted {qty} {unit} of **{item}** from inventory at **{branch}**.")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2144,8 +2030,7 @@ def page_reports():
 
     tab_labels = ["💰 Financial","🌹 Florists","🚴 Riders","📦 Inventory","🏆 Best Sellers","📍 Delivery Cities","📈 Restock Forecast","📅 Monthly","📆 Quarterly","🗓️ Yearly"]
     show_branch_compare = (CURRENT_ROLE == "Super Admin")
-    if show_branch_compare:
-        tab_labels.append("🏪 Branch Comparison")
+    if show_branch_compare: tab_labels.append("🏪 Branch Comparison")
     tabs = st.tabs(tab_labels)
     tab1,tab2,tab3,tab4,tab5,tab6,tab7,tab8,tab9,tab10 = tabs[:10]
     tab11 = tabs[10] if show_branch_compare else None
@@ -2355,135 +2240,47 @@ def page_reports():
     def render_period_report(tab, period_label, group_fn):
         with tab:
             st.markdown(f"##### {period_label} Sales & Performance Report")
-            rp_col1, rp_col2 = st.columns(2)
-            rp_branch = rp_col1.selectbox(
-                "Branch", ["All"] + (BRANCHES if (CURRENT_ROLE=="Super Admin" or CURRENT_BRANCH=="All") else [CURRENT_BRANCH]),
-                key=f"rp_branch_{period_label}"
-            )
-            rp_year = rp_col2.number_input(
-                "Year", min_value=2023, max_value=date.today().year+1,
-                value=date.today().year, step=1, key=f"rp_year_{period_label}"
-            )
-            # Filter orders for the selected year and branch
-            yr_orders = [
-                o for o in orders
-                if str(o.get("target_date",""))[:4] == str(rp_year)
-                and (rp_branch=="All" or o.get("fulfillment_branch", o.get("branch",""))==rp_branch)
-            ]
-            if not yr_orders:
-                st.info(f"No orders found for {rp_branch} in {rp_year}."); return
-
-            completed_r = [o for o in yr_orders if o["status"] in ("Delivered","Picked Up")]
-            revenue_r   = sum(float(o.get("total_price",0)) for o in completed_r)
-            waste_r     = [w for w in waste if str(w.get("date",""))[:4]==str(rp_year) and (rp_branch=="All" or w.get("branch","")==rp_branch)]
-            waste_cost_r= sum(float(w.get("cost",0)) for w in waste_r)
-            cod_r       = sum(float(o.get("total_balance",0)) for o in completed_r if o.get("balance_payment_method")=="COD")
-
-            m1,m2,m3,m4,m5 = st.columns(5)
-            m1.metric("📦 Total Orders",   len(yr_orders))
-            m2.metric("✅ Completed",      len(completed_r))
-            m3.metric("💰 Revenue",        f"₱{revenue_r:,.0f}")
-            m4.metric("📉 Waste Cost",     f"₱{waste_cost_r:,.0f}")
-            m5.metric("⚠️ COD Collected",  f"₱{cod_r:,.0f}")
+            rp1,rp2=st.columns(2)
+            rp_branch=rp1.selectbox("Branch",["All"]+(BRANCHES if (CURRENT_ROLE=="Super Admin" or CURRENT_BRANCH=="All") else [CURRENT_BRANCH]),key=f"rp_branch_{period_label}")
+            rp_year=rp2.number_input("Year",min_value=2023,max_value=date.today().year+1,value=date.today().year,step=1,key=f"rp_year_{period_label}")
+            yr_orders=[o for o in orders if str(o.get("target_date",""))[:4]==str(rp_year) and (rp_branch=="All" or o.get("fulfillment_branch",o.get("branch",""))==rp_branch)]
+            if not yr_orders: st.info(f"No orders found for {rp_branch} in {rp_year}."); return
+            completed_r=[o for o in yr_orders if o["status"] in ("Delivered","Picked Up")]
+            revenue_r=sum(float(o.get("total_price",0)) for o in completed_r)
+            waste_r=[w for w in waste if str(w.get("date",""))[:4]==str(rp_year) and (rp_branch=="All" or w.get("branch","")==rp_branch)]
+            waste_cost_r=sum(float(w.get("cost",0)) for w in waste_r)
+            cod_r=sum(float(o.get("total_balance",0)) for o in completed_r if o.get("balance_payment_method")=="COD")
+            m1,m2,m3,m4,m5=st.columns(5)
+            m1.metric("📦 Total Orders",len(yr_orders)); m2.metric("✅ Completed",len(completed_r))
+            m3.metric("💰 Revenue",f"₱{revenue_r:,.0f}"); m4.metric("📉 Waste Cost",f"₱{waste_cost_r:,.0f}"); m5.metric("⚠️ COD",f"₱{cod_r:,.0f}")
             st.divider()
-
-            # Group by period
-            period_data = {}
+            period_data={}
             for o in completed_r:
-                key = group_fn(o)
-                if key not in period_data:
-                    period_data[key] = {"orders":0,"revenue":0.0}
-                period_data[key]["orders"]  += 1
-                period_data[key]["revenue"] += float(o.get("total_price",0))
+                k=group_fn(o)
+                period_data[k]=period_data.get(k,{"orders":0,"revenue":0.0})
+                period_data[k]["orders"]+=1; period_data[k]["revenue"]+=float(o.get("total_price",0))
             if period_data:
-                st.markdown("**Revenue by Period**")
-                sorted_keys = sorted(period_data.keys())
-                fig,ax = plt.subplots(figsize=(10,4), facecolor="#FDF6F0")
-                ax.bar(sorted_keys, [period_data[k]["revenue"] for k in sorted_keys], color="#C85C8E", alpha=0.85)
-                ax.set_facecolor("#FDF6F0"); ax.grid(axis="y",alpha=0.3)
-                plt.xticks(rotation=30, ha="right", fontsize=9); ax.set_ylabel("Revenue (₱)")
-                plt.tight_layout(); st.pyplot(fig); plt.close(fig)
-                st.divider()
-                period_rows = [{"Period":k,"Orders":period_data[k]["orders"],"Revenue (₱)":f"₱{period_data[k]['revenue']:,.2f}"} for k in sorted_keys]
-                st.dataframe(pd.DataFrame(period_rows), use_container_width=True, hide_index=True)
-                st.divider()
-
-            # Top arrangements
-            arr_cnt = {}; arr_rev = {}
+                sk=sorted(period_data.keys())
+                fig,ax=plt.subplots(figsize=(10,4),facecolor="#FDF6F0")
+                ax.bar(sk,[period_data[k]["revenue"] for k in sk],color="#C85C8E",alpha=0.85)
+                ax.set_facecolor("#FDF6F0"); ax.grid(axis="y",alpha=0.3); plt.xticks(rotation=30,ha="right",fontsize=9); ax.set_ylabel("Revenue (₱)")
+                plt.tight_layout(); st.pyplot(fig); plt.close(fig); st.divider()
+                st.dataframe(pd.DataFrame([{"Period":k,"Orders":period_data[k]["orders"],"Revenue (₱)":f"₱{period_data[k]['revenue']:,.2f}"} for k in sk]),use_container_width=True,hide_index=True); st.divider()
+            arr_cnt={}; arr_rev={}
             for o in completed_r:
-                a = o.get("arrangement","Unknown")
-                arr_cnt[a] = arr_cnt.get(a,0) + int(o.get("quantity",1))
-                arr_rev[a] = arr_rev.get(a,0) + float(o.get("total_price",0))
+                a=o.get("arrangement","Unknown"); arr_cnt[a]=arr_cnt.get(a,0)+int(o.get("quantity",1)); arr_rev[a]=arr_rev.get(a,0)+float(o.get("total_price",0))
             if arr_cnt:
-                top5 = sorted(arr_cnt.items(), key=lambda x:x[1], reverse=True)[:5]
+                top5=sorted(arr_cnt.items(),key=lambda x:x[1],reverse=True)[:5]
                 st.markdown("**Top 5 Arrangements**")
-                st.dataframe(pd.DataFrame([{"Arrangement":a,"Units":u,"Revenue":f"₱{arr_rev.get(a,0):,.2f}"} for a,u in top5]), use_container_width=True, hide_index=True)
-                st.divider()
-
-            # Florist performance
-            f_perf = {}
-            for o in completed_r:
-                fn = o.get("assigned_florist","")
-                if fn: f_perf[fn] = f_perf.get(fn,{"orders":0,"revenue":0.0}); f_perf[fn]["orders"]+=1; f_perf[fn]["revenue"]+=float(o.get("total_price",0))
-            if f_perf:
-                st.markdown("**Florist Performance**")
-                st.dataframe(pd.DataFrame([{"Florist":fn,"Completed Orders":d["orders"],"Revenue Handled (₱)":f"₱{d['revenue']:,.2f}"} for fn,d in sorted(f_perf.items(),key=lambda x:x[1]["orders"],reverse=True)]), use_container_width=True, hide_index=True)
-                st.divider()
-
-            # Rider performance
-            r_perf = {}
-            for o in completed_r:
-                rn = o.get("assigned_rider","")
-                if rn:
-                    r_perf[rn] = r_perf.get(rn,{"deliveries":0,"cod":0.0})
-                    r_perf[rn]["deliveries"] += 1
-                    if o.get("balance_payment_method")=="COD": r_perf[rn]["cod"]+=float(o.get("total_balance",0))
-            if r_perf:
-                st.markdown("**Rider Performance**")
-                st.dataframe(pd.DataFrame([{"Rider":rn,"Deliveries":d["deliveries"],"COD Collected (₱)":f"₱{d['cod']:,.2f}"} for rn,d in sorted(r_perf.items(),key=lambda x:x[1]["deliveries"],reverse=True)]), use_container_width=True, hide_index=True)
-                st.divider()
-
-            # Branch breakdown (Super Admin + All branches only)
+                st.dataframe(pd.DataFrame([{"Arrangement":a,"Units":u,"Revenue":f"₱{arr_rev.get(a,0):,.2f}"} for a,u in top5]),use_container_width=True,hide_index=True); st.divider()
             if CURRENT_ROLE=="Super Admin" and rp_branch=="All":
-                b_rev = {}
-                for o in completed_r:
-                    b = o.get("fulfillment_branch", o.get("branch","Unknown"))
-                    b_rev[b] = b_rev.get(b,0) + float(o.get("total_price",0))
-                st.markdown("**Revenue by Branch**")
-                st.dataframe(pd.DataFrame([{"Branch":b,"Revenue (₱)":f"₱{r:,.2f}"} for b,r in sorted(b_rev.items(),key=lambda x:x[1],reverse=True)]), use_container_width=True, hide_index=True)
-                st.divider()
-
-            # Export
-            export_rows = [{
-                "Order Code": o.get("order_code",""), "Customer": o.get("customer_name",""),
-                "Branch": o.get("fulfillment_branch",o.get("branch","")),
-                "Arrangement": o.get("arrangement",""), "Quantity": o.get("quantity",1),
-                "Total Price": o.get("total_price",0), "Status": o.get("status",""),
-                "Florist": o.get("assigned_florist",""), "Rider": o.get("assigned_rider",""),
-                "Target Date": str(o.get("target_date",""))[:10],
-            } for o in yr_orders]
-            st.download_button(
-                f"⬇️ Export {period_label} Report CSV",
-                data=pd.DataFrame(export_rows).to_csv(index=False).encode("utf-8"),
-                file_name=f"report_{period_label.lower().replace(' ','_')}_{rp_year}_{rp_branch.replace(' ','_')}.csv",
-                mime="text/csv", use_container_width=True,
-            )
-
-    # Monthly: group by YYYY-MM (Month Name)
-    render_period_report(tab8, "Monthly",
-        lambda o: date.fromisoformat(str(o.get("target_date","2000-01-01"))[:10]).strftime("%Y-%m (%B)")
-    )
-
-    # Quarterly: group by Q1/Q2/Q3/Q4
-    render_period_report(tab9, "Quarterly",
-        lambda o: f"Q{(date.fromisoformat(str(o.get('target_date','2000-01-01'))[:10]).month-1)//3+1} {str(o.get('target_date','2000'))[:4]}"
-    )
-
-    # Yearly: group by year (single bar)
-    render_period_report(tab10, "Yearly",
-        lambda o: str(o.get("target_date","2000-01-01"))[:4]
-    )
-
+                b_rev={}
+                for o in completed_r: b=o.get("fulfillment_branch",o.get("branch","Unknown")); b_rev[b]=b_rev.get(b,0)+float(o.get("total_price",0))
+                st.markdown("**Revenue by Branch**"); st.dataframe(pd.DataFrame([{"Branch":b,"Revenue (₱)":f"₱{r:,.2f}"} for b,r in sorted(b_rev.items(),key=lambda x:x[1],reverse=True)]),use_container_width=True,hide_index=True); st.divider()
+            st.download_button(f"⬇️ Export {period_label} CSV",data=pd.DataFrame([{"Order Code":o.get("order_code",""),"Customer":o.get("customer_name",""),"Branch":o.get("fulfillment_branch",o.get("branch","")),"Total":o.get("total_price",0),"Status":o.get("status",""),"Target Date":str(o.get("target_date",""))[:10]} for o in yr_orders]).to_csv(index=False).encode("utf-8"),file_name=f"report_{period_label.lower().replace(' ','_')}_{rp_year}.csv",mime="text/csv",use_container_width=True)
+    render_period_report(tab8,"Monthly",lambda o:date.fromisoformat(str(o.get("target_date","2000-01-01"))[:10]).strftime("%Y-%m (%B)"))
+    render_period_report(tab9,"Quarterly",lambda o:f"Q{(date.fromisoformat(str(o.get('target_date','2000-01-01'))[:10]).month-1)//3+1} {str(o.get('target_date','2000'))[:4]}")
+    render_period_report(tab10,"Yearly",lambda o:str(o.get("target_date","2000-01-01"))[:4])
     # ── BRANCH COMPARISON (Super Admin only) ────────────────────────────────
     if show_branch_compare:
         with tab11:
