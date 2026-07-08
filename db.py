@@ -312,11 +312,21 @@ def verify_login(pin: str) -> Optional[dict]:
     """Return the matching active staff account for this PIN, or None."""
     if not pin:
         return None
-    accounts = get_staff_accounts()
+    # Always fetch fresh — bypass cache so login sees the latest accounts
+    try:
+        accounts = _select("staff_accounts")
+    except Exception:
+        accounts = []
     for a in accounts:
-        if not a.get("active", True):
+        # active field: treat missing/None as True for backwards compat
+        is_active = a.get("active")
+        if is_active is False:
             continue
-        if _hash_pin(pin, a.get("pin_salt","")) == a.get("pin_hash",""):
+        stored_salt = a.get("pin_salt") or ""
+        stored_hash = a.get("pin_hash") or ""
+        if not stored_hash:
+            continue
+        if _hash_pin(pin, stored_salt) == stored_hash:
             return a
     return None
 
