@@ -316,7 +316,7 @@ def verify_login(pin: str) -> Optional[dict]:
     for a in accounts:
         if not a.get("active", True):
             continue
-        if _hash_pin(a.get("pin_salt",""), pin) == a.get("pin_hash",""):
+        if _hash_pin(pin, a.get("pin_salt","")) == a.get("pin_hash",""):
             return a
     return None
 
