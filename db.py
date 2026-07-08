@@ -316,7 +316,7 @@ def verify_login(pin: str) -> Optional[dict]:
     for a in accounts:
         if not a.get("active", True):
             continue
-        if _hash_pin(pin, a.get("pin_salt", "")) == a.get("pin_hash"):
+        if _hash_pin(a.get("pin_salt",""), pin) == a.get("pin_hash",""):
             return a
     return None
 
@@ -333,136 +333,209 @@ def pin_in_use(pin: str, exclude_id: str = None) -> bool:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# INVENTORY AUTO-DEDUCTION (color-aware)
+# INVENTORY AUTO-DEDUCTION (color-aware, allows negative stock)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def deduct_inventory_for_order(flower_items: list, branch: str) -> list:
+def deduct_inventory_for_order(flower_items: list, branch: str, order_id: str = "", logged_by: str = "") -> list:
     """
     Deduct flower quantities from inventory when an order is logged.
-
-    Color logic:
-    - For each flower + color combination, the full qty is deducted.
-      e.g. China Roses ×4, [Red, Pink] → RED CHINA ROSES ×4 AND PINK CHINA ROSES ×4
-    - Item name format: "{COLOR} {FLOWER NAME}" (e.g. "RED CHINA ROSES")
-    - Lookup order:
-        1. Try color-specific item first  → "{COLOR} {FLOWER}"
-        2. Fall back to base flower name  → "{FLOWER}"
-        3. If neither found → auto-create color-specific item with 0 stock + warn
-
-    Returns a list of warning/info strings.
+    Color logic: "{COLOR} {FLOWER}" format (e.g. RED CHINA ROSES)
+    Falls back to base flower if color-specific not found.
+    Auto-creates with negative qty if neither found.
+    Allows negative stock to show shortfall.
     """
     if not flower_items:
         return []
-
     inventory = get_inventory()
     warnings  = []
 
-    def _find_item(name: str) -> dict | None:
-        """Case-insensitive match by name and branch."""
-        return next(
-            (i for i in inventory
-             if i.get("name","").strip().lower() == name.strip().lower()
-             and i.get("branch","") == branch),
-            None,
-        )
+    def _find(name):
+        return next((i for i in inventory
+            if i.get("name","").strip().lower() == name.strip().lower()
+            and i.get("branch","") == branch), None)
 
-    def _deduct(item: dict, qty_used: int, display_name: str):
-        """Deduct qty from an inventory item and append any stock warnings.
-        Allows quantity to go negative to show exactly how short the stock
-        is (e.g. -6 means 6 pcs were used beyond what was available)."""
+    def _deduct(item, qty_used, display_name):
         current_qty = int(item.get("quantity", 0))
         new_qty     = current_qty - qty_used
         update_inventory_item(item["id"], {"quantity": new_qty})
+        log_inventory_change(
+            item.get("name", display_name), item.get("branch", branch),
+            -qty_used, current_qty, new_qty, "Order deduction", order_id, logged_by
+        )
         reorder = int(item.get("reorder_point", 10))
         if new_qty < 0:
             warnings.append(
                 f"🔴🔴 **{display_name}** is now **NEGATIVE STOCK ({new_qty} {item.get('unit','pcs')})** "
-                f"at **{branch}** — you used more than what's on hand. Restock urgently and double-check this order."
+                f"at **{branch}** — used more than on hand. Restock urgently."
             )
         elif new_qty == 0:
-            warnings.append(
-                f"🔴 **{display_name}** is now **OUT OF STOCK** at **{branch}**. "
-                f"Please restock immediately."
-            )
+            warnings.append(f"🔴 **{display_name}** is now **OUT OF STOCK** at **{branch}**.")
         elif new_qty <= reorder:
             warnings.append(
                 f"🟡 **{display_name}** is now at **{new_qty} {item.get('unit','pcs')}** "
-                f"at **{branch}** — below reorder point ({reorder}). Consider restocking soon."
+                f"at **{branch}** — below reorder point ({reorder})."
             )
 
     for fi in flower_items:
         flower_name = fi.get("flower","").strip()
         qty_used    = int(fi.get("qty", 1))
         colors      = [c for c in fi.get("colors",[]) if c and c.lower() != "any"]
+        if not flower_name: continue
 
-        if not flower_name:
-            continue
-
-        # If no specific color (or color is "Any"), deduct from base flower only
         if not colors:
-            item = _find_item(flower_name)
+            item = _find(flower_name)
             if item:
                 _deduct(item, qty_used, flower_name)
             else:
-                # Auto-create base flower with 0 stock
-                new_item = {
-                    "id": str(uuid.uuid4())[:8],
-                    "name": flower_name,
-                    "category": "🌹 Flowers",
-                    "branch": branch,
-                    "quantity": 0,
-                    "unit": "pcs",
-                    "unit_cost": 0.0,
-                    "reorder_point": 10,
+                new_qty = -qty_used
+                new_item = {"id": str(uuid.uuid4())[:8], "name": flower_name,
+                    "category": "🌹 Flowers", "branch": branch, "quantity": new_qty,
+                    "unit": "pcs", "unit_cost": 0.0, "reorder_point": 10,
                     "notes": "Auto-added from order. Please update unit cost and reorder point.",
-                    "created_at": datetime.now().isoformat(),
-                }
+                    "created_at": datetime.now().isoformat()}
                 _insert("inventory", new_item)
-                inventory.append(new_item)  # keep local list fresh
+                inventory.append(new_item)
+                log_inventory_change(flower_name, branch, new_qty, 0, new_qty, "Auto-created from order", order_id, logged_by)
                 warnings.append(
-                    f"⚠️ **{flower_name}** was not in inventory for **{branch}**. "
-                    f"Auto-added with **0 stock**. Please update it in 📦 Inventory."
+                    f"🔴🔴 **{flower_name}** was not in inventory for **{branch}**. "
+                    f"Auto-added with **{new_qty} stock**. Please update in 📦 Inventory."
                 )
             continue
 
-        # Per-color deduction — full qty deducted for each color
         for color in colors:
             color_item_name = f"{color.upper()} {flower_name.upper()}"
-
-            # 1. Try color-specific first
-            item = _find_item(color_item_name)
+            item = _find(color_item_name)
             if item:
                 _deduct(item, qty_used, color_item_name)
                 continue
-
-            # 2. Fall back to base flower
-            base_item = _find_item(flower_name)
+            base_item = _find(flower_name)
             if base_item:
-                warnings.append(
-                    f"ℹ️ **{color_item_name}** not found — deducting from base item "
-                    f"**{flower_name}** instead."
-                )
+                warnings.append(f"ℹ️ **{color_item_name}** not found — deducting from base **{flower_name}** instead.")
                 _deduct(base_item, qty_used, flower_name)
                 continue
-
-            # 3. Neither found — auto-create color-specific item with 0 stock
-            new_item = {
-                "id": str(uuid.uuid4())[:8],
-                "name": color_item_name,
-                "category": "🌹 Flowers",
-                "branch": branch,
-                "quantity": 0,
-                "unit": "pcs",
-                "unit_cost": 0.0,
-                "reorder_point": 10,
+            new_qty = -qty_used
+            new_item = {"id": str(uuid.uuid4())[:8], "name": color_item_name,
+                "category": "🌹 Flowers", "branch": branch, "quantity": new_qty,
+                "unit": "pcs", "unit_cost": 0.0, "reorder_point": 10,
                 "notes": "Auto-added from order. Please update unit cost and reorder point.",
-                "created_at": datetime.now().isoformat(),
-            }
+                "created_at": datetime.now().isoformat()}
             _insert("inventory", new_item)
-            inventory.append(new_item)  # keep local list fresh for subsequent loops
+            inventory.append(new_item)
+            log_inventory_change(color_item_name, branch, new_qty, 0, new_qty, "Auto-created from order", order_id, logged_by)
             warnings.append(
-                f"⚠️ **{color_item_name}** was not in inventory for **{branch}**. "
-                f"Auto-added with **0 stock**. Please update it in 📦 Inventory."
+                f"🔴🔴 **{color_item_name}** was not in inventory for **{branch}**. "
+                f"Auto-added with **{new_qty} stock**. Please update in 📦 Inventory."
             )
-
     return warnings
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# INVENTORY RETURN (cancel / edit order)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def return_inventory_for_order(flower_items: list, branch: str, reason: str, order_id: str = "", logged_by: str = "") -> list:
+    """Return flower quantities to inventory (cancel or edit order)."""
+    if not flower_items:
+        return []
+    inventory = get_inventory()
+    info = []
+
+    def _find(name):
+        return next((i for i in inventory
+            if i.get("name","").strip().lower() == name.strip().lower()
+            and i.get("branch","") == branch), None)
+
+    for fi in flower_items:
+        flower_name = fi.get("flower","").strip()
+        qty_return  = int(fi.get("qty", 1))
+        colors      = [c for c in fi.get("colors",[]) if c and c.lower() != "any"]
+        if not flower_name: continue
+
+        targets = [(f"{c.upper()} {flower_name.upper()}", flower_name) for c in colors] if colors else [(flower_name, flower_name)]
+
+        for (item_name, base_name) in targets:
+            match = _find(item_name) or _find(base_name)
+            if match:
+                qty_before = int(match.get("quantity", 0))
+                qty_after  = qty_before + qty_return
+                update_inventory_item(match["id"], {"quantity": qty_after})
+                log_inventory_change(match["name"], branch, +qty_return, qty_before, qty_after, reason, order_id, logged_by)
+                info.append(f"↩️ Returned **{qty_return} pcs** of **{match['name']}** to **{branch}** (now {qty_after} pcs)")
+            else:
+                info.append(f"ℹ️ **{item_name}** not found in inventory — nothing returned.")
+    return info
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# WASTE → INVENTORY DEDUCTION
+# ─────────────────────────────────────────────────────────────────────────────
+
+def deduct_inventory_for_waste(item_name: str, qty: int, branch: str, logged_by: str = "") -> list:
+    """Deduct from inventory when a waste entry is logged."""
+    inventory = get_inventory()
+    warnings  = []
+    match = next((i for i in inventory
+        if i.get("name","").strip().lower() == item_name.strip().lower()
+        and i.get("branch","") == branch), None)
+
+    if match is None:
+        new_qty = -qty
+        _insert("inventory", {"id": str(uuid.uuid4())[:8], "name": item_name,
+            "category": "🌹 Flowers", "branch": branch, "quantity": new_qty,
+            "unit": "pcs", "unit_cost": 0.0, "reorder_point": 10,
+            "notes": "Auto-created by waste log. Please update unit cost.",
+            "created_at": datetime.now().isoformat()})
+        log_inventory_change(item_name, branch, -qty, 0, new_qty, "Waste deduction (auto-created)", "", logged_by)
+        warnings.append(f"⚠️ **{item_name}** was not in inventory. Auto-added with **{new_qty} pcs** at **{branch}**.")
+    else:
+        qty_before = int(match.get("quantity", 0))
+        qty_after  = qty_before - qty
+        update_inventory_item(match["id"], {"quantity": qty_after})
+        log_inventory_change(match["name"], branch, -qty, qty_before, qty_after, "Waste deduction", "", logged_by)
+        if qty_after < 0:
+            warnings.append(f"🔴🔴 **{item_name}** is now at **{qty_after} pcs** at **{branch}** after waste deduction.")
+        elif qty_after == 0:
+            warnings.append(f"🔴 **{item_name}** is now **OUT OF STOCK** at **{branch}** after waste deduction.")
+    return warnings
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# INVENTORY AUDIT LOG
+# ─────────────────────────────────────────────────────────────────────────────
+
+@st.cache_data(ttl=CACHE_TTL)
+def get_inventory_logs() -> list:
+    return _select("inventory_logs")
+
+def log_inventory_change(item_name, branch, change_qty, qty_before, qty_after, reason, order_id="", logged_by=""):
+    try:
+        _insert("inventory_logs", {
+            "id": str(uuid.uuid4())[:8], "item_name": item_name, "branch": branch,
+            "change_qty": change_qty, "qty_before": qty_before, "qty_after": qty_after,
+            "reason": reason, "order_id": order_id, "logged_by": logged_by,
+            "created_at": datetime.now().isoformat(),
+        })
+    except Exception:
+        pass  # Never block an order save due to log failure
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SYSTEM FLAGS (backfill protection etc.)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def get_system_flag(key: str):
+    try:
+        sb  = get_supabase()
+        res = sb.table("system_flags").select("*").eq("key", key).execute()
+        if res.data: return res.data[0].get("value")
+    except Exception:
+        pass
+    return None
+
+def set_system_flag(key: str, value: str):
+    try:
+        get_supabase().table("system_flags").upsert(
+            {"key": key, "value": value, "set_at": datetime.now().isoformat()}
+        ).execute()
+    except Exception:
+        pass
