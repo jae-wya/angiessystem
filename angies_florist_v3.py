@@ -93,7 +93,7 @@ WASTE_REASONS = ["Wilted","Damaged","Miscalculation","Customer Return","Expired"
 ARRANGEMENTS = [
     "CHINA ROSES","ECUADORIAN ROSES","PAPER ROSES/LISIATHUS","STARGAZERS",
     "YELLOWIN","CASA BLANCA","CARNATIONS","GERBERA","SUNLIGHT","PEONY","LIPIDIUM",
-    "CALLA LILY", "GYPSO","STATICE","ORCHIDS","AMARATHUS","SNAPDRAGON,
+    "CALLA LILY","GYPSO","STATICE","ORCHIDS","AMARATHUS","SNAPDRAGON",
     "SUNFLOWER","HYDRANGEAS","CHAMOMILE","TULIPS","MUMS","PINGPONG",
     "Apricot Bloom","Pink Dreams","Purple Serenade","Blush Amour",
     "Sunset Blooms","Barbie Fantasy","Blush Petals","Ruby Whisper",
