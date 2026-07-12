@@ -84,15 +84,16 @@ STATUS_FLOW = ["Pending","Confirmed","In Progress","Ready","Delivered","Picked U
 SOURCE_PAGES = ["Facebook","Instagram","WhatsApp","TikTok","Website","Walk-in","Other"]
 PAYMENT_METHODS_BALANCE = ["COD","GCash","Bank Transfer","Cash","Maya"]
 PAYMENT_METHODS_DIGITAL = ["GCash","Bank Transfer","Cash","Maya"]
-OCCASIONS = ["Birthday","Anniversary","Valentine's Day","Mother's Day","Sympathy","Wedding","Just Because","Corporate","Other"]
+OCCASIONS = ["Birthday","Anniversary","Valentine's Day","Mother's Day","Graduation","Sympathy","Wedding","Just Because","Corporate","Other"]
 CANCELLATION_REASONS = ["Customer request","Out of stock","Wrong order","Payment failed","Other"]
 DELIVERY_FAILURE_REASONS = ["Needs Redelivery","Customer Refused","Address Invalid","Contact Unavailable","Other"]
-COLOR_PREFERENCES = ["Any","Red","Pink","White","Purple","Yellow","Orange","Mixed","Custom"]
-DELIVERY_ZONES = ["Calamba","Los Baños","Calauan","Cabuyao","Sta. Rosa","Biñan","San Pedro","Bay","San Pablo","Alaminos","Quezon","Batangas","Victoria","Pila","Sta. Cruz","Pagsanjan","Lumban","Rizal","Nagcarlan","Liliw","N/A"]
+COLOR_PREFERENCES = ["Any","Red","Two-tone Red","Pink","Two-tone Pink","White","Purple","Two-tone Purple","Yellow","Orange","Two-tone Orange","Blue","Green","Brown","Mixed","Custom"]
+DELIVERY_ZONES = ["Calamba","Los Baños","Calauan","Cabuyao","Sta. Rosa","Biñan","San Pedro","Bay","San Pablo","Alaminos","Quezon","Batangas","Victoria","Pila","Sta. Cruz","Pagsanjan","Lumban","Rizal","Nagcarlan","Liliw","PICK UP","N/A"]
 WASTE_REASONS = ["Wilted","Damaged","Miscalculation","Customer Return","Expired","Other"]
 ARRANGEMENTS = [
     "CHINA ROSES","ECUADORIAN ROSES","PAPER ROSES/LISIATHUS","STARGAZERS",
-    "YELLOWIN","CASA BLANCA","CARNATIONS","GERBERA","SUNLIGHT","PEONY",
+    "YELLOWIN","CASA BLANCA","CARNATIONS","GERBERA","SUNLIGHT","PEONY","LIPIDIUM",
+    "CALLA LILY", "GYPSO","STATICE","ORCHIDS","AMARATHUS","SNAPDRAGON,
     "SUNFLOWER","HYDRANGEAS","CHAMOMILE","TULIPS","MUMS","PINGPONG",
     "Apricot Bloom","Pink Dreams","Purple Serenade","Blush Amour",
     "Sunset Blooms","Barbie Fantasy","Blush Petals","Ruby Whisper",
@@ -1297,6 +1298,162 @@ def page_florist_board():
                 cols = st.columns(min(3, len(inspo_pics)))
                 for idx, pic_url in enumerate(inspo_pics):
                     cols[idx % len(cols)].image(pic_url, caption=f"Reference {idx+1}", use_container_width=True)
+
+            # ── Print button ───────────────────────────────────────────────
+            if fi_list:
+                print_flower_rows = "".join(
+                    "<tr><td><strong>" + fi.get("flower","") + "</strong></td>"
+                    "<td style='text-align:center;'>" + str(fi.get("qty",1)) + "</td>"
+                    "<td>" + ", ".join(fi.get("colors", ["Any"])) + "</td></tr>"
+                    for fi in fi_list
+                )
+                print_flower_block = (
+                    "<table class='flower-table'>"
+                    "<thead><tr><th>Flower</th><th>Qty</th><th>Colors</th></tr></thead>"
+                    "<tbody>" + print_flower_rows + "</tbody>"
+                    "</table>"
+                )
+            else:
+                print_flower_block = (
+                    "<table class='flower-table'><tbody>"
+                    "<tr><td><strong>Arrangement:</strong></td><td>" + o.get("arrangement","") + "</td></tr>"
+                    "<tr><td><strong>Quantity:</strong></td><td>" + str(o.get("quantity",1)) + " pc(s)</td></tr>"
+                    "</tbody></table>"
+                )
+
+            if has_msg_card:
+                print_msg_block = (
+                    "<div class='section-box'>"
+                    "<div class='section-title'>💌 Message Card</div>"
+                    "<p><strong>To:</strong> " + msg_to_val + "</p>"
+                    "<p style='margin:6px 0;'>" + msg_body_val + "</p>"
+                    "<p><strong>From:</strong> " + msg_from_val + "</p>"
+                    "</div>"
+                )
+            else:
+                print_msg_block = ""
+
+            inspo_pics = o.get("inspo_pictures", [])
+            if inspo_pics:
+                pic_tags = "".join(
+                    "<img src='" + url + "' alt='Inspiration " + str(i+1) + "' "
+                    "style='max-width:180px; max-height:180px; object-fit:cover; "
+                    "border-radius:6px; border:1px solid #ddd;' />"
+                    for i, url in enumerate(inspo_pics)
+                )
+                print_inspo_block = (
+                    "<div class='section-box'>"
+                    "<div class='section-title'>📸 Inspiration Pictures</div>"
+                    "<div style='display:flex; flex-wrap:wrap; gap:10px; margin-top:8px;'>"
+                    + pic_tags +
+                    "</div></div>"
+                )
+            else:
+                print_inspo_block = ""
+
+            sub_text = ("Substitutions allowed. " + o.get("substitution_notes","")).strip() if o.get("allow_substitution") else "No substitutions."
+            rush_banner = "<div class='rush-banner'>🚀 RUSH ORDER — PRIORITISE IMMEDIATELY</div>" if o.get("priority_rush") else ""
+            order_type_label = "🚴 DELIVERY" if o.get("order_type") == "Delivery" else "🛍 PICK-UP"
+            branch_name = o.get("fulfillment_branch", o.get("branch",""))
+            print_timestamp = datetime.now().strftime("%b %d, %Y %I:%M %p")
+
+            print_html = (
+                "<!DOCTYPE html><html lang='en'><head>"
+                "<meta charset='UTF-8'/>"
+                "<meta name='viewport' content='width=device-width, initial-scale=1.0'/>"
+                "<title>Order " + order_code + " — Angie's Florist</title>"
+                "<style>"
+                "* { box-sizing: border-box; margin: 0; padding: 0; }"
+                "body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 14px; color: #111; background: #fff; padding: 28px 36px; line-height: 1.5; }"
+                ".shop-name { font-size: 22px; font-weight: 700; color: #C85C8E; letter-spacing: 0.5px; }"
+                ".sheet-title { font-size: 13px; color: #666; margin-top: 2px; }"
+                ".divider { border: none; border-top: 2px solid #C85C8E; margin: 12px 0 16px; }"
+                ".rush-banner { background: #C85C8E; color: #fff; font-size: 16px; font-weight: 700; text-align: center; padding: 10px; border-radius: 6px; margin-bottom: 14px; letter-spacing: 0.5px; }"
+                ".date-hero { background: #FDF0F7; border: 2px solid #C85C8E; border-radius: 8px; padding: 12px 18px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; }"
+                ".date-hero .label { font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }"
+                ".date-hero .value { font-size: 22px; font-weight: 800; color: #C85C8E; }"
+                ".date-hero .order-code { font-size: 18px; font-weight: 700; color: #333; }"
+                ".info-grid { display: grid; grid-template-columns: 160px 1fr; gap: 4px 12px; margin-bottom: 16px; }"
+                ".info-grid .key { font-weight: 600; color: #555; padding: 4px 0; border-bottom: 1px solid #f0f0f0; }"
+                ".info-grid .val { color: #111; padding: 4px 0; border-bottom: 1px solid #f0f0f0; }"
+                ".section-box { border: 1px solid #e8d0dc; border-radius: 8px; padding: 12px 16px; margin-bottom: 14px; background: #FFFAFE; }"
+                ".section-title { font-size: 13px; font-weight: 700; color: #C85C8E; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }"
+                ".flower-table { width: 100%; border-collapse: collapse; font-size: 14px; }"
+                ".flower-table th { background: #FDF0F7; color: #C85C8E; font-weight: 700; padding: 7px 10px; text-align: left; border-bottom: 2px solid #C85C8E; }"
+                ".flower-table td { padding: 7px 10px; border-bottom: 1px solid #f0e4ec; }"
+                ".flower-table tr:last-child td { border-bottom: none; }"
+                ".checklist { display: flex; gap: 24px; margin-top: 6px; flex-wrap: wrap; }"
+                ".checklist-item { display: flex; align-items: center; gap: 8px; font-size: 14px; }"
+                ".checklist-item .box { width: 20px; height: 20px; border: 2px solid #C85C8E; border-radius: 3px; display: inline-block; flex-shrink: 0; }"
+                ".footer { margin-top: 20px; border-top: 1px solid #e0d0d8; padding-top: 10px; font-size: 11px; color: #aaa; display: flex; justify-content: space-between; }"
+                "@media print { body { padding: 16px 20px; } @page { margin: 12mm 14mm; size: A4; } }"
+                "</style></head><body>"
+                "<div class='shop-name'>🌹 Angie's Florist</div>"
+                "<div class='sheet-title'>Florist Production Sheet &nbsp;·&nbsp; Printed " + print_timestamp + "</div>"
+                "<hr class='divider' />"
+                + rush_banner +
+                "<div class='date-hero'>"
+                "<div>"
+                "<div class='label'>Target Date &amp; Time</div>"
+                "<div class='value'>" + str(o.get("target_date",""))[:10] + " &nbsp;at&nbsp; " + o.get("target_time","") + "</div>"
+                "</div>"
+                "<div style='text-align:right;'>"
+                "<div class='label'>Order Code</div>"
+                "<div class='order-code'>" + order_code + "</div>"
+                "<div style='font-size:12px; color:#888; margin-top:4px;'>" + order_type_label + "</div>"
+                "</div></div>"
+                "<div class='info-grid'>"
+                "<div class='key'>Customer</div>"
+                "<div class='val'>" + o.get("customer_name","") + " &nbsp;·&nbsp; " + o.get("customer_contact","") + "</div>"
+                "<div class='key'>Assigned Florist</div>"
+                "<div class='val'><strong>" + florist + "</strong></div>"
+                "<div class='key'>Occasion</div>"
+                "<div class='val'>" + o.get("occasion","—") + "</div>"
+                "<div class='key'>Substitutions</div>"
+                "<div class='val'>" + sub_text + "</div>"
+                "<div class='key'>Branch</div>"
+                "<div class='val'>" + branch_name + "</div>"
+                "</div>"
+                "<div class='section-box'><div class='section-title'>🌸 Flower Details</div>" + print_flower_block + "</div>"
+                "<div class='section-box'><div class='section-title'>📝 Special Instructions</div>"
+                "<p style='white-space:pre-wrap;'>" + o.get("notes","None") + "</p></div>"
+                + print_msg_block
+                + print_inspo_block +
+                "<div class='section-box'><div class='section-title'>✅ Production Checklist</div>"
+                "<div class='checklist'>"
+                "<div class='checklist-item'><span class='box'></span> Flowers prepared</div>"
+                "<div class='checklist-item'><span class='box'></span> Arranged</div>"
+                "<div class='checklist-item'><span class='box'></span> Quality checked</div>"
+                "<div class='checklist-item'><span class='box'></span> Ready</div>"
+                "</div></div>"
+                "<div class='footer'>"
+                "<span>Angie's Florist Digital Management System</span>"
+                "<span>Branch: " + branch_name + " &nbsp;·&nbsp; Printed: " + print_timestamp + "</span>"
+                "</div>"
+                "<script>window.addEventListener('load', function() { window.print(); });</script>"
+                "</body></html>"
+            )
+
+            print_key = f"print_triggered_{order_code}"
+            if st.button("🖨️ Print Order Sheet", key=f"print_btn_{order_code}", use_container_width=False):
+                st.session_state[print_key] = True
+
+            if st.session_state.get(print_key):
+                import base64
+                import streamlit.components.v1 as components
+                b64 = base64.b64encode(print_html.encode("utf-8")).decode("utf-8")
+                trigger_js = (
+                    "<script>"
+                    "(function() {"
+                    "var html = atob('" + b64 + "');"
+                    "var win = window.open('', '_blank');"
+                    "if (win) { win.document.open(); win.document.write(html); win.document.close(); }"
+                    "else { alert('Pop-up blocked! Please allow pop-ups for this page and try again.'); }"
+                    "})();"
+                    "</script>"
+                )
+                components.html(trigger_js, height=0, scrolling=False)
+                st.session_state[print_key] = False
 
             # ── Full status workflow ───────────────────────────────────────
             st.markdown("---")
