@@ -1336,18 +1336,23 @@ def page_florist_board():
             inspo_pics = o.get("inspo_pictures", [])
             if inspo_pics:
                 pic_tags = "".join(
+                    "<div style='width:100%; margin-bottom:20px;'>"
+                    "<p style='font-size:13px; color:#888; margin-bottom:6px;'>Reference " + str(i+1) + "</p>"
                     "<img src='" + url + "' alt='Inspiration " + str(i+1) + "' "
-                    "style='max-width:180px; max-height:180px; object-fit:cover; "
-                    "border-radius:6px; border:1px solid #ddd;' />"
-                    for i, url in enumerate(inspo_pics)
+                    "style='width:100%; max-width:100%; height:auto; object-fit:contain; "
+                    "border-radius:8px; border:2px solid #e8d0dc; display:block;' />"
+                    "</div>"
+                    
+            for i, url in enumerate(inspo_pics)
                 )
                 print_inspo_block = (
                     "<div class='section-box'>"
                     "<div class='section-title'>📸 Inspiration Pictures</div>"
-                    "<div style='display:flex; flex-wrap:wrap; gap:10px; margin-top:8px;'>"
+                    "<div style='display:flex; flex-direction:column; gap:6px; margin-top:8px;'>"
                     + pic_tags +
                     "</div></div>"
                 )
+                
             else:
                 print_inspo_block = ""
 
