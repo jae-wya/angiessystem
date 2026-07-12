@@ -135,7 +135,13 @@ PAGE_ACCESS = {
 }
 
 # Session state defaults
-for k, v in [("active_page","Dashboard"), ("edit_order_id",None), ("auth_user",None)]:
+_SESSION_DEFAULTS = {
+    "active_page": "Dashboard",
+    "edit_order_id": None,
+    "auth_user": None,
+    "bf_preview_ready": False,
+}
+for k, v in _SESSION_DEFAULTS.items():
     if k not in st.session_state:
         st.session_state[k] = v
 
@@ -749,6 +755,8 @@ def page_new_order():
             "proof_of_delivery": None,
             "delivery_attempts": 0, "cancellation_reason": "", "cancellation_notes": "",
             "created_at": datetime.now().isoformat(), "updated_at": datetime.now().isoformat(),
+            "encoded_by": CURRENT_USER.get("name", ""),
+            "encoded_at": datetime.now().strftime("%B %d, %Y %I:%M %p"),
         }
         db.save_order(order)
 
@@ -1184,7 +1192,9 @@ def page_all_orders():
 **Cancellation Reason:** {o.get('cancellation_reason','—')}  
 **Created:** {str(o.get('created_at',''))[:19]}  
 **Updated:** {str(o.get('updated_at',''))[:19]}
+**Logged by:** {o.get('encoded_by','—') or '—'} · {o.get('encoded_at','—') or '—'}
                 """)
+                
             if any([o.get("message_card_to"), o.get("message_card_body"), o.get("message_card_from")]):
                 st.markdown("**💌 Message Card:**")
                 st.info(f"**To:** {o.get('message_card_to','')}\n\n{o.get('message_card_body','')}\n\n**From:** {o.get('message_card_from','')}")
@@ -1285,6 +1295,7 @@ def page_florist_board():
                 <tr><th>Assigned Florist</th><td colspan='2'><strong style="color:#C85C8E;">{florist}</strong></td></tr>
                 <tr><th>Special Instructions</th><td colspan='2'><strong>{o.get('notes','None')}</strong></td></tr>
                 <tr><th>Branch</th><td colspan='2'>{o.get('fulfillment_branch', o.get('branch',''))}</td></tr>
+                <tr><th>Logged by</th><td colspan='2'>{o.get('encoded_by','—') or '—'} · {o.get('encoded_at','—') or '—'}</td></tr>
                 {msg_card_row}
               </table>
               <p style="margin-top:16px; font-size:13px; color:#888;">☐ Flowers prepared &nbsp;|&nbsp; ☐ Arranged &nbsp;|&nbsp; ☐ Quality checked &nbsp;|&nbsp; ☐ Ready</p>
@@ -1471,11 +1482,36 @@ def page_florist_board():
             with ac1:
                 if o["status"] == "Pending":
                     florist_assigned = o.get("assigned_florist","")
-                    if not florist_assigned:
-                        st.caption("⏳ Assign florist first")
+                    if CURRENT_ROLE in ("Super Admin", "Branch Manager", "Staff"):
+                        if not florist_assigned:
+                            florist_labels = []
+                            for f in florists:
+                                load = db.get_florist_active_load(f["name"])
+                                max_load = f.get("max_concurrent_orders", 5)
+                                florist_labels.append(f"{f['name']} ({load}/{max_load})")
+                            florist_label_map = {lbl: f["name"] for lbl, f in zip(florist_labels, florists)}
+                            sel_label = st.selectbox("Assign Florist", ["— assign —"] + florist_labels,
+                                key=f"fb_flst_{order_code}", label_visibility="collapsed")
+                            sel_f = florist_label_map.get(sel_label, "")
+                            if sel_f:
+                                chosen_obj = next((f for f in florists if f["name"] == sel_f), None)
+                                if chosen_obj:
+                                    load = db.get_florist_active_load(sel_f)
+                                    if load >= chosen_obj.get("max_concurrent_orders", 5):
+                                        st.error(f"⛔ {sel_f} is at full capacity.")
+                                    elif st.button("✓ Assign Florist", key=f"fb_af_{order_code}", use_container_width=True):
+                                        db.update_order(o["id"], {"assigned_florist": sel_f,
+                                            "florist_assigned_at": datetime.now().isoformat()})
+                                        st.rerun()
+                        else:
+                            if st.button("✅ Confirm Order", key=f"fb_conf_{order_code}", use_container_width=True):
+                                db.update_order_status(o["id"], "Confirmed"); st.rerun()
                     else:
-                        if st.button("✅ Confirm Order", key=f"fb_conf_{order_code}", use_container_width=True):
-                            db.update_order_status(o["id"],"Confirmed"); st.rerun()
+                        # Florist/Rider — read only
+                        if florist_assigned:
+                            st.caption(f"🌹 Assigned to: **{florist_assigned}**")
+                        else:
+                            st.caption("⏳ Awaiting florist assignment")
             with ac2:
                 if o["status"] == "Confirmed":
                     if st.button("🌹 Start Production", key=f"fstart_{order_code}", use_container_width=True):
@@ -1789,6 +1825,10 @@ def page_customers():
 
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# PAGE: INVENTORY
+# ─────────────────────────────────────────────────────────────────────────────
+
 @st.dialog("➕ Add New Inventory Item")
 def _inventory_add_modal():
     with st.form("modal_inv_form", clear_on_submit=True):
@@ -1805,7 +1845,7 @@ def _inventory_add_modal():
         cost    = c2.number_input("Unit Cost (₱)", min_value=0.0, step=10.0)
         reorder = c3.number_input("Reorder Point", min_value=1, value=10)
         notes_i = st.text_input("Notes (optional)")
-        col_save,col_cancel = st.columns(2)
+        col_save, col_cancel = st.columns(2)
         save_clicked   = col_save.form_submit_button("✅ Add Item",  use_container_width=True)
         cancel_clicked = col_cancel.form_submit_button("✖ Cancel",  use_container_width=True)
     if cancel_clicked: st.rerun()
@@ -1826,182 +1866,362 @@ def page_inventory():
     st.markdown("<div class='section-header'>📦 Inventory Management</div>", unsafe_allow_html=True)
     inventory = scope_by_branch(db.get_inventory())
 
-    hdr1,hdr2 = st.columns([5,1])
-    with hdr1: st.markdown("#### 📦 Current Stock")
-    with hdr2:
-        if st.button("➕ Add Item", use_container_width=True, type="primary"):
-            _inventory_add_modal()
+    tab_inv, tab_adjust, tab_count, tab_log, tab_backfill = st.tabs([
+        "📦 Stock List",
+        "🔧 Manual Adjustment",
+        "📋 Stock Count Entry",
+        "📜 Audit Log",
+        "🔁 Backfill",
+    ])
 
-    c1,c2 = st.columns(2)
-    category       = c1.selectbox("Filter Category", ["All"] + list(INVENTORY_CATEGORIES.keys()))
-    inv_branch_options = BRANCHES if (CURRENT_ROLE == "Super Admin" or CURRENT_BRANCH == "All") else [CURRENT_BRANCH]
-    branch_filter  = c2.selectbox("Filter Branch",   ["All"] + inv_branch_options)
-    dc1,dc2 = st.columns(2)
-    start_date = dc1.date_input("From", value=date.today()-timedelta(days=30))
-    end_date   = dc2.date_input("To",   value=date.today())
+    # ── TAB 1: STOCK LIST ─────────────────────────────────────────────────
+    with tab_inv:
+        hdr1, hdr2 = st.columns([5, 1])
+        with hdr1:
+            st.markdown("#### 📦 Current Stock — All Categories")
+        with hdr2:
+            if st.button("➕ Add Item", use_container_width=True, type="primary"):
+                _inventory_add_modal()
 
-    filtered = inventory.copy()
-    if category      != "All": filtered = [i for i in filtered if i.get("category")==category]
-    if branch_filter != "All": filtered = [i for i in filtered if i.get("branch")==branch_filter]
-    filtered = [i for i in filtered if start_date.isoformat() <= str(i.get("created_at",""))[:10] <= end_date.isoformat()]
+        c1, c2, c3 = st.columns(3)
+        category_filter    = c1.selectbox("Filter Category", ["All"] + list(INVENTORY_CATEGORIES.keys()))
+        inv_branch_options = BRANCHES if (CURRENT_ROLE == "Super Admin" or CURRENT_BRANCH == "All") else [CURRENT_BRANCH]
+        branch_filter      = c2.selectbox("Filter Branch",   ["All"] + inv_branch_options)
+        search_inv         = c3.text_input("🔍 Search item name")
 
-    if not filtered:
-        st.info("No items match the current filters. Use **➕ Add Item** to get started."); return
+        filtered = inventory.copy()
+        if category_filter != "All":
+            filtered = [i for i in filtered if i.get("category") == category_filter]
+        if branch_filter != "All":
+            filtered = [i for i in filtered if i.get("branch") == branch_filter]
+        if search_inv:
+            filtered = [i for i in filtered if search_inv.lower() in i.get("name","").lower()]
 
-    total_val  = sum(i.get("quantity",0)*i.get("unit_cost",0) for i in filtered)
-    low_count  = len([i for i in filtered if i.get("quantity",0) <= i.get("reorder_point",10)])
-    sm1,sm2,sm3 = st.columns(3)
-    sm1.metric("📦 Items", len(filtered))
-    sm2.metric("💰 Total Value", f"₱{total_val:,.2f}")
-    sm3.metric("🔴 Low Stock", low_count)
-    st.download_button("⬇️ Export Inventory CSV", data=inventory_to_csv(filtered),
-        file_name=f"angies_inventory_{datetime.now().strftime('%Y%m%d')}.csv", mime="text/csv")
-    st.divider()
-
-    for item in sorted(filtered, key=lambda x: x.get("quantity",0)):
-        qty     = item.get("quantity",0)
-        reorder = item.get("reorder_point",10)
-        status  = "🔴🔴 NEGATIVE" if qty<0 else "🔴 Low" if qty<=reorder else "🟡 Medium" if qty<=reorder*2 else "🟢 Optimal"
-        total_v = qty * item.get("unit_cost",0)
-        ic1,ic2,ic3,ic4,ic5,ic6 = st.columns([2.5,1.2,0.8,0.8,1,0.6])
-        ic1.write(f"**{item['name']}** — {item.get('branch','')}")
-        ic2.write(item.get("unit",""))
-        ic3.write(str(qty))
-        ic4.write(status)
-        with ic5:
-            new_qty = st.number_input("qty", value=qty, min_value=min(0, qty), label_visibility="collapsed", key=f"iq_{item['id']}")
-            if new_qty != qty:
-                db.update_inventory_item(item["id"],{"quantity": new_qty}); st.rerun()
-        with ic6:
-            if st.button("🗑", key=f"di_{item['id']}", use_container_width=True):
-                db.delete_inventory_item(item["id"]); st.rerun()
-        with st.expander(f"📋 Details — {item['name']}", expanded=False):
-            st.write(f"- **Category:** {item.get('category','')}  \n- **Branch:** {item.get('branch','')}  \n- **Unit Cost:** ₱{item.get('unit_cost',0):,.2f}  \n- **Total Value:** ₱{total_v:,.2f}  \n- **Reorder Point:** {reorder} {item.get('unit','')}  \n- **Notes:** {item.get('notes','—')}  \n- **Added:** {str(item.get('created_at',''))[:10]}")
-        st.divider()
-
-    # ── Audit Log tab ──────────────────────────────────────────────────────
-    st.divider()
-    st.markdown("#### 📋 Inventory Movement Log")
-    st.caption("Every stock change — orders, cancellations, edits, waste, backfill — is recorded here.")
-    logs = db.get_inventory_logs()
-    if CURRENT_ROLE not in ("Super Admin","Branch Manager"):
-        logs = [l for l in logs if l.get("branch") == CURRENT_BRANCH]
-    if not logs:
-        st.info("No inventory movements recorded yet.")
-    else:
-        log_search = st.text_input("🔍 Filter logs", key="inv_log_search", placeholder="Search by flower, reason, order ID...")
-        if log_search:
-            q = log_search.lower()
-            logs = [l for l in logs if q in l.get("item_name","").lower() or q in l.get("reason","").lower() or q in l.get("order_id","").lower()]
-        df_logs = pd.DataFrame(sorted(logs, key=lambda x: x.get("created_at",""), reverse=True))
-        df_logs = df_logs.rename(columns={
-            "item_name":"Item","branch":"Branch","change_qty":"Change",
-            "qty_before":"Before","qty_after":"After","reason":"Reason",
-            "order_id":"Order","logged_by":"By","created_at":"When"
-        })
-        keep = [c for c in ["When","Item","Branch","Change","Before","After","Reason","Order","By"] if c in df_logs.columns]
-        df_logs = df_logs[keep]
-        df_logs["When"] = df_logs["When"].apply(lambda x: str(x)[:19])
-        st.dataframe(df_logs, use_container_width=True, hide_index=True)
-        st.download_button("⬇️ Export Audit Log CSV",
-            data=df_logs.to_csv(index=False).encode("utf-8"),
-            file_name=f"inventory_log_{__import__('datetime').datetime.now().strftime('%Y%m%d')}.csv",
-            mime="text/csv")
-
-    # ── Backfill (Super Admin only) ────────────────────────────────────────
-    if CURRENT_ROLE == "Super Admin":
-        st.divider()
-        st.markdown("#### 🔁 Inventory Backfill from Past Orders")
-        st.caption("One-time tool — deducts ALL past orders from current inventory.")
-        backfill_flag = db.get_system_flag("inventory_backfill_applied")
-        if backfill_flag:
-            st.success(f"✅ Backfill already applied on **{backfill_flag}**. Cannot run again to prevent double-deduction.")
+        if not filtered:
+            st.info("No items match. Use **➕ Add Item** to get started.")
         else:
-            st.warning("⚠️ **Irreversible.** Reviews ALL orders ever logged. Preview carefully before applying.")
-            if st.button("🔍 Preview Backfill Deductions", key="bf_preview_btn", type="primary"):
-                st.session_state["bf_preview_ready"] = True
-            if st.session_state.get("bf_preview_ready"):
-                all_orders    = db.get_orders()
-                all_inventory = db.get_inventory()
-                deduction_map = {}
-                for o in all_orders:
-                    branch_o = o.get("fulfillment_branch", o.get("branch",""))
-                    for fi in (o.get("flower_items") or []):
-                        fname    = fi.get("flower","").strip()
-                        qty_used = int(fi.get("qty",1))
-                        colors   = [c for c in fi.get("colors",[]) if c and c.lower()!="any"]
-                        if not fname: continue
-                        if not colors:
-                            key = (fname.upper(), branch_o)
-                            deduction_map[key] = deduction_map.get(key,0) + qty_used
-                        else:
-                            for color in colors:
-                                key = (f"{color.upper()} {fname.upper()}", branch_o)
-                                deduction_map[key] = deduction_map.get(key,0) + qty_used
-                if not deduction_map:
-                    st.info("No flower items found. Nothing to backfill.")
-                else:
-                    preview_rows = []
-                    for (item_name, branch_o), total_d in sorted(deduction_map.items()):
-                        inv_match = next((i for i in all_inventory
-                            if i.get("name","").strip().upper()==item_name
-                            and i.get("branch","")==branch_o), None)
-                        if inv_match is None and " " in item_name:
-                            base = " ".join(item_name.split(" ")[1:])
-                            inv_match = next((i for i in all_inventory
-                                if i.get("name","").strip().upper()==base
-                                and i.get("branch","")==branch_o), None)
-                        curr  = int(inv_match.get("quantity",0)) if inv_match else "Not in inventory"
-                        after = (curr - total_d) if isinstance(curr,int) else f"Will be created at -{total_d}"
-                        preview_rows.append({"Flower":item_name,"Branch":branch_o,
-                            "Total to Deduct":total_d,"Current Stock":curr,"Stock After":after})
-                    df_preview = pd.DataFrame(preview_rows)
-                    def _hl(row):
-                        a = row["Stock After"]
-                        if isinstance(a,int) and a < 0:  return ["background-color:#FFEBEE"]*len(row)
-                        if isinstance(a,int) and a == 0: return ["background-color:#FFF3E0"]*len(row)
-                        if not isinstance(a,int):        return ["background-color:#F3E5F5"]*len(row)
-                        return [""]*len(row)
-                    st.dataframe(df_preview.style.apply(_hl,axis=1), use_container_width=True, hide_index=True)
-                    st.markdown("🔴 Red = goes negative &nbsp;|&nbsp; 🟠 Orange = hits 0 &nbsp;|&nbsp; 🟣 Purple = auto-created")
-                    st.divider()
-                    confirm = st.checkbox("✅ I reviewed the preview and want to apply this backfill", key="bf_confirm")
-                    if confirm:
-                        if st.button("🚀 Apply Backfill Now", key="bf_apply_btn", type="primary"):
-                            with st.spinner("Applying backfill..."):
-                                total_warnings = []
-                                for (item_name, branch_o), total_d in deduction_map.items():
-                                    fresh = db.get_inventory()
-                                    match = next((i for i in fresh
-                                        if i.get("name","").strip().upper()==item_name
-                                        and i.get("branch","")==branch_o), None)
-                                    if match is None and " " in item_name:
-                                        base = " ".join(item_name.split(" ")[1:])
-                                        match = next((i for i in fresh
-                                            if i.get("name","").strip().upper()==base
-                                            and i.get("branch","")==branch_o), None)
-                                    if match:
-                                        nq = int(match.get("quantity",0)) - total_d
-                                        db.update_inventory_item(match["id"], {"quantity": nq})
-                                        db.log_inventory_change(match["name"], branch_o, -total_d,
-                                            int(match.get("quantity",0)), nq, "Inventory backfill", "", CURRENT_USER.get("name",""))
-                                    else:
-                                        nq = -total_d
-                                        db.save_inventory_item({"id": str(uuid.uuid4())[:8],"name":item_name,
-                                            "category":"🌹 Flowers","branch":branch_o,"quantity":nq,
-                                            "unit":"pcs","unit_cost":0.0,"reorder_point":10,
-                                            "notes":"Auto-created by backfill.","created_at":datetime.now().isoformat()})
-                                        db.log_inventory_change(item_name, branch_o, -total_d, 0, nq,
-                                            "Inventory backfill (auto-created)", "", CURRENT_USER.get("name",""))
-                                    if nq <= 0: total_warnings.append(f"{'🔴🔴' if nq<0 else '🔴'} **{item_name}** ({branch_o}): {nq} pcs")
-                                db.set_system_flag("inventory_backfill_applied", datetime.now().strftime("%Y-%m-%d %H:%M"))
-                                db._invalidate_all()
-                            st.success("✅ Backfill complete!")
-                            if total_warnings:
-                                st.markdown("**Items at 0 or negative after backfill:**")
-                                for w in total_warnings: st.warning(w)
-                            st.session_state["bf_preview_ready"] = False
+            total_val  = sum(i.get("quantity", 0) * i.get("unit_cost", 0) for i in filtered)
+            low_count  = len([i for i in filtered if i.get("quantity", 0) <= i.get("reorder_point", 10)])
+            sm1, sm2, sm3 = st.columns(3)
+            sm1.metric("📦 Items",       len(filtered))
+            sm2.metric("💰 Total Value", f"₱{total_val:,.2f}")
+            sm3.metric("🔴 Low Stock",   low_count)
+
+            st.download_button("⬇️ Export Inventory CSV", data=inventory_to_csv(filtered),
+                file_name=f"angies_inventory_{datetime.now().strftime('%Y%m%d')}.csv",
+                mime="text/csv")
+            st.divider()
+
+            # Group by category for display
+            for cat in list(INVENTORY_CATEGORIES.keys()):
+                cat_items = [i for i in sorted(filtered, key=lambda x: x.get("quantity", 0))
+                             if i.get("category") == cat]
+                if not cat_items:
+                    continue
+                st.markdown(f"##### {cat}")
+                for item in cat_items:
+                    qty     = item.get("quantity", 0)
+                    reorder = item.get("reorder_point", 10)
+                    status  = ("🔴🔴 NEGATIVE" if qty < 0 else
+                               "🔴 Low"        if qty <= reorder else
+                               "🟡 Medium"     if qty <= reorder * 2 else
+                               "🟢 Optimal")
+                    ic1, ic2, ic3, ic4, ic5, ic6 = st.columns([2.5, 1.2, 0.8, 0.8, 1, 0.6])
+                    ic1.write(f"**{item['name']}** — {item.get('branch','')}")
+                    ic2.write(item.get("unit", ""))
+                    ic3.write(str(qty))
+                    ic4.write(status)
+                    with ic5:
+                        new_qty = st.number_input(
+                            "qty", value=qty, min_value=min(0, qty),
+                            label_visibility="collapsed", key=f"iq_{item['id']}"
+                        )
+                        if new_qty != qty:
+                            db.update_inventory_item(item["id"], {"quantity": new_qty})
                             st.rerun()
+                    with ic6:
+                        if st.button("🗑", key=f"di_{item['id']}", use_container_width=True):
+                            db.delete_inventory_item(item["id"]); st.rerun()
+                    with st.expander(f"📋 Details — {item['name']}", expanded=False):
+                        st.write(
+                            f"- **Category:** {item.get('category','')}\n"
+                            f"- **Branch:** {item.get('branch','')}\n"
+                            f"- **Unit Cost:** ₱{item.get('unit_cost',0):,.2f}\n"
+                            f"- **Total Value:** ₱{qty * item.get('unit_cost',0):,.2f}\n"
+                            f"- **Reorder Point:** {reorder} {item.get('unit','')}\n"
+                            f"- **Notes:** {item.get('notes','—')}\n"
+                            f"- **Added:** {str(item.get('created_at',''))[:10]}"
+                        )
+                st.divider()
+
+    # ── TAB 2: MANUAL ADJUSTMENT ──────────────────────────────────────────
+    with tab_adjust:
+        st.markdown("#### 🔧 Manual Stock Adjustment")
+        st.caption("Use this to record stock changes not tied to an order — e.g. purchases, damages, returns.")
+
+        inventory_fresh = scope_by_branch(db.get_inventory())
+        adj_branch_opts = BRANCHES if (CURRENT_ROLE == "Super Admin" or CURRENT_BRANCH == "All") else [CURRENT_BRANCH]
+
+        with st.form("manual_adj_form", clear_on_submit=True):
+            ac1, ac2 = st.columns(2)
+            adj_branch = ac1.selectbox("Branch *", adj_branch_opts)
+            adj_cat    = ac2.selectbox("Category", ["All"] + list(INVENTORY_CATEGORIES.keys()))
+
+            branch_items = [i for i in inventory_fresh if i.get("branch") == adj_branch]
+            if adj_cat != "All":
+                branch_items = [i for i in branch_items if i.get("category") == adj_cat]
+            item_names   = [i["name"] for i in branch_items]
+
+            if not item_names:
+                st.warning("No items found for this branch/category. Add items first.")
+                st.form_submit_button("Apply Adjustment", disabled=True)
+            else:
+                bc1, bc2, bc3 = st.columns(3)
+                selected_name = bc1.selectbox("Item *", item_names)
+                adj_direction = bc2.radio("Direction", ["➕ Add Stock", "➖ Remove Stock"], horizontal=True)
+                adj_qty       = bc3.number_input("Quantity *", min_value=1, value=1)
+
+                adj_reason = st.selectbox("Reason *", [
+                    "Purchased / Restocked",
+                    "Used (non-order)",
+                    "Damaged / Spoiled",
+                    "Returned",
+                    "Count Correction",
+                    "Other",
+                ])
+                adj_notes = st.text_input("Notes (optional)")
+
+                submitted_adj = st.form_submit_button("✅ Apply Adjustment", use_container_width=True)
+
+        if "submitted_adj" in dir() and submitted_adj and item_names:
+            selected_item = next((i for i in inventory_fresh
+                if i["name"] == selected_name and i.get("branch") == adj_branch), None)
+            if selected_item:
+                delta = adj_qty if "Add" in adj_direction else -adj_qty
+                full_reason = f"{adj_reason}" + (f" — {adj_notes}" if adj_notes else "")
+                msg = db.adjust_inventory_manual(
+                    selected_item["id"], selected_item["name"],
+                    adj_branch, delta, full_reason, CURRENT_USER.get("name","")
+                )
+                st.success(msg)
+                st.rerun()
+
+    # ── TAB 3: STOCK COUNT ENTRY ──────────────────────────────────────────
+    with tab_count:
+        st.markdown("#### 📋 Stock Count Entry")
+        st.caption("Encode the florist's physical stock count form here. Each entry is logged for audit purposes.")
+
+        count_branch_opts = BRANCHES if (CURRENT_ROLE == "Super Admin" or CURRENT_BRANCH == "All") else [CURRENT_BRANCH]
+        inventory_for_count = scope_by_branch(db.get_inventory())
+
+        sc1, sc2, sc3 = st.columns(3)
+        sc_branch = sc1.selectbox("Branch *", count_branch_opts, key="sc_branch")
+        sc_shift  = sc2.radio("Shift *", ["Opening", "Closing"], horizontal=True, key="sc_shift")
+        sc_date   = sc3.date_input("Date *", value=date.today(), key="sc_date")
+
+        branch_inv = [i for i in inventory_for_count if i.get("branch") == sc_branch]
+        if not branch_inv:
+            st.warning(f"No inventory items found for {sc_branch}. Add items first.")
+        else:
+            st.markdown(f"**Entering {sc_shift} count for {sc_branch} — {sc_date}**")
+            count_data = {}
+            for cat in list(INVENTORY_CATEGORIES.keys()):
+                cat_items = [i for i in branch_inv if i.get("category") == cat]
+                if not cat_items:
+                    continue
+                st.markdown(f"**{cat}**")
+                for item in cat_items:
+                    col_name, col_sys, col_count = st.columns([3, 1, 1])
+                    col_name.write(f"{item['name']}")
+                    col_sys.write(f"System: {item.get('quantity', 0)}")
+                    entered = col_count.number_input(
+                        "Counted", min_value=0, value=max(0, int(item.get("quantity", 0))),
+                        key=f"sc_{sc_shift}_{sc_branch}_{item['id']}_{sc_date}",
+                        label_visibility="collapsed"
+                    )
+                    count_data[item["id"]] = {
+                        "item": item,
+                        "counted": entered,
+                    }
+
+            sc_notes = st.text_area("General Notes for this count (optional)", key="sc_notes")
+
+            if st.button(f"💾 Save {sc_shift} Count for {sc_branch}", type="primary"):
+                saved = 0
+                for item_id, data in count_data.items():
+                    item = data["item"]
+                    counted = data["counted"]
+                    sys_qty = int(item.get("quantity", 0))
+                    variance = counted - sys_qty
+                    entry = {
+                        "id": str(uuid.uuid4())[:8],
+                        "branch": sc_branch,
+                        "shift": sc_shift,
+                        "item_name": item["name"],
+                        "category": item.get("category", ""),
+                        "counted_qty": counted,
+                        "previous_qty": sys_qty,
+                        "variance": variance,
+                        "notes": sc_notes,
+                        "encoded_by": CURRENT_USER.get("name", ""),
+                        "created_at": datetime.now().isoformat(),
+                    }
+                    db.save_stock_count_entry(entry)
+                    db.log_inventory_change(
+                        item["name"], sc_branch, 0, sys_qty, sys_qty,
+                        f"{sc_shift} stock count — counted: {counted}, variance: {variance:+d}",
+                        "", CURRENT_USER.get("name", "")
+                    )
+                    saved += 1
+                st.success(f"✅ {sc_shift} count saved for {saved} items at {sc_branch}.")
+                st.rerun()
+
+            # Show recent counts
+            st.divider()
+            st.markdown("##### Recent Stock Count Entries")
+            all_counts = db.get_stock_count_entries()
+            recent_counts = [c for c in all_counts if c.get("branch") == sc_branch]
+            recent_counts = sorted(recent_counts, key=lambda x: x.get("created_at",""), reverse=True)[:50]
+            if recent_counts:
+                df_counts = pd.DataFrame(recent_counts)
+                display_cols = [col for col in ["created_at","shift","item_name","category",
+                                                 "counted_qty","previous_qty","variance","encoded_by"]
+                                if col in df_counts.columns]
+                df_counts["created_at"] = df_counts["created_at"].apply(lambda x: str(x)[:19])
+                st.dataframe(df_counts[display_cols], use_container_width=True, hide_index=True)
+            else:
+                st.info("No count entries for this branch yet.")
+
+    # ── TAB 4: AUDIT LOG ──────────────────────────────────────────────────
+    with tab_log:
+        st.markdown("#### 📜 Inventory Movement Log")
+        st.caption("Every stock change is recorded here — orders, adjustments, waste, counts, backfill.")
+        logs = db.get_inventory_logs()
+        if CURRENT_ROLE not in ("Super Admin", "Branch Manager"):
+            logs = [l for l in logs if l.get("branch") == CURRENT_BRANCH]
+        if not logs:
+            st.info("No inventory movements recorded yet.")
+        else:
+            log_search = st.text_input("🔍 Filter logs", key="inv_log_search",
+                placeholder="Search by item, reason, order ID...")
+            if log_search:
+                q = log_search.lower()
+                logs = [l for l in logs if
+                    q in l.get("item_name","").lower() or
+                    q in l.get("reason","").lower() or
+                    q in l.get("order_id","").lower()]
+            df_logs = pd.DataFrame(sorted(logs, key=lambda x: x.get("created_at",""), reverse=True))
+            df_logs = df_logs.rename(columns={
+                "item_name":"Item","branch":"Branch","change_qty":"Change",
+                "qty_before":"Before","qty_after":"After","reason":"Reason",
+                "order_id":"Order","logged_by":"By","created_at":"When"
+            })
+            keep = [c for c in ["When","Item","Branch","Change","Before","After","Reason","Order","By"]
+                    if c in df_logs.columns]
+            df_logs = df_logs[keep]
+            df_logs["When"] = df_logs["When"].apply(lambda x: str(x)[:19])
+            st.dataframe(df_logs, use_container_width=True, hide_index=True)
+            st.download_button("⬇️ Export Audit Log CSV",
+                data=df_logs.to_csv(index=False).encode("utf-8"),
+                file_name=f"inventory_log_{datetime.now().strftime('%Y%m%d')}.csv",
+                mime="text/csv")
+
+    # ── TAB 5: BACKFILL (Super Admin only) ────────────────────────────────
+    with tab_backfill:
+        if CURRENT_ROLE != "Super Admin":
+            st.info("🔒 Backfill is available to Super Admins only.")
+        else:
+            st.markdown("#### 🔁 Inventory Backfill from Past Orders")
+            st.caption("One-time tool — deducts ALL past orders from current inventory.")
+            backfill_flag = db.get_system_flag("inventory_backfill_applied")
+            if backfill_flag:
+                st.success(f"✅ Backfill already applied on **{backfill_flag}**. Cannot run again.")
+            else:
+                st.warning("⚠️ **Irreversible.** Reviews ALL orders ever logged.")
+                if st.button("🔍 Preview Backfill Deductions", key="bf_preview_btn", type="primary"):
+                    st.session_state["bf_preview_ready"] = True
+                if st.session_state.get("bf_preview_ready"):
+                    all_orders    = db.get_orders()
+                    all_inventory = db.get_inventory()
+                    deduction_map = {}
+                    for o in all_orders:
+                        branch_o = o.get("fulfillment_branch", o.get("branch",""))
+                        for fi in (o.get("flower_items") or []):
+                            fname    = fi.get("flower","").strip()
+                            qty_used = int(fi.get("qty",1))
+                            colors   = [c for c in fi.get("colors",[]) if c and c.lower()!="any"]
+                            if not fname: continue
+                            if not colors:
+                                key = (fname.upper(), branch_o)
+                                deduction_map[key] = deduction_map.get(key,0) + qty_used
+                            else:
+                                for color in colors:
+                                    key = (f"{color.upper()} {fname.upper()}", branch_o)
+                                    deduction_map[key] = deduction_map.get(key,0) + qty_used
+                    if not deduction_map:
+                        st.info("No flower items found.")
+                    else:
+                        preview_rows = []
+                        for (item_name, branch_o), total_d in sorted(deduction_map.items()):
+                            inv_match = next((i for i in all_inventory
+                                if i.get("name","").strip().upper()==item_name
+                                and i.get("branch","")==branch_o), None)
+                            if inv_match is None and " " in item_name:
+                                base = " ".join(item_name.split(" ")[1:])
+                                inv_match = next((i for i in all_inventory
+                                    if i.get("name","").strip().upper()==base
+                                    and i.get("branch","")==branch_o), None)
+                            curr  = int(inv_match.get("quantity",0)) if inv_match else "Not in inventory"
+                            after = (curr - total_d) if isinstance(curr,int) else f"Will be created at -{total_d}"
+                            preview_rows.append({"Flower":item_name,"Branch":branch_o,
+                                "Total to Deduct":total_d,"Current Stock":curr,"Stock After":after})
+                        df_preview = pd.DataFrame(preview_rows)
+                        def _hl(row):
+                            a = row["Stock After"]
+                            if isinstance(a,int) and a < 0:  return ["background-color:#FFEBEE"]*len(row)
+                            if isinstance(a,int) and a == 0: return ["background-color:#FFF3E0"]*len(row)
+                            if not isinstance(a,int):        return ["background-color:#F3E5F5"]*len(row)
+                            return [""]*len(row)
+                        st.dataframe(df_preview.style.apply(_hl,axis=1), use_container_width=True, hide_index=True)
+                        st.markdown("🔴 Red = goes negative &nbsp;|&nbsp; 🟠 Orange = hits 0 &nbsp;|&nbsp; 🟣 Purple = auto-created")
+                        st.divider()
+                        confirm = st.checkbox("✅ I reviewed the preview and want to apply this backfill", key="bf_confirm")
+                        if confirm:
+                            if st.button("🚀 Apply Backfill Now", key="bf_apply_btn", type="primary"):
+                                with st.spinner("Applying backfill..."):
+                                    total_warnings = []
+                                    for (item_name, branch_o), total_d in deduction_map.items():
+                                        fresh = db.get_inventory()
+                                        match = next((i for i in fresh
+                                            if i.get("name","").strip().upper()==item_name
+                                            and i.get("branch","")==branch_o), None)
+                                        if match is None and " " in item_name:
+                                            base = " ".join(item_name.split(" ")[1:])
+                                            match = next((i for i in fresh
+                                                if i.get("name","").strip().upper()==base
+                                                and i.get("branch","")==branch_o), None)
+                                        if match:
+                                            nq = int(match.get("quantity",0)) - total_d
+                                            db.update_inventory_item(match["id"], {"quantity": nq})
+                                            db.log_inventory_change(match["name"], branch_o, -total_d,
+                                                int(match.get("quantity",0)), nq, "Inventory backfill", "", CURRENT_USER.get("name",""))
+                                        else:
+                                            nq = -total_d
+                                            db.save_inventory_item({"id": str(uuid.uuid4())[:8],"name":item_name,
+                                                "category":"🌹 Flowers","branch":branch_o,"quantity":nq,
+                                                "unit":"pcs","unit_cost":0.0,"reorder_point":10,
+                                                "notes":"Auto-created by backfill.","created_at":datetime.now().isoformat()})
+                                            db.log_inventory_change(item_name, branch_o, -total_d, 0, nq,
+                                                "Inventory backfill (auto-created)", "", CURRENT_USER.get("name",""))
+                                        if nq <= 0: total_warnings.append(f"{'🔴🔴' if nq<0 else '🔴'} **{item_name}** ({branch_o}): {nq} pcs")
+                                    db.set_system_flag("inventory_backfill_applied", datetime.now().strftime("%Y-%m-%d %H:%M"))
+                                    db._invalidate_all()
+                                st.success("✅ Backfill complete!")
+                                if total_warnings:
+                                    st.markdown("**Items at 0 or negative after backfill:**")
+                                    for w in total_warnings: st.warning(w)
+                                st.session_state["bf_preview_ready"] = False
+                                st.rerun()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2194,12 +2414,15 @@ def page_reports():
     if not orders:
         st.info("No order data yet."); return
 
-    tab_labels = ["💰 Financial","🌹 Florists","🚴 Riders","📦 Inventory","🏆 Best Sellers","📍 Delivery Cities","📈 Restock Forecast","📅 Monthly","📆 Quarterly","🗓️ Yearly"]
+    tab_labels = ["💰 Financial","🌹 Florists","🚴 Riders","📦 Inventory","🏆 Best Sellers","📍 Delivery Cities","📈 Restock Forecast","📅 Monthly","📆 Quarterly","🗓️ Yearly","📅 Daily & Weekly","💸 Expenses"]
     show_branch_compare = (CURRENT_ROLE == "Super Admin")
     if show_branch_compare: tab_labels.append("🏪 Branch Comparison")
     tabs = st.tabs(tab_labels)
-    tab1,tab2,tab3,tab4,tab5,tab6,tab7,tab8,tab9,tab10 = tabs[:10]
-    tab11 = tabs[10] if show_branch_compare else None
+    tab1,tab2,tab3,tab4,tab5,tab6,tab7,tab8,tab9,tab10,tab_daily,tab_expenses = tabs[:12]
+    tab11 = None
+    if show_branch_compare:
+        tab_labels.append("🏪 Branch Comparison")
+        # Branch comparison is appended dynamically below
 
     with tab1:
         completed  = [o for o in orders if o["status"] in ["Delivered","Picked Up"]]
@@ -2501,6 +2724,274 @@ def page_reports():
                 file_name=f"branch_comparison_{datetime.now().strftime('%Y%m%d')}.csv",
                 mime="text/csv",
             )
+            
+            # ── DAILY & WEEKLY SALES ────────────────────────────────────────────────
+    with tab_daily:
+        st.markdown("##### 📅 Daily & Weekly Sales")
+        dw1, dw2, dw3 = st.columns(3)
+        dw_branch = dw1.selectbox("Branch", ["All"] + (BRANCHES if (CURRENT_ROLE == "Super Admin" or CURRENT_BRANCH == "All") else [CURRENT_BRANCH]), key="dw_branch")
+        week_start_default = date.today() - timedelta(days=date.today().weekday())
+        dw_from = dw2.date_input("From", value=week_start_default, key="dw_from")
+        dw_to   = dw3.date_input("To",   value=date.today(),       key="dw_to")
+
+        dw_orders = [o for o in orders
+            if dw_from.isoformat() <= str(o.get("target_date",""))[:10] <= dw_to.isoformat()
+            and (dw_branch == "All" or o.get("fulfillment_branch", o.get("branch","")) == dw_branch)]
+
+        # Build day-by-day table
+        day_range = [(dw_from + timedelta(days=i)) for i in range((dw_to - dw_from).days + 1)]
+        daily_rows = []
+        for d in day_range:
+            ds = d.isoformat()
+            day_orders = [o for o in dw_orders if str(o.get("target_date",""))[:10] == ds]
+            completed  = [o for o in day_orders if o["status"] in ("Delivered","Picked Up")]
+            revenue    = sum(float(o.get("total_price",0)) for o in completed)
+            avg_val    = revenue / len(completed) if completed else 0
+            daily_rows.append({
+                "Date":       ds,
+                "Day":        d.strftime("%A"),
+                "Total Orders":    len(day_orders),
+                "Completed":       len(completed),
+                "Revenue (₱)":     revenue,
+                "Avg Order (₱)":   avg_val,
+            })
+
+        if not daily_rows:
+            st.info("No orders found for this period.")
+        else:
+            df_daily = pd.DataFrame(daily_rows)
+
+            # Comparison to same period previous week
+            prev_from = dw_from - timedelta(days=7)
+            prev_to   = dw_to   - timedelta(days=7)
+            prev_orders = [o for o in orders
+                if prev_from.isoformat() <= str(o.get("target_date",""))[:10] <= prev_to.isoformat()
+                and (dw_branch == "All" or o.get("fulfillment_branch", o.get("branch","")) == dw_branch)]
+            prev_completed = [o for o in prev_orders if o["status"] in ("Delivered","Picked Up")]
+            prev_revenue   = sum(float(o.get("total_price",0)) for o in prev_completed)
+            curr_revenue   = df_daily["Revenue (₱)"].sum()
+            curr_orders    = df_daily["Total Orders"].sum()
+            prev_order_cnt = len(prev_orders)
+
+            rev_delta   = ((curr_revenue - prev_revenue) / prev_revenue * 100) if prev_revenue else None
+            order_delta = ((curr_orders  - prev_order_cnt) / prev_order_cnt * 100) if prev_order_cnt else None
+
+            cm1, cm2, cm3, cm4 = st.columns(4)
+            cm1.metric("📦 Total Orders",  int(curr_orders))
+            cm2.metric("💰 Total Revenue", f"₱{curr_revenue:,.0f}",
+                delta=f"{rev_delta:+.1f}% vs prev week" if rev_delta is not None else "No prev data")
+            cm3.metric("🔢 Orders vs Prev", f"{int(curr_orders)}",
+                delta=f"{order_delta:+.1f}%" if order_delta is not None else "No prev data")
+            cm4.metric("📅 Days in Period", len(day_range))
+            st.divider()
+
+            # Bar chart
+            fig, ax = plt.subplots(figsize=(10, 4), facecolor="#FDF6F0")
+            ax.bar(df_daily["Date"], df_daily["Revenue (₱)"], color="#C85C8E", alpha=0.85)
+            ax.set_facecolor("#FDF6F0"); ax.grid(axis="y", alpha=0.3)
+            plt.xticks(rotation=30, ha="right", fontsize=9); ax.set_ylabel("Revenue (₱)")
+            plt.tight_layout(); st.pyplot(fig); plt.close(fig)
+            st.divider()
+
+            st.dataframe(
+                df_daily.style.format({"Revenue (₱)": "₱{:,.2f}", "Avg Order (₱)": "₱{:,.2f}"}),
+                use_container_width=True, hide_index=True
+            )
+            st.download_button("⬇️ Export Daily Sales CSV",
+                data=df_daily.to_csv(index=False).encode("utf-8"),
+                file_name=f"daily_sales_{dw_from}_{dw_to}.csv", mime="text/csv")
+
+    # ── EXPENSES ────────────────────────────────────────────────────────────
+    with tab_expenses:
+        st.markdown("##### 💸 Expenses")
+        exp_tab1, exp_tab2, exp_tab3 = st.tabs(["📊 Summary", "➕ Log Expense", "⚙️ Fixed Cost Settings"])
+
+        all_expenses = db.get_expenses()
+        fixed_costs  = db.get_branch_fixed_costs()
+        fixed_map    = {f["branch"]: f for f in fixed_costs}
+
+        # ── SUMMARY ─────────────────────────────────────────────────────────
+        with exp_tab1:
+            es1, es2, es3 = st.columns(3)
+            exp_branch = es1.selectbox("Branch", ["All (Company-wide)"] + BRANCHES, key="exp_branch_sum")
+            exp_s_from = es2.date_input("From", value=date.today().replace(day=1), key="exp_s_from")
+            exp_s_to   = es3.date_input("To",   value=date.today(),               key="exp_s_to")
+            num_days   = max(1, (exp_s_to - exp_s_from).days + 1)
+
+            # Revenue for the period
+            rev_orders = [o for o in orders
+                if exp_s_from.isoformat() <= str(o.get("target_date",""))[:10] <= exp_s_to.isoformat()
+                and o["status"] in ("Delivered","Picked Up")
+                and (exp_branch == "All (Company-wide)" or
+                     o.get("fulfillment_branch", o.get("branch","")) == exp_branch)]
+            period_revenue = sum(float(o.get("total_price",0)) for o in rev_orders)
+
+            # Variable expenses for period
+            var_exp = [e for e in all_expenses
+                if exp_s_from.isoformat() <= e.get("date","") <= exp_s_to.isoformat()
+                and (exp_branch == "All (Company-wide)" or e.get("branch") == exp_branch)]
+            total_var = sum(float(e.get("amount",0)) for e in var_exp)
+
+            # Fixed costs for period
+            if exp_branch == "All (Company-wide)":
+                branches_in_scope = BRANCHES
+            else:
+                branches_in_scope = [exp_branch]
+
+            total_fixed = 0.0
+            fixed_breakdown = []
+            for br in branches_in_scope:
+                fc = fixed_map.get(br, {})
+                daily_total = (float(fc.get("daily_salary_budget",0)) +
+                               float(fc.get("daily_electricity",0)) +
+                               float(fc.get("daily_water",0)) +
+                               float(fc.get("daily_other",0)))
+                period_fixed = daily_total * num_days
+                total_fixed += period_fixed
+                fixed_breakdown.append({
+                    "Branch": br,
+                    "Daily Fixed Total (₱)": daily_total,
+                    f"Fixed Cost × {num_days} days (₱)": period_fixed,
+                })
+
+            total_expenses = total_fixed + total_var
+            net = period_revenue - total_expenses
+
+            st.markdown(f"**Period: {exp_s_from} to {exp_s_to} ({num_days} days)**")
+            sc1,sc2,sc3,sc4,sc5 = st.columns(5)
+            sc1.metric("💰 Revenue",        f"₱{period_revenue:,.0f}")
+            sc2.metric("🏗 Fixed Costs",    f"₱{total_fixed:,.0f}")
+            sc3.metric("🧾 Variable Exp",   f"₱{total_var:,.0f}")
+            sc4.metric("📊 Total Expenses", f"₱{total_expenses:,.0f}")
+            sc5.metric("📈 Net",            f"₱{net:,.0f}", delta=f"{'profit' if net>=0 else 'loss'}")
+            st.divider()
+
+            st.markdown("**Fixed Costs Breakdown by Branch**")
+            st.dataframe(
+                pd.DataFrame(fixed_breakdown).style.format({
+                    "Daily Fixed Total (₱)": "₱{:,.2f}",
+                    f"Fixed Cost × {num_days} days (₱)": "₱{:,.2f}",
+                }),
+                use_container_width=True, hide_index=True
+            )
+
+            if var_exp:
+                st.divider()
+                st.markdown("**Variable Expenses by Category**")
+                cat_totals = {}
+                for e in var_exp:
+                    c = e.get("category","Other")
+                    cat_totals[c] = cat_totals.get(c, 0) + float(e.get("amount",0))
+                st.dataframe(
+                    pd.DataFrame(cat_totals.items(), columns=["Category","Amount (₱)"])
+                        .sort_values("Amount (₱)", ascending=False)
+                        .style.format({"Amount (₱)": "₱{:,.2f}"}),
+                    use_container_width=True, hide_index=True
+                )
+
+                st.divider()
+                st.markdown("**All Variable Expenses — Detail**")
+                df_var = pd.DataFrame(var_exp)
+                display_exp_cols = [c for c in ["date","branch","category","amount","notes","encoded_by","created_at"]
+                                    if c in df_var.columns]
+                st.dataframe(df_var[display_exp_cols], use_container_width=True, hide_index=True)
+                st.download_button("⬇️ Export Expenses CSV",
+                    data=df_var.to_csv(index=False).encode("utf-8"),
+                    file_name=f"expenses_{exp_s_from}_{exp_s_to}.csv", mime="text/csv")
+
+        # ── LOG EXPENSE ──────────────────────────────────────────────────────
+        with exp_tab2:
+            st.markdown("#### ➕ Log an Expense")
+            with st.form("log_expense_form", clear_on_submit=True):
+                le1, le2 = st.columns(2)
+                exp_log_branch = le1.selectbox("Branch *", BRANCHES if (CURRENT_ROLE == "Super Admin" or CURRENT_BRANCH == "All") else [CURRENT_BRANCH])
+                exp_log_date   = le2.date_input("Date *", value=date.today())
+                le3, le4 = st.columns(2)
+                exp_log_cat    = le3.selectbox("Category *", ["Food","Water","Electricity","Supplies","Salary","Operational","Other"])
+                exp_log_amt    = le4.number_input("Amount (₱) *", min_value=0.0, step=50.0)
+                exp_log_notes  = st.text_input("Notes (optional)")
+                if st.form_submit_button("💾 Log Expense", use_container_width=True):
+                    if exp_log_amt <= 0:
+                        st.error("Amount must be greater than 0.")
+                    else:
+                        db.save_expense({
+                            "id": str(uuid.uuid4())[:8],
+                            "branch": exp_log_branch,
+                            "date": exp_log_date.isoformat(),
+                            "category": exp_log_cat,
+                            "amount": exp_log_amt,
+                            "notes": exp_log_notes,
+                            "encoded_by": CURRENT_USER.get("name",""),
+                            "created_at": datetime.now().isoformat(),
+                        })
+                        st.success("✅ Expense logged.")
+
+        # ── FIXED COST SETTINGS (Super Admin only) ───────────────────────────
+        with exp_tab3:
+            if CURRENT_ROLE != "Super Admin":
+                st.info("🔒 Fixed cost configuration is available to Super Admins only.")
+            else:
+                st.markdown("#### ⚙️ Fixed Daily Cost Settings per Branch")
+                st.caption("These are used to auto-calculate fixed costs for any date range in the Summary tab.")
+                for br in BRANCHES:
+                    fc = fixed_map.get(br, {})
+                    st.markdown(f"**{br}**")
+                    with st.form(f"fc_form_{br}", clear_on_submit=False):
+                        fc1, fc2, fc3, fc4 = st.columns(4)
+                        sal  = fc1.number_input("Daily Salary Budget (₱)",   min_value=0.0, step=100.0, value=float(fc.get("daily_salary_budget",0)),  key=f"fc_sal_{br}")
+                        elec = fc2.number_input("Daily Electricity (₱)",     min_value=0.0, step=50.0,  value=float(fc.get("daily_electricity",0)),     key=f"fc_elec_{br}")
+                        wat  = fc3.number_input("Daily Water (₱)",           min_value=0.0, step=10.0,  value=float(fc.get("daily_water",0)),           key=f"fc_wat_{br}")
+                        oth  = fc4.number_input("Other Daily Fixed Costs (₱)",min_value=0.0, step=50.0, value=float(fc.get("daily_other",0)),           key=f"fc_oth_{br}")
+                        if st.form_submit_button(f"💾 Save {br} Fixed Costs"):
+                            db.upsert_branch_fixed_cost({
+                                "id":     fc.get("id", f"bfc-{br[:2].lower()}"),
+                                "branch": br,
+                                "daily_salary_budget": sal,
+                                "daily_electricity":   elec,
+                                "daily_water":         wat,
+                                "daily_other":         oth,
+                                "updated_at":  datetime.now().isoformat(),
+                                "updated_by":  CURRENT_USER.get("name",""),
+                            })
+                            st.success(f"✅ Fixed costs saved for {br}.")
+                    st.divider()
+
+    # ── BRANCH COMPARISON (dynamic, Super Admin only) ────────────────────────
+    if show_branch_compare:
+        with st.expander("🏪 Branch Comparison — Super Admin", expanded=False):
+            st.markdown("##### 🏪 Branch Comparison")
+            bc_rows = []
+            for branch in BRANCHES:
+                b_orders    = [o for o in orders if o.get("fulfillment_branch", o.get("branch","")) == branch]
+                b_completed = [o for o in b_orders if o["status"] in ("Delivered","Picked Up")]
+                b_revenue   = sum(float(o.get("total_price",0)) for o in b_completed)
+                b_avg       = (b_revenue / len(b_completed)) if b_completed else 0
+                b_cancelled = len([o for o in b_orders if o["status"] == "Cancelled"])
+                b_failed    = len([o for o in b_orders if o["status"] == "Failed Delivery"])
+                b_waste     = sum(float(w.get("cost",0)) for w in waste if w.get("branch") == branch)
+                bc_rows.append({"Branch": branch,"Total Orders": len(b_orders),
+                    "Completed": len(b_completed),"Cancelled": b_cancelled,
+                    "Failed Deliveries": b_failed,"Revenue (₱)": b_revenue,
+                    "Avg Order (₱)": b_avg,"Waste Cost (₱)": b_waste})
+            df_bc = pd.DataFrame(bc_rows)
+            st.dataframe(df_bc.style.format({"Revenue (₱)":"₱{:,.2f}","Avg Order (₱)":"₱{:,.2f}","Waste Cost (₱)":"₱{:,.2f}"}),
+                use_container_width=True, hide_index=True)
+            fc1,fc2 = st.columns(2)
+            with fc1:
+                fig,ax = plt.subplots(figsize=(6,4), facecolor="#FDF6F0")
+                ax.bar(df_bc["Branch"], df_bc["Revenue (₱)"], color="#C85C8E", alpha=0.85)
+                ax.set_facecolor("#FDF6F0"); ax.grid(axis="y",alpha=0.3)
+                plt.xticks(rotation=15, ha="right", fontsize=9); plt.tight_layout()
+                st.pyplot(fig); plt.close(fig)
+            with fc2:
+                fig,ax = plt.subplots(figsize=(6,4), facecolor="#FDF6F0")
+                ax.bar(df_bc["Branch"], df_bc["Total Orders"], color="#17A2B8", alpha=0.85)
+                ax.set_facecolor("#FDF6F0"); ax.grid(axis="y",alpha=0.3)
+                plt.xticks(rotation=15, ha="right", fontsize=9); plt.tight_layout()
+                st.pyplot(fig); plt.close(fig)
+            st.download_button("⬇️ Export Branch Comparison CSV",
+                data=df_bc.to_csv(index=False).encode("utf-8"),
+                file_name=f"branch_comparison_{datetime.now().strftime('%Y%m%d')}.csv", mime="text/csv")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
