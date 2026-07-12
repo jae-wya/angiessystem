@@ -1443,15 +1443,21 @@ def page_florist_board():
                 import streamlit.components.v1 as components
                 b64 = base64.b64encode(print_html.encode("utf-8")).decode("utf-8")
                 trigger_js = (
+    
                     "<script>"
                     "(function() {"
-                    "var html = atob('" + b64 + "');"
-                    "var win = window.open('', '_blank');"
-                    "if (win) { win.document.open(); win.document.write(html); win.document.close(); }"
-                    "else { alert('Pop-up blocked! Please allow pop-ups for this page and try again.'); }"
+                    "var b64 = '" + b64 + "';"
+                    "var binary = atob(b64);"
+                    "var bytes = new Uint8Array(binary.length);"
+                    "for (var i = 0; i < binary.length; i++) { bytes[i] = binary.charCodeAt(i); }"
+                    "var blob = new Blob([bytes], { type: 'text/html; charset=utf-8' });"
+                    "var url = URL.createObjectURL(blob);"
+                    "var win = window.open(url, '_blank');"
+                    "if (!win) { alert('Pop-up blocked! Please allow pop-ups for this page and try again.'); }"
                     "})();"
                     "</script>"
                 )
+                
                 components.html(trigger_js, height=0, scrolling=False)
                 st.session_state[print_key] = False
 
