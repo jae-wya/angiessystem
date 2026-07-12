@@ -1393,7 +1393,7 @@ def page_florist_board():
                 ".checklist-item .box { width: 14px; height: 14px; border: 1.5px solid #C85C8E; border-radius: 2px; display: inline-block; flex-shrink: 0; }"
                 ".footer { margin-top: 6px; border-top: 1px solid #e0d0d8; padding-top: 4px; font-size: 9px; color: #aaa; display: flex; justify-content: space-between; }"
                 ".inspo-grid { display: grid; gap: 6px; margin-top: 4px; }"
-                ".inspo-grid img { width: 100%; max-height: 900px; object-fit: contain; border-radius: 4px; border: 1px solid #e8d0dc; display: block; }"
+                ".inspo-grid img { width: 100%; max-height: 700px; object-fit: contain; border-radius: 4px; border: 1px solid #e8d0dc; display: block; }"
                 "@media print { body { padding: 8px 10px; } @page { margin: 6mm 8mm; size: A4; } }"
                 "</style></head><body>"
                 "<div class='shop-name'>🌹 Angie's Florist</div>"
