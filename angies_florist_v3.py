@@ -1334,22 +1334,21 @@ def page_florist_board():
                 print_msg_block = ""
 
             inspo_pics = o.get("inspo_pictures", [])
-           if inspo_pics:
-                    # Auto-fit columns: 1 pic = full width, 2 = side by side, 3+ = 3 columns
-                    cols = 1 if len(inspo_pics) == 1 else (2 if len(inspo_pics) == 2 else 3)
-                    pic_tags = "".join(
-                        "<img src='" + url + "' alt='Ref " + str(i+1) + "' />"
-                        for i, url in enumerate(inspo_pics)
-                    )
-                    print_inspo_block = (
-                        "<div class='section-box'>"
-                        "<div class='section-title'>📸 Inspiration Pictures</div>"
-                        "<div class='inspo-grid' style='grid-template-columns: repeat(" + str(cols) + ", 1fr);'>"
-                        + pic_tags +
-                        "</div></div>"
-                    )
-                else:
-                    print_inspo_block = ""
+         if inspo_pics:
+                cols = 1 if len(inspo_pics) == 1 else (2 if len(inspo_pics) == 2 else 3)
+                pic_tags = "".join(
+                    "<img src='" + url + "' alt='Ref " + str(i+1) + "' />"
+                    for i, url in enumerate(inspo_pics)
+                )
+                print_inspo_block = (
+                    "<div class='section-box'>"
+                    "<div class='section-title'>📸 Inspiration Pictures</div>"
+                    "<div class='inspo-grid' style='grid-template-columns: repeat(" + str(cols) + ", 1fr);'>"
+                    + pic_tags +
+                    "</div></div>"
+                )
+            else:
+                print_inspo_block = ""
 
             sub_text = ("Substitutions allowed. " + o.get("substitution_notes","")).strip() if o.get("allow_substitution") else "No substitutions."
             rush_banner = "<div class='rush-banner'>🚀 RUSH ORDER — PRIORITISE IMMEDIATELY</div>" if o.get("priority_rush") else ""
