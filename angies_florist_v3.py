@@ -1362,7 +1362,7 @@ def page_florist_board():
             branch_name = o.get("fulfillment_branch", o.get("branch",""))
             print_timestamp = datetime.now().strftime("%b %d, %Y %I:%M %p")
 
-              print_html = (
+             print_html = (
                     "<!DOCTYPE html><html lang='en'><head>"
                     "<meta charset='UTF-8'/>"
                     "<meta name='viewport' content='width=device-width, initial-scale=1.0'/>"
