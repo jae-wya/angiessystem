@@ -549,3 +549,63 @@ def set_system_flag(key: str, value: str):
         ).execute()
     except Exception:
         pass
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STOCK COUNT ENTRIES
+# ─────────────────────────────────────────────────────────────────────────────
+
+@st.cache_data(ttl=CACHE_TTL)
+def get_stock_count_entries() -> list:
+    return _select("stock_count_entries")
+
+def save_stock_count_entry(entry: dict) -> dict:
+    return _insert("stock_count_entries", entry)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# EXPENSES
+# ─────────────────────────────────────────────────────────────────────────────
+
+@st.cache_data(ttl=CACHE_TTL)
+def get_expenses() -> list:
+    return _select("expenses")
+
+def save_expense(entry: dict) -> dict:
+    return _insert("expenses", entry)
+
+def delete_expense(expense_id: str) -> bool:
+    return _delete("expenses", expense_id)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# BRANCH FIXED COSTS
+# ─────────────────────────────────────────────────────────────────────────────
+
+@st.cache_data(ttl=CACHE_TTL)
+def get_branch_fixed_costs() -> list:
+    return _select("branch_fixed_costs")
+
+def upsert_branch_fixed_cost(row: dict) -> dict:
+    return _upsert("branch_fixed_costs", row)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# MANUAL STOCK ADJUSTMENT HELPER
+# ─────────────────────────────────────────────────────────────────────────────
+
+def adjust_inventory_manual(item_id: str, item_name: str, branch: str,
+                             delta: int, reason: str, logged_by: str) -> str:
+    """
+    Adjusts an inventory item's quantity by `delta` (positive = add, negative = remove).
+    Logs the change to inventory_logs. Returns a status message.
+    """
+    inventory = get_inventory()
+    match = next((i for i in inventory if i.get("id") == item_id), None)
+    if not match:
+        return f"❌ Item {item_name} not found."
+    qty_before = int(match.get("quantity", 0))
+    qty_after  = qty_before + delta
+    update_inventory_item(item_id, {"quantity": qty_after})
+    log_inventory_change(item_name, branch, delta, qty_before, qty_after, reason, "", logged_by)
+    direction = "Added" if delta > 0 else "Removed"
+    return f"✅ {direction} {abs(delta)} pcs of **{item_name}** at {branch}. Stock: {qty_before} → {qty_after}"
