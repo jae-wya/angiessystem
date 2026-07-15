@@ -2671,10 +2671,11 @@ def page_reports():
     render_period_report(tab9,"Quarterly",lambda o:f"Q{(date.fromisoformat(str(o.get('target_date','2000-01-01'))[:10]).month-1)//3+1} {str(o.get('target_date','2000'))[:4]}")
     render_period_report(tab10,"Yearly",lambda o:str(o.get("target_date","2000-01-01"))[:4])
     # ── BRANCH COMPARISON (Super Admin only) ────────────────────────────────
-   if show_branch_compare:
+    if show_branch_compare:
         with tab11:
             st.markdown("##### 🏪 Branch Comparison")
             st.caption("Compares all branches side-by-side. Visible to Super Admin only.")
+            
             bc_rows = []
             for branch in BRANCHES:
                 b_orders    = [o for o in orders if o.get("fulfillment_branch", o.get("branch","")) == branch]
