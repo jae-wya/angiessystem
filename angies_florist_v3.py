@@ -5,7 +5,7 @@
 ╚══════════════════════════════════════════════════════════════════════════════╝
 DEPENDENCIES: pip install -r requirements.txt
 USAGE:        streamlit run angies_florist_v3.py
-"""F
+"""
 
 import streamlit as st
 import pandas as pd
