@@ -5,7 +5,7 @@
 ╚══════════════════════════════════════════════════════════════════════════════╝
 DEPENDENCIES: pip install -r requirements.txt
 USAGE:        streamlit run angies_florist_v3.py
-"""
+"""F
 
 import streamlit as st
 import pandas as pd
@@ -2419,10 +2419,7 @@ def page_reports():
     if show_branch_compare: tab_labels.append("🏪 Branch Comparison")
     tabs = st.tabs(tab_labels)
     tab1,tab2,tab3,tab4,tab5,tab6,tab7,tab8,tab9,tab10,tab_daily,tab_expenses = tabs[:12]
-    tab11 = None
-    if show_branch_compare:
-        tab_labels.append("🏪 Branch Comparison")
-        # Branch comparison is appended dynamically below
+    tab11 = tabs[12] if show_branch_compare else None
 
     with tab1:
         completed  = [o for o in orders if o["status"] in ["Delivered","Picked Up"]]
