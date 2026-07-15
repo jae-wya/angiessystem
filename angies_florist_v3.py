@@ -2672,8 +2672,7 @@ def page_reports():
     render_period_report(tab10,"Yearly",lambda o:str(o.get("target_date","2000-01-01"))[:4])
     # ── BRANCH COMPARISON (Super Admin only) ────────────────────────────────
    if show_branch_compare:
-        st.divider()
-        with st.expander("🏪 Branch Comparison — Super Admin", expanded=False):
+        with tab11:
             st.markdown("##### 🏪 Branch Comparison")
             st.caption("Compares all branches side-by-side. Visible to Super Admin only.")
             bc_rows = []
@@ -2686,77 +2685,15 @@ def page_reports():
                 b_failed    = len([o for o in b_orders if o["status"] == "Failed Delivery"])
                 b_waste     = sum(float(w.get("cost",0)) for w in waste if w.get("branch") == branch)
                 bc_rows.append({
-                    "Branch":            branch,
-                    "Total Orders":      len(b_orders),
-                    "Completed":         len(b_completed),
-                    "Cancelled":         b_cancelled,
+                    "Branch": branch,
+                    "Total Orders": len(b_orders),
+                    "Completed": len(b_completed),
+                    "Cancelled": b_cancelled,
                     "Failed Deliveries": b_failed,
-                    "Revenue (₱)":       b_revenue,
-                    "Avg Order (₱)":     b_avg,
-                    "Waste Cost (₱)":    b_waste,
+                    "Revenue (₱)": b_revenue,
+                    "Avg Order (₱)": b_avg,
+                    "Waste Cost (₱)": b_waste,
                 })
-
-            df_bc = pd.DataFrame(bc_rows)
-            st.dataframe(
-                df_bc.style.format({
-                    "Revenue (₱)":    "₱{:,.2f}",
-                    "Avg Order (₱)":  "₱{:,.2f}",
-                    "Waste Cost (₱)": "₱{:,.2f}",
-                }),
-                use_container_width=True, hide_index=True,
-            )
-
-            fc1, fc2 = st.columns(2)
-            with fc1:
-                st.markdown("**Revenue by Branch**")
-                fig, ax = plt.subplots(figsize=(6,4), facecolor="#FDF6F0")
-                ax.bar(df_bc["Branch"], df_bc["Revenue (₱)"], color="#C85C8E", alpha=0.85)
-                ax.set_facecolor("#FDF6F0"); ax.grid(axis="y", alpha=0.3)
-                plt.xticks(rotation=15, ha="right", fontsize=9); plt.tight_layout()
-                st.pyplot(fig); plt.close(fig)
-            with fc2:
-                st.markdown("**Orders by Branch**")
-                fig, ax = plt.subplots(figsize=(6,4), facecolor="#FDF6F0")
-                ax.bar(df_bc["Branch"], df_bc["Total Orders"], color="#17A2B8", alpha=0.85)
-                ax.set_facecolor("#FDF6F0"); ax.grid(axis="y", alpha=0.3)
-                plt.xticks(rotation=15, ha="right", fontsize=9); plt.tight_layout()
-                st.pyplot(fig); plt.close(fig)
-
-            st.download_button(
-                "⬇️ Export Branch Comparison CSV",
-                data=df_bc.to_csv(index=False).encode("utf-8"),
-                file_name=f"branch_comparison_{datetime.now().strftime('%Y%m%d')}.csv",
-                mime="text/csv",
-            )
-
-            df_bc = pd.DataFrame(bc_rows)
-            st.dataframe(
-                df_bc.style.format({"Revenue (₱)":"₱{:,.2f}","Avg Order (₱)":"₱{:,.2f}","Waste Cost (₱)":"₱{:,.2f}"}),
-                use_container_width=True, hide_index=True,
-            )
-
-            fc1,fc2 = st.columns(2)
-            with fc1:
-                st.markdown("**Revenue by Branch**")
-                fig,ax = plt.subplots(figsize=(6,4), facecolor="#FDF6F0")
-                ax.bar(df_bc["Branch"], df_bc["Revenue (₱)"], color="#C85C8E", alpha=0.85)
-                ax.set_facecolor("#FDF6F0"); ax.grid(axis="y",alpha=0.3)
-                plt.xticks(rotation=15, ha="right", fontsize=9); plt.tight_layout()
-                st.pyplot(fig); plt.close(fig)
-            with fc2:
-                st.markdown("**Orders by Branch**")
-                fig,ax = plt.subplots(figsize=(6,4), facecolor="#FDF6F0")
-                ax.bar(df_bc["Branch"], df_bc["Total Orders"], color="#17A2B8", alpha=0.85)
-                ax.set_facecolor("#FDF6F0"); ax.grid(axis="y",alpha=0.3)
-                plt.xticks(rotation=15, ha="right", fontsize=9); plt.tight_layout()
-                st.pyplot(fig); plt.close(fig)
-
-            st.download_button(
-                "⬇️ Export Branch Comparison CSV",
-                data=df_bc.to_csv(index=False).encode("utf-8"),
-                file_name=f"branch_comparison_{datetime.now().strftime('%Y%m%d')}.csv",
-                mime="text/csv",
-            )
             
             # ── DAILY & WEEKLY SALES ────────────────────────────────────────────────
     with tab_daily:
