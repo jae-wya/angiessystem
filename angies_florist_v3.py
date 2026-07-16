@@ -156,18 +156,7 @@ for k, v in _SESSION_DEFAULTS.items():
 if st.session_state.auth_user is None:
     _token_in_url = st.query_params.get("session", None)
     
-    if not _token_in_url:
-        # Query params not available yet on this run — rerun once to let
-        # Streamlit finish initializing the WebSocket connection
-        if not st.session_state.get("_param_rerun_attempted"):
-            st.session_state["_param_rerun_attempted"] = True
-            st.rerun()
-        else:
-            # Already retried — params genuinely not there, clear the flag
-            st.session_state["_param_rerun_attempted"] = False
-    else:
-        # Token found — reset retry flag and attempt restore
-        st.session_state["_param_rerun_attempted"] = False
+    if _token_in_url:
         _restored = db.validate_session_token(_token_in_url)
         if _restored:
             st.session_state.auth_user      = _restored
