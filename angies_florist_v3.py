@@ -1,7 +1,7 @@
 """
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║ 🌸 Angie's Florist — Complete Unified Flower Shop System                   ║
-║ Supabase Edition v3.0 · Streamlit Community Cloud Ready                    ║
+║ 🌸 Angie's Florist — Complete Unified Flower Shop System                     ║
+║ Supabase Edition v3.0 · Streamlit Community Cloud Ready                      ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 DEPENDENCIES: pip install -r requirements.txt
 USAGE:        streamlit run angies_florist_v3.py
@@ -135,11 +135,13 @@ PAGE_ACCESS = {
 }
 
 # Session state defaults
+# Session state defaults
 _SESSION_DEFAULTS = {
     "active_page": "Dashboard",
     "edit_order_id": None,
     "auth_user": None,
     "bf_preview_ready": False,
+    "_param_rerun_attempted": False,
 }
 for k, v in _SESSION_DEFAULTS.items():
     if k not in st.session_state:
@@ -153,20 +155,24 @@ for k, v in _SESSION_DEFAULTS.items():
 # ─────────────────────────────────────────────────────────────────────────────
 if st.session_state.auth_user is None:
     _token_in_url = st.query_params.get("session", None)
-    if _token_in_url:
+    
+    if not _token_in_url:
+        # Query params not available yet on this run — rerun once to let
+        # Streamlit finish initializing the WebSocket connection
+        if not st.session_state.get("_param_rerun_attempted"):
+            st.session_state["_param_rerun_attempted"] = True
+            st.rerun()
+        else:
+            # Already retried — params genuinely not there, clear the flag
+            st.session_state["_param_rerun_attempted"] = False
+    else:
+        # Token found — reset retry flag and attempt restore
+        st.session_state["_param_rerun_attempted"] = False
         _restored = db.validate_session_token(_token_in_url)
         if _restored:
-            st.session_state.auth_user        = _restored
-            st.session_state.active_page      = "Dashboard"
-            st.session_state._session_token   = _token_in_url
-        else:
-            # TEMPORARY DEBUG — remove after fixing
-            st.error(f"DEBUG: Token found in URL but validation failed. Token: {_token_in_url[:10]}...")
-            st.stop()
-    else:
-        # TEMPORARY DEBUG — remove after fixing
-        st.warning("DEBUG: No session token found in URL params.")
-        st.stop()
+            st.session_state.auth_user      = _restored
+            st.session_state.active_page    = "Dashboard"
+            st.session_state._session_token = _token_in_url
 
 
 # ─────────────────────────────────────────────────────────────────────────────
