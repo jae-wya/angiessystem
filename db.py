@@ -616,18 +616,21 @@ def adjust_inventory_manual(item_id: str, item_name: str, branch: str,
 from datetime import datetime, timedelta
 
 def create_session_token(account_id: str) -> str:
-    """Create a persistent session token and store it in Supabase. Returns the token."""
+    """Create a persistent session token. Returns the token."""
     token      = secrets.token_urlsafe(32)
     expires_at = (datetime.now() + timedelta(days=30)).isoformat()
     try:
-        get_supabase().table("session_tokens").insert({
+        sb  = get_supabase()
+        res = sb.table("session_tokens").insert({
             "token":      token,
             "account_id": account_id,
             "created_at": datetime.now().isoformat(),
             "expires_at": expires_at,
         }).execute()
-    except Exception:
-        pass
+        if not res.data:
+            st.error("Session token insert returned no data — check RLS on session_tokens table")
+    except Exception as e:
+        st.error(f"Session token insert failed: {e}")
     return token
 
 
