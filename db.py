@@ -632,31 +632,45 @@ def create_session_token(account_id: str) -> str:
 
 
 def validate_session_token(token: str) -> Optional[dict]:
-    """
-    Look up a session token. If valid and not expired,
-    return the matching staff account. Otherwise return None.
-    """
     if not token:
         return None
     try:
         sb  = get_supabase()
+
+        # Step 1 — does the token row exist at all?
         res = sb.table("session_tokens").select("*").eq("token", token).execute()
         if not res.data:
+            st.error(f"DEBUG validate: token not found in session_tokens table")
             return None
+
         row = res.data[0]
-        if datetime.now().isoformat() > row.get("expires_at",""):
-            # Expired — clean it up
+        st.error(f"DEBUG validate: token row found — account_id={row.get('account_id')} expires_at={row.get('expires_at')}")
+
+        # Step 2 — is it expired?
+        now = datetime.now().isoformat()
+        if now > row.get("expires_at",""):
+            st.error(f"DEBUG validate: token EXPIRED — now={now} expires_at={row.get('expires_at')}")
             sb.table("session_tokens").delete().eq("token", token).execute()
             return None
-        # Fetch the account
+
+        # Step 3 — does the account exist?
         accounts = _select("staff_accounts", {"id": row["account_id"]})
         if not accounts:
+            st.error(f"DEBUG validate: account_id {row.get('account_id')} not found in staff_accounts")
             return None
+
         account = accounts[0]
+
+        # Step 4 — is it active?
         if account.get("active") is False:
+            st.error(f"DEBUG validate: account is marked inactive")
             return None
+
+        st.success(f"DEBUG validate: all checks passed — returning account {account.get('name')}")
         return account
-    except Exception:
+
+    except Exception as e:
+        st.error(f"DEBUG validate: exception — {e}")
         return None
 
 
