@@ -609,3 +609,60 @@ def adjust_inventory_manual(item_id: str, item_name: str, branch: str,
     log_inventory_change(item_name, branch, delta, qty_before, qty_after, reason, "", logged_by)
     direction = "Added" if delta > 0 else "Removed"
     return f"✅ {direction} {abs(delta)} pcs of **{item_name}** at {branch}. Stock: {qty_before} → {qty_after}"
+
+    # ─────────────────────────────────────────────────────────────────────────────
+# SESSION TOKENS — persistent login across server restarts
+# ─────────────────────────────────────────────────────────────────────────────
+from datetime import datetime, timedelta
+
+def create_session_token(account_id: str) -> str:
+    """Create a persistent session token and store it in Supabase. Returns the token."""
+    token      = secrets.token_urlsafe(32)
+    expires_at = (datetime.now() + timedelta(days=30)).isoformat()
+    try:
+        get_supabase().table("session_tokens").insert({
+            "token":      token,
+            "account_id": account_id,
+            "created_at": datetime.now().isoformat(),
+            "expires_at": expires_at,
+        }).execute()
+    except Exception:
+        pass
+    return token
+
+
+def validate_session_token(token: str) -> Optional[dict]:
+    """
+    Look up a session token. If valid and not expired,
+    return the matching staff account. Otherwise return None.
+    """
+    if not token:
+        return None
+    try:
+        sb  = get_supabase()
+        res = sb.table("session_tokens").select("*").eq("token", token).execute()
+        if not res.data:
+            return None
+        row = res.data[0]
+        if datetime.now().isoformat() > row.get("expires_at",""):
+            # Expired — clean it up
+            sb.table("session_tokens").delete().eq("token", token).execute()
+            return None
+        # Fetch the account
+        accounts = _select("staff_accounts", {"id": row["account_id"]})
+        if not accounts:
+            return None
+        account = accounts[0]
+        if account.get("active") is False:
+            return None
+        return account
+    except Exception:
+        return None
+
+
+def delete_session_token(token: str):
+    """Remove a session token on logout."""
+    try:
+        get_supabase().table("session_tokens").delete().eq("token", token).execute()
+    except Exception:
+        pass
