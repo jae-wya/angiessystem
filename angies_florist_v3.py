@@ -159,6 +159,14 @@ if st.session_state.auth_user is None:
             st.session_state.auth_user        = _restored
             st.session_state.active_page      = "Dashboard"
             st.session_state._session_token   = _token_in_url
+        else:
+            # TEMPORARY DEBUG — remove after fixing
+            st.error(f"DEBUG: Token found in URL but validation failed. Token: {_token_in_url[:10]}...")
+            st.stop()
+    else:
+        # TEMPORARY DEBUG — remove after fixing
+        st.warning("DEBUG: No session token found in URL params.")
+        st.stop()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
