@@ -147,6 +147,21 @@ for k, v in _SESSION_DEFAULTS.items():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# SESSION RESTORE — runs on every page load before anything else
+# If auth_user is missing from session_state but a valid token exists
+# in the URL, restore the session silently (handles server restarts).
+# ─────────────────────────────────────────────────────────────────────────────
+if st.session_state.auth_user is None:
+    _token_in_url = st.query_params.get("session", None)
+    if _token_in_url:
+        _restored = db.validate_session_token(_token_in_url)
+        if _restored:
+            st.session_state.auth_user        = _restored
+            st.session_state.active_page      = "Dashboard"
+            st.session_state._session_token   = _token_in_url
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # LOGIN SCREEN
 # ─────────────────────────────────────────────────────────────────────────────
 def page_login():
@@ -158,25 +173,31 @@ def page_login():
     </div>
     """, unsafe_allow_html=True)
 
-    _, mid, _ = st.columns([1,1.2,1])
+    _, mid, _ = st.columns([1, 1.2, 1])
     with mid:
         with st.form("login_form"):
-            pin = st.text_input("Enter your PIN", type="password", max_chars=6, placeholder="••••••")
+            pin       = st.text_input("Enter your PIN", type="password",
+                                      max_chars=6, placeholder="••••••")
             submitted = st.form_submit_button("🔓 Log In", use_container_width=True)
+
         if submitted:
             account = db.verify_login(pin.strip())
             if account:
-                st.session_state.auth_user = account
-                st.session_state.active_page = "Dashboard"
+                # Create a persistent token and store it in the URL
+                token = db.create_session_token(account["id"])
+                st.session_state.auth_user      = account
+                st.session_state.active_page    = "Dashboard"
+                st.session_state._session_token = token
+                st.query_params["session"]      = token
                 st.rerun()
             else:
                 st.error("❌ Invalid PIN. Please try again.")
 
-        st.caption("Forgot your PIN? Ask a Branch Manager or Super Admin to reset it in Staff Management → Accounts.")
+        st.caption("Forgot your PIN? Ask a Branch Manager or Super Admin to reset it.")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# AUTH GATE — block everything below until logged in
+# AUTH GATE
 # ─────────────────────────────────────────────────────────────────────────────
 if st.session_state.auth_user is None:
     page_login()
@@ -429,8 +450,14 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
     if st.button("🚪 Log Out", use_container_width=True):
-        st.session_state.auth_user = None
-        st.session_state.active_page = "Dashboard"
+        # Invalidate the server-side token so the URL token stops working
+        _token = st.session_state.get("_session_token")
+        if _token:
+            db.delete_session_token(_token)
+        st.session_state.auth_user      = None
+        st.session_state.active_page    = "Dashboard"
+        st.session_state._session_token = None
+        st.query_params.clear()
         st.rerun()
 
     st.markdown(f"<div style='font-size:11px; color:#C9A0B0; text-align:center; margin-top:8px;'>{datetime.now().strftime('%A, %B %d %Y')}</div>", unsafe_allow_html=True)
