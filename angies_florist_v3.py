@@ -195,13 +195,19 @@ def page_login():
             submitted = st.form_submit_button("🔓 Log In", use_container_width=True)
 
             if submitted:
+                st.write("🔵 Button clicked")
+                st.write(f"🔵 PIN length: {len(pin)}")
                 account = db.verify_login(pin.strip())
+                st.write(f"🔵 Account found: {account is not None}")
                 if account:
+                    st.write("🔵 Creating token...")
                     token = db.create_session_token(account["id"])
+                    st.write(f"🔵 Token created: {token is not None}")
                     st.session_state.auth_user      = account
                     st.session_state.active_page    = "Dashboard"
                     st.session_state._session_token = token
                     st.query_params["session"]      = token
+                    st.write("🔵 About to rerun...")
                     st.rerun()
                 else:
                     st.error("❌ Invalid PIN. Please try again.")
