@@ -194,18 +194,17 @@ def page_login():
                                       max_chars=6, placeholder="••••••")
             submitted = st.form_submit_button("🔓 Log In", use_container_width=True)
 
-        if submitted:
-            account = db.verify_login(pin.strip())
-            if account:
-                # Create a persistent token and store it in the URL
-                token = db.create_session_token(account["id"])
-                st.session_state.auth_user      = account
-                st.session_state.active_page    = "Dashboard"
-                st.session_state._session_token = token
-                st.query_params["session"]      = token
-                st.rerun()
-            else:
-                st.error("❌ Invalid PIN. Please try again.")
+            if submitted:
+                account = db.verify_login(pin.strip())
+                if account:
+                    token = db.create_session_token(account["id"])
+                    st.session_state.auth_user      = account
+                    st.session_state.active_page    = "Dashboard"
+                    st.session_state._session_token = token
+                    st.query_params["session"]      = token
+                    st.rerun()
+                else:
+                    st.error("❌ Invalid PIN. Please try again.")
 
         st.caption("Forgot your PIN? Ask a Branch Manager or Super Admin to reset it.")
 
