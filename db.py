@@ -11,7 +11,7 @@ from typing import Optional
 import uuid
 import hashlib
 import secrets
-from datetime import datetime
+from datetime import datetime, timedelta
 
 CACHE_TTL = 10  # seconds — balances freshness vs. speed for multi-user use
 STORAGE_BUCKET = "angies-florist-uploads"
@@ -231,22 +231,8 @@ def get_florist_active_load(florist_name: str) -> int:
 # ─────────────────────────────────────────────────────────────
 # SUPABASE STORAGE — persistent file uploads
 # ─────────────────────────────────────────────────────────────
-#
-# Files (inspiration pictures, proof of payment, proof of delivery,
-# finished product photos) are stored in a Supabase Storage bucket
-# instead of local disk — local disk on Streamlit Community Cloud is
-# wiped on every restart/redeploy, so files would otherwise be lost.
-#
-# Make sure the bucket exists (see supabase_schema.sql for the
-# one-time setup SQL / dashboard steps).
 
 def upload_file(file_bytes: bytes, path: str, content_type: str = "application/octet-stream") -> Optional[str]:
-    """
-    Upload a file to Supabase Storage.
-    `path` should be a unique path within the bucket, e.g.
-    'orders/2025-06-13-MB-0001/inspo/photo1.jpg'
-    Returns the public URL on success, or None on failure.
-    """
     sb = get_supabase()
     try:
         sb.storage.from_(STORAGE_BUCKET).upload(
@@ -312,13 +298,11 @@ def verify_login(pin: str) -> Optional[dict]:
     """Return the matching active staff account for this PIN, or None."""
     if not pin:
         return None
-    # Always fetch fresh — bypass cache so login sees the latest accounts
     try:
         accounts = _select("staff_accounts")
     except Exception:
         accounts = []
     for a in accounts:
-        # active field: treat missing/None as True for backwards compat
         is_active = a.get("active")
         if is_active is False:
             continue
@@ -343,17 +327,71 @@ def pin_in_use(pin: str, exclude_id: str = None) -> bool:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# SESSION TOKENS — persistent login across server restarts
+# ─────────────────────────────────────────────────────────────────────────────
+
+def create_session_token(account_id: str) -> str:
+    """Create a persistent session token valid for 30 days. Returns the token."""
+    token      = secrets.token_urlsafe(32)
+    expires_at = (datetime.now() + timedelta(days=30)).isoformat()
+    try:
+        sb = get_supabase()
+        sb.table("session_tokens").insert({
+            "token":      token,
+            "account_id": account_id,
+            "created_at": datetime.now().isoformat(),
+            "expires_at": expires_at,
+        }).execute()
+    except Exception as e:
+        st.error(f"⚠️ Session token creation failed: {e}")
+    return token
+
+
+def validate_session_token(token: str) -> Optional[dict]:
+    """Validate a session token. Returns the account dict if valid, else None."""
+    if not token:
+        return None
+    try:
+        sb  = get_supabase()
+        res = sb.table("session_tokens").select("*").eq("token", token).execute()
+        if not res.data:
+            return None
+
+        row = res.data[0]
+
+        # Check expiry
+        if datetime.now().isoformat() > row.get("expires_at", ""):
+            sb.table("session_tokens").delete().eq("token", token).execute()
+            return None
+
+        # Look up account
+        accounts = _select("staff_accounts", {"id": row["account_id"]})
+        if not accounts:
+            return None
+
+        account = accounts[0]
+        if account.get("active") is False:
+            return None
+
+        return account
+
+    except Exception:
+        return None
+
+
+def delete_session_token(token: str):
+    """Remove a session token on logout."""
+    try:
+        get_supabase().table("session_tokens").delete().eq("token", token).execute()
+    except Exception:
+        pass
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # INVENTORY AUTO-DEDUCTION (color-aware, allows negative stock)
 # ─────────────────────────────────────────────────────────────────────────────
 
 def deduct_inventory_for_order(flower_items: list, branch: str, order_id: str = "", logged_by: str = "") -> list:
-    """
-    Deduct flower quantities from inventory when an order is logged.
-    Color logic: "{COLOR} {FLOWER}" format (e.g. RED CHINA ROSES)
-    Falls back to base flower if color-specific not found.
-    Auto-creates with negative qty if neither found.
-    Allows negative stock to show shortfall.
-    """
     if not flower_items:
         return []
     inventory = get_inventory()
@@ -517,6 +555,7 @@ def deduct_inventory_for_waste(item_name: str, qty: int, branch: str, logged_by:
 def get_inventory_logs() -> list:
     return _select("inventory_logs")
 
+
 def log_inventory_change(item_name, branch, change_qty, qty_before, qty_after, reason, order_id="", logged_by=""):
     try:
         _insert("inventory_logs", {
@@ -542,6 +581,7 @@ def get_system_flag(key: str):
         pass
     return None
 
+
 def set_system_flag(key: str, value: str):
     try:
         get_supabase().table("system_flags").upsert(
@@ -550,6 +590,7 @@ def set_system_flag(key: str, value: str):
     except Exception:
         pass
 
+
 # ─────────────────────────────────────────────────────────────────────────────
 # STOCK COUNT ENTRIES
 # ─────────────────────────────────────────────────────────────────────────────
@@ -557,6 +598,7 @@ def set_system_flag(key: str, value: str):
 @st.cache_data(ttl=CACHE_TTL)
 def get_stock_count_entries() -> list:
     return _select("stock_count_entries")
+
 
 def save_stock_count_entry(entry: dict) -> dict:
     return _insert("stock_count_entries", entry)
@@ -570,8 +612,10 @@ def save_stock_count_entry(entry: dict) -> dict:
 def get_expenses() -> list:
     return _select("expenses")
 
+
 def save_expense(entry: dict) -> dict:
     return _insert("expenses", entry)
+
 
 def delete_expense(expense_id: str) -> bool:
     return _delete("expenses", expense_id)
@@ -584,6 +628,7 @@ def delete_expense(expense_id: str) -> bool:
 @st.cache_data(ttl=CACHE_TTL)
 def get_branch_fixed_costs() -> list:
     return _select("branch_fixed_costs")
+
 
 def upsert_branch_fixed_cost(row: dict) -> dict:
     return _upsert("branch_fixed_costs", row)
@@ -609,77 +654,3 @@ def adjust_inventory_manual(item_id: str, item_name: str, branch: str,
     log_inventory_change(item_name, branch, delta, qty_before, qty_after, reason, "", logged_by)
     direction = "Added" if delta > 0 else "Removed"
     return f"✅ {direction} {abs(delta)} pcs of **{item_name}** at {branch}. Stock: {qty_before} → {qty_after}"
-
-    # ─────────────────────────────────────────────────────────────────────────────
-# SESSION TOKENS — persistent login across server restarts
-# ─────────────────────────────────────────────────────────────────────────────
-from datetime import datetime, timedelta
-
-def create_session_token(account_id: str) -> str:
-    """Create a persistent session token. Returns the token."""
-    token      = secrets.token_urlsafe(32)
-    expires_at = (datetime.now() + timedelta(days=30)).isoformat()
-    try:
-        sb  = get_supabase()
-        res = sb.table("session_tokens").insert({
-            "token":      token,
-            "account_id": account_id,
-            "created_at": datetime.now().isoformat(),
-            "expires_at": expires_at,
-        }).execute()
-        if not res.data:
-            st.error("Session token insert returned no data — check RLS on session_tokens table")
-    except Exception as e:
-        st.error(f"Session token insert failed: {e}")
-    return token
-
-
-def validate_session_token(token: str) -> Optional[dict]:
-    if not token:
-        return None
-    try:
-        sb  = get_supabase()
-
-        # Step 1 — does the token row exist at all?
-        res = sb.table("session_tokens").select("*").eq("token", token).execute()
-        if not res.data:
-            st.error(f"DEBUG validate: token not found in session_tokens table")
-            return None
-
-        row = res.data[0]
-        st.error(f"DEBUG validate: token row found — account_id={row.get('account_id')} expires_at={row.get('expires_at')}")
-
-        # Step 2 — is it expired?
-        now = datetime.now().isoformat()
-        if now > row.get("expires_at",""):
-            st.error(f"DEBUG validate: token EXPIRED — now={now} expires_at={row.get('expires_at')}")
-            sb.table("session_tokens").delete().eq("token", token).execute()
-            return None
-
-        # Step 3 — does the account exist?
-        accounts = _select("staff_accounts", {"id": row["account_id"]})
-        if not accounts:
-            st.error(f"DEBUG validate: account_id {row.get('account_id')} not found in staff_accounts")
-            return None
-
-        account = accounts[0]
-
-        # Step 4 — is it active?
-        if account.get("active") is False:
-            st.error(f"DEBUG validate: account is marked inactive")
-            return None
-
-        st.success(f"DEBUG validate: all checks passed — returning account {account.get('name')}")
-        return account
-
-    except Exception as e:
-        st.error(f"DEBUG validate: exception — {e}")
-        return None
-
-
-def delete_session_token(token: str):
-    """Remove a session token on logout."""
-    try:
-        get_supabase().table("session_tokens").delete().eq("token", token).execute()
-    except Exception:
-        pass
