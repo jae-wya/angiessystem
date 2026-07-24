@@ -78,8 +78,8 @@ h1, h2, h3 { font-family: 'Playfair Display', serif !important; }
 # ─────────────────────────────────────────────────────────────────────────────
 # CONSTANTS
 # ─────────────────────────────────────────────────────────────────────────────
-BRANCHES = ["Main Branch", "San Pablo Branch", "Sta. Rosa Branch"]
-BRANCH_CODES = {"Main Branch": "MB", "San Pablo Branch": "SB", "Sta. Rosa Branch": "SR"}
+BRANCHES = ["Main Branch", "San Pablo Branch", "Sta. Rosa Branch","Tiktok","WhatsApp"]
+BRANCH_CODES = {"Main Branch": "MB", "San Pablo Branch": "SB", "Sta. Rosa Branch": "SR", "TikTok": "TK", "WhatsApp": "WA"}
 STATUS_FLOW = ["Pending","Confirmed","In Progress","Ready","Delivered","Picked Up","Cancelled","Failed Delivery"]
 SOURCE_PAGES = ["Facebook","Instagram","WhatsApp","TikTok","Website","Walk-in","Other"]
 PAYMENT_METHODS_BALANCE = ["COD","GCash","Bank Transfer","Cash","Maya"]
@@ -87,7 +87,7 @@ PAYMENT_METHODS_DIGITAL = ["GCash","Bank Transfer","Cash","Maya"]
 OCCASIONS = ["Birthday","Anniversary","Valentine's Day","Mother's Day","Graduation","Sympathy","Wedding","Just Because","Corporate","Other"]
 CANCELLATION_REASONS = ["Customer request","Out of stock","Wrong order","Payment failed","Other"]
 DELIVERY_FAILURE_REASONS = ["Needs Redelivery","Customer Refused","Address Invalid","Contact Unavailable","Other"]
-COLOR_PREFERENCES = ["Any","Red","Two-tone Red","Pink","Two-tone Pink","White","Purple","Two-tone Purple","Yellow","Orange","Two-tone Orange","Blue","Green","Brown","Mixed","Custom"]
+COLOR_PREFERENCES = ["Any","Red","Two-tone Red","Pink","Two-tone Pink","Fuchsia Pink","Peach","White","Purple","Two-tone Purple","Yellow","Orange","Two-tone Orange","Blue","Green","Brown","Mixed","Custom"]
 DELIVERY_ZONES = ["Calamba","Los Baños","Calauan","Cabuyao","Sta. Rosa","Biñan","San Pedro","Bay","San Pablo","Alaminos","Quezon","Batangas","Victoria","Pila","Sta. Cruz","Pagsanjan","Lumban","Rizal","Nagcarlan","Liliw","PICK UP","N/A"]
 WASTE_REASONS = ["Wilted","Damaged","Miscalculation","Customer Return","Expired","Other"]
 ARRANGEMENTS = [
