@@ -28,7 +28,7 @@ def generate_order_token() -> str:
 
 def generate_qr_base64(order_code: str, token: str) -> str:
     url = f"{RIDER_PAGE_BASE_URL}?order={order_code}&token={token}"
-    qr  = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=6, border=2)
+    qr  = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=10, border=2)
     qr.add_data(url)
     qr.make(fit=True)
     img = qr.make_image(fill_color="#1a1a1a", back_color="white")
@@ -248,7 +248,7 @@ def generate_waybill_html(order: dict, token: str = None) -> str:
   .inspo-row{{display:flex;gap:6px;}}
   .inspo-img{{
     width:100%;
-    max-height:85mm;
+    max-height:78mm;
     object-fit:cover;
     border-radius:5px;
     border:1.5px solid #e0dbd4;
@@ -331,7 +331,7 @@ def generate_waybill_html(order: dict, token: str = None) -> str:
   .rider-zone{{font-size:9px;color:#888;margin-top:1px;}}
   .rider-addons{{font-size:9px;color:#555;font-style:italic;margin-top:2px;}}
   .rider-right{{display:flex;flex-direction:column;align-items:center;gap:3px;}}
-  .rider-right img{{width:54px;height:54px;border-radius:3px;}}
+  .rider-right img{{width:100px;height:100px;border-radius:3px;}}
   .qr-label{{font-size:6.5px;color:#999;letter-spacing:.08em;text-transform:uppercase;text-align:center;}}
 
   /* ── Footer bar ── */
@@ -348,16 +348,26 @@ def generate_waybill_html(order: dict, token: str = None) -> str:
 
   /* ── Print ── */
   @media print{{
-    @page{{size:A5 portrait;margin:0;}}
-    body{{background:none;padding:0;}}
-    .hint{{display:none;}}
+    @page{{
+      size:148mm 210mm;
+      margin:0;
+    }}
+    html,body{{
+      width:148mm;
+      height:210mm;
+      margin:0;
+      padding:0;
+      background:none;
+    }}
+    .hint{{display:none!important;}}
     .wb{{
       width:148mm;
-      min-height:210mm;
+      height:210mm;
+      min-height:unset;
       max-height:210mm;
       box-shadow:none;
       border-radius:0;
-      page-break-after:always;
+      overflow:hidden;
     }}
   }}
 </style>
