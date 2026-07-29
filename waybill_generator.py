@@ -14,6 +14,10 @@ import secrets
 from datetime import datetime
 
 RIDER_PAGE_BASE_URL = "https://yvbfggxavlaaohzupnqf.supabase.co/functions/v1/rider-delivery"
+# NOTE: If the Edge Function above returns UNAUTHORIZED, set --no-verify-jwt in
+# Supabase Dashboard → Edge Functions → rider-delivery → Settings → JWT verification OFF
+# OR override the URL below with your Streamlit app's public rider page URL:
+# RIDER_PAGE_BASE_URL = "https://your-app.streamlit.app/rider"
 
 BRANCH_NAMES = {
     "main":      "Main Branch",
@@ -350,31 +354,40 @@ def generate_waybill_html(order: dict, token: str = None) -> str:
   @media print{{
     @page{{
       size:148mm 210mm;
-      margin:0;
+      margin:0 !important;
     }}
-    html,body{{
-      width:148mm;
-      height:210mm;
-      margin:0;
-      padding:0;
-      background:none;
+    html{{
+      width:148mm !important;
+      height:210mm !important;
+      margin:0 !important;
+      padding:0 !important;
+    }}
+    body{{
+      width:148mm !important;
+      height:210mm !important;
+      min-height:unset !important;
+      margin:0 !important;
+      padding:0 !important;
+      background:none !important;
+      display:block !important;
     }}
     .hint{{display:none!important;}}
     .wb{{
-      width:148mm;
-      height:210mm;
-      min-height:unset;
-      max-height:210mm;
-      box-shadow:none;
-      border-radius:0;
-      overflow:hidden;
+      width:148mm !important;
+      height:210mm !important;
+      min-height:unset !important;
+      max-height:210mm !important;
+      box-shadow:none !important;
+      border-radius:0 !important;
+      overflow:hidden !important;
+      page-break-after:avoid !important;
     }}
   }}
 </style>
 </head>
 <body>
 
-<p class="hint">A5 · Ctrl+P or ⌘+P to print</p>
+<p class="hint">A5 · <button onclick="window.print()" style="background:#1a1a1a;color:#fff;border:none;padding:4px 12px;border-radius:4px;cursor:pointer;font-size:11px;">🖨️ Print</button> — set paper to <strong>A5</strong> in print dialog</p>
 
 <div class="wb">
 
