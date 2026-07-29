@@ -13,7 +13,7 @@ import base64
 import secrets
 from datetime import datetime
 
-RIDER_PAGE_BASE_URL = "https://your-project-ref.supabase.co/functions/v1/rider-delivery"
+RIDER_PAGE_BASE_URL = "https://yvbfggxavlaaohzupnqf.supabase.co/functions/v1/rider-delivery"
 
 BRANCH_NAMES = {
     "main":      "Main Branch",
