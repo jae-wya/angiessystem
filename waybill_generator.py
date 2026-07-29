@@ -14,10 +14,6 @@ import secrets
 from datetime import datetime
 
 RIDER_PAGE_BASE_URL = "https://yvbfggxavlaaohzupnqf.supabase.co/functions/v1/rider-delivery"
-# NOTE: If the Edge Function above returns UNAUTHORIZED, set --no-verify-jwt in
-# Supabase Dashboard → Edge Functions → rider-delivery → Settings → JWT verification OFF
-# OR override the URL below with your Streamlit app's public rider page URL:
-# RIDER_PAGE_BASE_URL = "https://your-app.streamlit.app/rider"
 
 BRANCH_NAMES = {
     "main":      "Main Branch",
@@ -30,7 +26,120 @@ def generate_order_token() -> str:
     return secrets.token_urlsafe(6)
 
 
+def generate_qr_for_order(order: dict, token: str) -> str:
+    """
+    Generate a QR code that encodes a self-contained delivery info page
+    as a data: URL — no server, no auth header, works on any device.
+    Falls back to a plain URL if the HTML is too large for a QR code.
+    """
+    order_code    = order.get("order_code", "")
+    recip_name    = order.get("recipient_name") or order.get("customer_name", "")
+    recip_phone   = order.get("recipient_phone") or order.get("customer_contact", "")
+    address       = order.get("delivery_address", "")
+    zone          = order.get("delivery_zone", "")
+    landmark      = order.get("landmark", "")
+    target_date   = order.get("delivery_date", "")
+    target_time   = order.get("delivery_time", "")
+    arrangement   = order.get("arrangement_name", "")
+    balance       = float(order.get("total_balance", 0) or 0)
+    pay_method    = order.get("payment_method", "")
+    is_cod        = str(pay_method).upper() == "COD"
+    is_surprise   = bool(order.get("is_surprise", False))
+    card_to       = order.get("card_to", "")
+    card_msg      = order.get("card_message", "")
+    card_from     = order.get("card_from", "")
+    rider         = order.get("assigned_rider", "")
+    branch        = order.get("branch", "")
+
+    cod_block = (
+        f"<div class='cod'>💰 COLLECT ₱{balance:,.0f} via COD</div>"
+        if is_cod and balance > 0
+        else "<div class='paid'>✅ FULLY PAID — Nothing to collect</div>"
+    )
+    surprise_block = (
+        "<div class='surprise'>🤫 SURPRISE — Do NOT reveal sender's name</div>"
+        if is_surprise else ""
+    )
+    card_block = ""
+    if card_to or card_msg or card_from:
+        card_block = (
+            "<div class='card'>"
+            + (f"<b>To:</b> {card_to}<br>" if card_to else "")
+            + (f"<em>{card_msg}</em><br>" if card_msg else "")
+            + (f"<b>From:</b> {card_from}" if card_from else "")
+            + "</div>"
+        )
+    landmark_block = f"<div class='row'><b>Landmark:</b> {landmark}</div>" if landmark else ""
+
+    html = f"""<!DOCTYPE html><html lang="en"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Delivery — {order_code}</title>
+<style>
+*{{box-sizing:border-box;margin:0;padding:0}}
+body{{font-family:sans-serif;background:#111;color:#fff;padding:16px;max-width:420px;margin:auto}}
+h1{{font-size:18px;color:#c8a96e;margin-bottom:4px}}
+.sub{{font-size:11px;color:#888;margin-bottom:16px}}
+.section{{background:#1e1e1e;border-radius:10px;padding:14px;margin-bottom:12px}}
+.label{{font-size:10px;color:#c8a96e;text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}}
+.name{{font-size:22px;font-weight:800;margin-bottom:2px}}
+.phone{{font-size:15px;color:#aaa;margin-bottom:8px}}
+.row{{font-size:13px;color:#ccc;margin-bottom:4px}}
+.cod{{background:#7a6000;color:#ffe;font-size:16px;font-weight:700;padding:10px 14px;border-radius:8px;margin-bottom:8px}}
+.paid{{background:#2d6a4f;color:#e8f5ee;font-size:14px;font-weight:700;padding:10px 14px;border-radius:8px;margin-bottom:8px}}
+.surprise{{background:#6a1a5f;color:#ffe;font-size:13px;font-weight:700;padding:8px 12px;border-radius:8px;margin-bottom:8px}}
+.card{{background:#222;border-left:3px solid #c8a96e;padding:8px 12px;border-radius:4px;font-size:13px;color:#ddd;margin-top:8px}}
+a{{color:#c8a96e}}
+</style></head><body>
+<h1>🌸 Angie's Florist</h1>
+<div class="sub">Delivery Sheet · {order_code}</div>
+{cod_block}
+{surprise_block}
+<div class="section">
+  <div class="label">📍 Deliver To</div>
+  <div class="name">{recip_name}</div>
+  <div class="phone"><a href="tel:{recip_phone}">{recip_phone}</a></div>
+  <div class="row"><b>Address:</b> {address}</div>
+  <div class="row"><b>Zone:</b> {zone}</div>
+  {landmark_block}
+</div>
+<div class="section">
+  <div class="label">📦 Order</div>
+  <div class="row"><b>Code:</b> {order_code}</div>
+  <div class="row"><b>Item:</b> {arrangement}</div>
+  <div class="row"><b>Date:</b> {target_date} {target_time}</div>
+  <div class="row"><b>Branch:</b> {branch}</div>
+  <div class="row"><b>Rider:</b> {rider}</div>
+  {card_block}
+</div>
+</body></html>"""
+
+    encoded = base64.b64encode(html.encode("utf-8")).decode("utf-8")
+    data_url = f"data:text/html;base64,{encoded}"
+
+    qr = qrcode.QRCode(
+        version=None,
+        error_correction=qrcode.constants.ERROR_CORRECT_L,  # L = smallest, fits more data
+        box_size=10,
+        border=2,
+    )
+    try:
+        qr.add_data(data_url)
+        qr.make(fit=True)
+    except Exception:
+        # data: URL too large — fall back to plain URL
+        fallback_url = f"{RIDER_PAGE_BASE_URL}?order={order_code}&token={token}"
+        qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=10, border=2)
+        qr.add_data(fallback_url)
+        qr.make(fit=True)
+
+    img = qr.make_image(fill_color="#1a1a1a", back_color="white")
+    buf = BytesIO()
+    img.save(buf, format="PNG")
+    return base64.b64encode(buf.getvalue()).decode("utf-8")
+
+
 def generate_qr_base64(order_code: str, token: str) -> str:
+    """Legacy signature kept for compatibility — use generate_qr_for_order when possible."""
     url = f"{RIDER_PAGE_BASE_URL}?order={order_code}&token={token}"
     qr  = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=10, border=2)
     qr.add_data(url)
@@ -81,7 +190,7 @@ def generate_waybill_html(order: dict, token: str = None) -> str:
 
     import re
 
-    qr_b64       = generate_qr_base64(order.get("order_code", "PREVIEW"), token)
+    qr_b64       = generate_qr_for_order(order, token)
     branch_label = BRANCH_NAMES.get(order.get("branch", ""), order.get("branch", "Main Branch"))
     is_rush      = str(order.get("order_type", "")).lower() == "rush"
     is_surprise  = bool(order.get("is_surprise", False))
