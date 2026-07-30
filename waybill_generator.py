@@ -113,7 +113,7 @@ def generate_qr_for_order(order: dict, token: str) -> str:
     img = qr.make_image(fill_color="#1a1a1a", back_color="white")
     buf = BytesIO()
     img.save(buf, format="PNG")
-    return base64.b64encode(buf.getvalue()).decode("utf-8")
+    return base64.b64encode(buf.getvalue()).decode("utf-8"), data_url
 
 
 def generate_qr_base64(order_code: str, token: str) -> str:
@@ -168,7 +168,7 @@ def generate_waybill_html(order: dict, token: str = None) -> str:
 
     import re
 
-    qr_b64       = generate_qr_for_order(order, token)
+    qr_b64, delivery_data_url = generate_qr_for_order(order, token)
     branch_label = BRANCH_NAMES.get(order.get("branch", ""), order.get("branch", "Main Branch"))
     is_rush      = str(order.get("order_type", "")).lower() == "rush"
     is_surprise  = bool(order.get("is_surprise", False))
@@ -424,6 +424,8 @@ def generate_waybill_html(order: dict, token: str = None) -> str:
   .rider-right{{display:flex;flex-direction:column;align-items:center;gap:3px;}}
   .rider-right img{{width:100px;height:100px;border-radius:3px;}}
   .qr-label{{font-size:6.5px;color:#999;letter-spacing:.08em;text-transform:uppercase;text-align:center;}}
+  .qr-test-link{{font-size:7px;color:#c8a96e;text-align:center;text-decoration:none;display:block;margin-top:2px;}}
+  .qr-test-link:hover{{text-decoration:underline;}}
 
   /* ── Footer bar ── */
   .ftr{{
@@ -459,6 +461,7 @@ def generate_waybill_html(order: dict, token: str = None) -> str:
       display:block !important;
     }}
     .hint{{display:none!important;}}
+    .qr-test-link{{display:none!important;}}
     .wb{{
       width:148mm !important;
       height:210mm !important;
@@ -563,6 +566,7 @@ def generate_waybill_html(order: dict, token: str = None) -> str:
     <div class="rider-right">
       <img src="data:image/png;base64,{qr_b64}" alt="QR">
       <span class="qr-label">Scan to deliver</span>
+      <a href="{delivery_data_url}" target="_blank" class="qr-test-link">🔗 Test link</a>
     </div>
   </div>
 
