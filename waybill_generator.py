@@ -28,108 +28,86 @@ def generate_order_token() -> str:
 
 def generate_qr_for_order(order: dict, token: str) -> str:
     """
-    Generate a QR code that encodes a self-contained delivery info page
-    as a data: URL — no server, no auth header, works on any device.
-    Falls back to a plain URL if the HTML is too large for a QR code.
+    QR encodes a self-contained delivery card as a data:text/html URL.
+    Uses minimal HTML (no CSS framework) so the base64 stays small enough
+    for a low-version QR that any phone camera can scan reliably.
     """
-    order_code    = order.get("order_code", "")
-    recip_name    = order.get("recipient_name") or order.get("customer_name", "")
-    recip_phone   = order.get("recipient_phone") or order.get("customer_contact", "")
-    address       = order.get("delivery_address", "")
-    zone          = order.get("delivery_zone", "")
-    landmark      = order.get("landmark", "")
-    target_date   = order.get("delivery_date", "")
-    target_time   = order.get("delivery_time", "")
-    arrangement   = order.get("arrangement_name", "")
-    balance       = float(order.get("total_balance", 0) or 0)
-    pay_method    = order.get("payment_method", "")
-    is_cod        = str(pay_method).upper() == "COD"
-    is_surprise   = bool(order.get("is_surprise", False))
-    card_to       = order.get("card_to", "")
-    card_msg      = order.get("card_message", "")
-    card_from     = order.get("card_from", "")
-    rider         = order.get("assigned_rider", "")
-    branch        = order.get("branch", "")
+    order_code  = order.get("order_code", "")
+    recip_name  = order.get("recipient_name") or order.get("customer_name", "")
+    recip_phone = order.get("recipient_phone") or order.get("customer_contact", "")
+    address     = order.get("delivery_address", "")
+    zone        = order.get("delivery_zone", "")
+    landmark    = order.get("landmark", "")
+    target_date = order.get("delivery_date", "")
+    target_time = order.get("delivery_time", "")
+    arrangement = order.get("arrangement_name", "")
+    balance     = float(order.get("total_balance", 0) or 0)
+    pay_method  = str(order.get("payment_method", ""))
+    is_cod      = pay_method.upper() == "COD"
+    is_surprise = bool(order.get("is_surprise", False))
+    card_to     = order.get("card_to", "")
+    card_msg    = order.get("card_message", "")
+    card_from   = order.get("card_from", "")
+    rider       = order.get("assigned_rider", "")
 
-    cod_block = (
-        f"<div class='cod'>💰 COLLECT ₱{balance:,.0f} via COD</div>"
-        if is_cod and balance > 0
-        else "<div class='paid'>✅ FULLY PAID — Nothing to collect</div>"
-    )
-    surprise_block = (
-        "<div class='surprise'>🤫 SURPRISE — Do NOT reveal sender's name</div>"
-        if is_surprise else ""
-    )
-    card_block = ""
+    lines = []
+    lines.append(f"<h2 style='color:#c8a96e'>Angies Florist</h2>")
+    lines.append(f"<p><small>{order_code}</small></p>")
+
+    if is_cod and balance > 0:
+        lines.append(f"<p style='background:#7a6000;color:#fff;padding:8px'><b>COD: COLLECT PHP {balance:,.0f}</b></p>")
+    else:
+        lines.append(f"<p style='background:#2d6a4f;color:#fff;padding:8px'><b>FULLY PAID</b></p>")
+
+    if is_surprise:
+        lines.append(f"<p style='background:#6a1a5f;color:#fff;padding:6px'><b>SURPRISE - Do NOT reveal sender</b></p>")
+
+    lines.append(f"<hr><h3>{recip_name}</h3>")
+    lines.append(f"<p><a href='tel:{recip_phone}'>{recip_phone}</a></p>")
+    lines.append(f"<p>{address}</p>")
+    if zone:
+        lines.append(f"<p>Zone: {zone}</p>")
+    if landmark:
+        lines.append(f"<p>Landmark: {landmark}</p>")
+    lines.append(f"<hr><p><b>Item:</b> {arrangement}</p>")
+    lines.append(f"<p><b>Date:</b> {target_date} {target_time}</p>")
+    if rider:
+        lines.append(f"<p><b>Rider:</b> {rider}</p>")
     if card_to or card_msg or card_from:
-        card_block = (
-            "<div class='card'>"
-            + (f"<b>To:</b> {card_to}<br>" if card_to else "")
-            + (f"<em>{card_msg}</em><br>" if card_msg else "")
-            + (f"<b>From:</b> {card_from}" if card_from else "")
-            + "</div>"
-        )
-    landmark_block = f"<div class='row'><b>Landmark:</b> {landmark}</div>" if landmark else ""
+        lines.append(f"<hr><p><b>Card To:</b> {card_to}</p>")
+        if card_msg:
+            lines.append(f"<p><i>{card_msg}</i></p>")
+        if card_from:
+            lines.append(f"<p><b>From:</b> {card_from}</p>")
 
-    html = f"""<!DOCTYPE html><html lang="en"><head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Delivery — {order_code}</title>
-<style>
-*{{box-sizing:border-box;margin:0;padding:0}}
-body{{font-family:sans-serif;background:#111;color:#fff;padding:16px;max-width:420px;margin:auto}}
-h1{{font-size:18px;color:#c8a96e;margin-bottom:4px}}
-.sub{{font-size:11px;color:#888;margin-bottom:16px}}
-.section{{background:#1e1e1e;border-radius:10px;padding:14px;margin-bottom:12px}}
-.label{{font-size:10px;color:#c8a96e;text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}}
-.name{{font-size:22px;font-weight:800;margin-bottom:2px}}
-.phone{{font-size:15px;color:#aaa;margin-bottom:8px}}
-.row{{font-size:13px;color:#ccc;margin-bottom:4px}}
-.cod{{background:#7a6000;color:#ffe;font-size:16px;font-weight:700;padding:10px 14px;border-radius:8px;margin-bottom:8px}}
-.paid{{background:#2d6a4f;color:#e8f5ee;font-size:14px;font-weight:700;padding:10px 14px;border-radius:8px;margin-bottom:8px}}
-.surprise{{background:#6a1a5f;color:#ffe;font-size:13px;font-weight:700;padding:8px 12px;border-radius:8px;margin-bottom:8px}}
-.card{{background:#222;border-left:3px solid #c8a96e;padding:8px 12px;border-radius:4px;font-size:13px;color:#ddd;margin-top:8px}}
-a{{color:#c8a96e}}
-</style></head><body>
-<h1>🌸 Angie's Florist</h1>
-<div class="sub">Delivery Sheet · {order_code}</div>
-{cod_block}
-{surprise_block}
-<div class="section">
-  <div class="label">📍 Deliver To</div>
-  <div class="name">{recip_name}</div>
-  <div class="phone"><a href="tel:{recip_phone}">{recip_phone}</a></div>
-  <div class="row"><b>Address:</b> {address}</div>
-  <div class="row"><b>Zone:</b> {zone}</div>
-  {landmark_block}
-</div>
-<div class="section">
-  <div class="label">📦 Order</div>
-  <div class="row"><b>Code:</b> {order_code}</div>
-  <div class="row"><b>Item:</b> {arrangement}</div>
-  <div class="row"><b>Date:</b> {target_date} {target_time}</div>
-  <div class="row"><b>Branch:</b> {branch}</div>
-  <div class="row"><b>Rider:</b> {rider}</div>
-  {card_block}
-</div>
-</body></html>"""
+    body = "\n".join(lines)
+    html = (
+        f"<!DOCTYPE html><html><head>"
+        f"<meta charset=UTF-8>"
+        f"<meta name=viewport content='width=device-width,initial-scale=1'>"
+        f"<style>body{{font-family:sans-serif;padding:12px;max-width:420px;margin:auto}}</style>"
+        f"</head><body>{body}</body></html>"
+    )
 
-    encoded = base64.b64encode(html.encode("utf-8")).decode("utf-8")
+    encoded  = base64.b64encode(html.encode("utf-8")).decode("utf-8")
     data_url = f"data:text/html;base64,{encoded}"
 
     qr = qrcode.QRCode(
         version=None,
-        error_correction=qrcode.constants.ERROR_CORRECT_L,  # L = smallest, fits more data
-        box_size=10,
+        error_correction=qrcode.constants.ERROR_CORRECT_L,
+        box_size=8,
         border=2,
     )
     try:
         qr.add_data(data_url)
         qr.make(fit=True)
+        if qr.version and qr.version > 35:
+            raise ValueError("QR version too high, strip more")
     except Exception:
-        # data: URL too large — fall back to plain URL
-        fallback_url = f"{RIDER_PAGE_BASE_URL}?order={order_code}&token={token}"
-        qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=10, border=2)
-        qr.add_data(fallback_url)
+        # Ultra-minimal fallback — just the essentials as plain text
+        txt = f"ANGIES FLORIST {order_code} | {recip_name} | {recip_phone} | {address} | {'COD PHP '+str(int(balance)) if is_cod and balance>0 else 'PAID'}"
+        qr = qrcode.QRCode(version=None, error_correction=qrcode.constants.ERROR_CORRECT_L, box_size=8, border=2)
+        qr.add_data(txt)
         qr.make(fit=True)
 
     img = qr.make_image(fill_color="#1a1a1a", back_color="white")
