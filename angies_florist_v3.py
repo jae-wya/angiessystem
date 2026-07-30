@@ -17,6 +17,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import db  # Supabase data layer
+from streamlit_option_menu import option_menu
 import secrets as _secrets
 
 # ── New feature modules ──
@@ -39,45 +40,238 @@ st.set_page_config(
 # ─────────────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=DM+Sans:wght@300;400;500;600&display=swap');
-html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
-h1, h2, h3 { font-family: 'Playfair Display', serif !important; }
-.main { background-color: #FDF6F0; }
-.stApp { background: linear-gradient(135deg, #FDF6F0 0%, #FFF0F5 100%); }
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=DM+Serif+Display&display=swap');
+
+/* ── Base ── */
+html, body, [class*="css"] {
+  font-family: 'Inter', sans-serif;
+  font-size: 14px;
+}
+h1, h2, h3 {
+  font-family: 'DM Serif Display', serif !important;
+  letter-spacing: -0.01em;
+}
+
+/* ── App background ── */
+.main { background-color: #F8F6F3; }
+.stApp { background: #F8F6F3; }
+
+/* ── Sidebar ── */
+[data-testid="stSidebar"] {
+  background: #1A1A1A !important;
+  border-right: 1px solid #2A2A2A;
+}
+[data-testid="stSidebar"] * { color: #E8E4DF !important; }
+[data-testid="stSidebar"] .stButton > button {
+  background: transparent !important;
+  border: none !important;
+  color: #C8C0B8 !important;
+  text-align: left !important;
+  font-weight: 500 !important;
+  border-radius: 8px !important;
+  padding: 8px 12px !important;
+  font-size: 13px !important;
+  box-shadow: none !important;
+  transition: all 0.15s !important;
+}
+[data-testid="stSidebar"] .stButton > button:hover {
+  background: #2A2A2A !important;
+  color: #FFFFFF !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+[data-testid="stSidebar"] .stButton > button[kind="primary"] {
+  background: #C8A96E !important;
+  color: #1A1A1A !important;
+  font-weight: 700 !important;
+}
+[data-testid="stSidebar"] hr {
+  border-color: #2A2A2A !important;
+}
+
+/* ── Metric cards ── */
 [data-testid="metric-container"] {
-  background: white; border: 1px solid #F0D9E0; border-radius: 16px;
-  padding: 16px; box-shadow: 0 2px 12px rgba(219,112,147,0.08);
+  background: white;
+  border: 1px solid #EAE7E2;
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
 }
-[data-testid="stSidebar"] { background: linear-gradient(180deg, #2D1B2E 0%, #1A0F1E 100%); }
-[data-testid="stSidebar"] * { color: #F5D5E0 !important; }
+[data-testid="metric-container"] [data-testid="stMetricValue"] {
+  font-family: 'DM Serif Display', serif !important;
+  font-size: 28px !important;
+  color: #1A1A1A !important;
+}
+[data-testid="metric-container"] [data-testid="stMetricLabel"] {
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.08em !important;
+  text-transform: uppercase !important;
+  color: #888 !important;
+}
+
+/* ── Buttons ── */
 .stButton > button {
-  background: linear-gradient(135deg, #C85C8E, #A0355F); color: white !important;
-  border: none; border-radius: 10px; font-weight: 500; transition: all 0.2s;
-  box-shadow: 0 2px 8px rgba(200,92,142,0.3);
+  background: #1A1A1A !important;
+  color: white !important;
+  border: none !important;
+  border-radius: 8px !important;
+  font-weight: 600 !important;
+  font-size: 13px !important;
+  padding: 8px 16px !important;
+  transition: all 0.15s !important;
+  box-shadow: none !important;
+  letter-spacing: 0.01em !important;
 }
-.stButton > button:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(200,92,142,0.4); }
+.stButton > button:hover {
+  background: #333 !important;
+  transform: none !important;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15) !important;
+}
+.stButton > button[kind="secondary"] {
+  background: white !important;
+  color: #1A1A1A !important;
+  border: 1.5px solid #E0DDD8 !important;
+}
+.stButton > button[kind="secondary"]:hover {
+  background: #F5F3F0 !important;
+  border-color: #C8A96E !important;
+}
+
+/* ── Section header ── */
 .section-header {
-  font-family: 'Playfair Display', serif; font-size: 22px; color: #2D1B2E;
-  border-bottom: 2px solid #F0D9E0; padding-bottom: 8px; margin-bottom: 20px;
+  font-family: 'DM Serif Display', serif;
+  font-size: 24px;
+  color: #1A1A1A;
+  border-bottom: 2px solid #C8A96E;
+  padding-bottom: 10px;
+  margin-bottom: 24px;
+  letter-spacing: -0.01em;
 }
+
+/* ── Cards / containers ── */
 .print-sheet {
-  background: white; border: 2px solid #C85C8E; border-radius: 12px;
-  padding: 24px; font-family: 'DM Sans', sans-serif;
+  background: white;
+  border: 1.5px solid #EAE7E2;
+  border-radius: 12px;
+  padding: 24px;
 }
-.print-sheet h2, .print-sheet h3 { font-family: 'Playfair Display', serif; color: #2D1B2E; }
+.print-sheet h2, .print-sheet h3 {
+  font-family: 'DM Serif Display', serif;
+  color: #1A1A1A;
+}
 .print-sheet table { width: 100%; border-collapse: collapse; }
-.print-sheet td, .print-sheet th { border: 1px solid #F0D9E0; padding: 8px 12px; text-align: left; }
-.print-sheet th { background: #FDF6F0; font-weight: 600; }
+.print-sheet td, .print-sheet th {
+  border: 1px solid #EAE7E2;
+  padding: 8px 12px;
+  text-align: left;
+}
+.print-sheet th {
+  background: #F8F6F3;
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #888;
+}
+
+/* ── Balance box ── */
 .balance-box {
-  background: #FFF0F5; border: 1.5px solid #C85C8E; border-radius: 10px;
-  padding: 12px 18px; margin-top: 6px; font-family: 'DM Sans', sans-serif;
+  background: #FFFDF9;
+  border: 1.5px solid #C8A96E;
+  border-radius: 10px;
+  padding: 14px 18px;
+  margin-top: 8px;
 }
-.balance-box .label { font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 1px; }
-.balance-box .amount { font-size: 24px; font-weight: 700; color: #C85C8E; }
+.balance-box .label {
+  font-size: 11px;
+  color: #999;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-weight: 600;
+}
+.balance-box .amount {
+  font-size: 26px;
+  font-weight: 800;
+  color: #1A1A1A;
+  font-family: 'DM Serif Display', serif;
+}
+
+/* ── City rank bar ── */
 .city-rank-bar {
-  background: #FFF0F5; border-radius: 8px; padding: 10px 14px;
-  margin-bottom: 6px; border-left: 4px solid #C85C8E;
+  background: #F8F6F3;
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 6px;
+  border-left: 3px solid #C8A96E;
 }
+
+/* ── Inputs ── */
+.stTextInput > div > div > input,
+.stTextArea > div > div > textarea,
+.stSelectbox > div > div,
+.stNumberInput > div > div > input {
+  border-radius: 8px !important;
+  border-color: #E0DDD8 !important;
+  font-family: 'Inter', sans-serif !important;
+}
+.stTextInput > div > div > input:focus,
+.stTextArea > div > div > textarea:focus {
+  border-color: #C8A96E !important;
+  box-shadow: 0 0 0 2px rgba(200,169,110,0.15) !important;
+}
+
+/* ── Expanders ── */
+.streamlit-expanderHeader {
+  font-weight: 600 !important;
+  font-size: 13px !important;
+  background: #F8F6F3 !important;
+  border-radius: 8px !important;
+}
+
+/* ── Tabs ── */
+.stTabs [data-baseweb="tab"] {
+  font-size: 13px !important;
+  font-weight: 600 !important;
+}
+.stTabs [aria-selected="true"] {
+  color: #C8A96E !important;
+  border-bottom-color: #C8A96E !important;
+}
+
+/* ── Dataframes ── */
+.stDataFrame {
+  border-radius: 10px !important;
+  border: 1px solid #EAE7E2 !important;
+  overflow: hidden !important;
+}
+
+/* ── Alerts ── */
+.stAlert {
+  border-radius: 10px !important;
+  border: none !important;
+}
+
+/* ── Dividers ── */
+hr { border-color: #EAE7E2 !important; }
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #F8F6F3; }
+::-webkit-scrollbar-thumb { background: #D4CFC9; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #C8A96E; }
+
+/* ── Hide sidebar entirely — top nav replaces it ── */
+[data-testid="stSidebar"] { display: none !important; }
+[data-testid="collapsedControl"] { display: none !important; }
+.main .block-container {
+  max-width: 100% !important;
+  padding: 1rem 2rem !important;
+}
+
+/* ── Top nav option_menu overrides ── */
+.nav-link { border-radius: 0 !important; }
+header[data-testid="stHeader"] { background: #1A1A1A !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -404,67 +598,117 @@ def inventory_to_csv(inventory: list) -> bytes:
 # ─────────────────────────────────────────────────────────────────────────────
 # SIDEBAR
 # ─────────────────────────────────────────────────────────────────────────────
-with st.sidebar:
-    st.markdown("""
-    <div style='text-align:center; padding: 10px 0 20px;'>
-      <div style='font-size:40px;'>🌸</div>
-      <div style='font-family: Playfair Display, serif; font-size:22px; font-weight:700; color:#F5D5E0;'>Angie's Florist</div>
-      <div style='font-size:11px; color:#C9A0B0; letter-spacing:2px;'>SYSTEM v3.0 · Supabase</div>
-    </div>
-    """, unsafe_allow_html=True)
-    st.divider()
+# ── Top nav bar ──────────────────────────────────────────────────────────────
+st.markdown("""
+<div style='background:#1A1A1A;padding:12px 24px;display:flex;align-items:center;
+     justify-content:space-between;margin-bottom:0;position:sticky;top:0;z-index:999;'>
+  <div style='display:flex;align-items:baseline;gap:10px;'>
+    <span style='font-family:DM Serif Display,serif;font-size:20px;color:#FFFFFF;'>
+      Angie's Florist
+    </span>
+    <span style='font-size:10px;color:#555;letter-spacing:0.12em;text-transform:uppercase;'>
+      Management System
+    </span>
+  </div>
+</div>
+""", unsafe_allow_html=True)
 
-    orders_sb = db.get_orders()
-    pending_sb = len([o for o in orders_sb if o["status"] == "Pending"])
-    making_sb  = len([o for o in orders_sb if o["status"] == "In Progress"])
-    ready_sb   = len([o for o in orders_sb if o["status"] == "Ready"])
-    col1, col2, col3 = st.columns(3)
-    if pending_sb > 0: col1.metric("🔴", pending_sb)
-    if making_sb  > 0: col2.metric("🟡", making_sb)
-    if ready_sb   > 0: col3.metric("🟢", ready_sb)
-    st.divider()
+# Live order counts
+_orders_all = db.get_orders()
+_pending  = len([o for o in _orders_all if o["status"] == "Pending"])
+_making   = len([o for o in _orders_all if o["status"] == "In Progress"])
+_ready    = len([o for o in _orders_all if o["status"] == "Ready"])
 
-    pages_all = {
-        "📊 Dashboard":      "Dashboard",
-        "➕ New Order":      "New Order",
-        "📋 All Orders":     "All Orders",
-        "🌹 Florist Board":  "Florist Board",
-        "🚴 Rider Board":    "Rider Board",
-        "📅 Schedule":       "Schedule",
-        "👤 Customers":      "Customers",
-        "📦 Inventory":      "Inventory",
-        "♻️ Waste Tracker":  "Waste Tracker",
-        "👥 Staff Management":"Staff Management",
-        "📈 Reports":        "Reports",
-        "👔 HR Module":      "HR",
-    }
-    allowed = PAGE_ACCESS.get(CURRENT_ROLE, set())
-    pages = {label: key for label, key in pages_all.items() if key in allowed}
+# Build allowed page list
+_pages_all = {
+    "Dashboard":       "📊 Dashboard",
+    "New Order":       "➕ New Order",
+    "All Orders":      "📋 All Orders",
+    "Florist Board":   "🌹 Florist Board",
+    "Rider Board":     "🚴 Rider Board",
+    "Schedule":        "📅 Schedule",
+    "Customers":       "👤 Customers",
+    "Inventory":       "📦 Inventory",
+    "Waste Tracker":   "♻️ Waste",
+    "Staff Management":"👥 Staff",
+    "Reports":         "📈 Reports",
+    "HR":              "👔 HR",
+}
+_allowed = PAGE_ACCESS.get(CURRENT_ROLE, set())
+_nav_keys   = [k for k in _pages_all if k in _allowed]
+_nav_labels = [_pages_all[k] for k in _nav_keys]
 
-    if st.session_state.active_page not in allowed:
-        st.session_state.active_page = "Dashboard"
+if st.session_state.active_page not in _allowed:
+    st.session_state.active_page = "Dashboard"
 
-    for label, page_key in pages.items():
-        active = st.session_state.active_page == page_key
-        if st.button(label, use_container_width=True, key=f"nav_{page_key}", type="primary" if active else "secondary"):
-            st.session_state.active_page = page_key
-            st.session_state.edit_order_id = None
-            st.rerun()
+_current_idx = _nav_keys.index(st.session_state.active_page) if st.session_state.active_page in _nav_keys else 0
 
-    st.divider()
-    if st.button("🔄 Refresh Data", use_container_width=True, help="Force-reload latest data from the database"):
+_selected = option_menu(
+    menu_title=None,
+    options=_nav_labels,
+    icons=[None]*len(_nav_labels),
+    default_index=_current_idx,
+    orientation="horizontal",
+    styles={
+        "container": {
+            "padding": "0",
+            "background-color": "#F8F6F3",
+            "border-bottom": "1px solid #EAE7E2",
+            "margin-bottom": "0",
+        },
+        "nav-link": {
+            "font-size": "12px",
+            "font-weight": "600",
+            "color": "#666",
+            "padding": "10px 14px",
+            "border-radius": "0",
+            "white-space": "nowrap",
+            "--hover-color": "#F0EDE8",
+        },
+        "nav-link-selected": {
+            "background-color": "#FFFFFF",
+            "color": "#1A1A1A",
+            "border-bottom": "2px solid #C8A96E",
+            "font-weight": "700",
+        },
+    },
+)
+
+# Sync selected nav to active page
+_selected_key = _nav_keys[_nav_labels.index(_selected)] if _selected in _nav_labels else "Dashboard"
+if _selected_key != st.session_state.active_page:
+    st.session_state.active_page = _selected_key
+    st.session_state.edit_order_id = None
+    st.rerun()
+
+# Status bar under nav
+_status_parts = []
+if _pending: _status_parts.append(f"🔴 {_pending} Pending")
+if _making:  _status_parts.append(f"🟡 {_making} In Progress")
+if _ready:   _status_parts.append(f"🟢 {_ready} Ready")
+_status_str = " &nbsp;·&nbsp; ".join(_status_parts) if _status_parts else "✅ All clear"
+
+st.markdown(
+    f"<div style='background:#FFFFFF;border-bottom:1px solid #EAE7E2;padding:6px 24px;"
+    f"display:flex;justify-content:space-between;align-items:center;font-size:12px;'>"
+    f"<span style='color:#555;'>{_status_str}</span>"
+    f"<span style='color:#999;font-size:11px;'>"
+    f"👤 <strong>{CURRENT_USER.get('name','')}</strong> &nbsp;·&nbsp; "
+    f"{CURRENT_ROLE} &nbsp;·&nbsp; {CURRENT_BRANCH} &nbsp;·&nbsp; "
+    f"{datetime.now().strftime('%a %b %d %Y')}"
+    f"&nbsp;&nbsp;"
+    f"</span></div>",
+    unsafe_allow_html=True,
+)
+
+# Action buttons row
+_bc1, _bc2, _bc3, _bc4 = st.columns([8, 1, 1, 1])
+with _bc2:
+    if st.button("🔄", help="Refresh data", key="top_refresh"):
         db._invalidate_all()
         st.rerun()
-
-    st.divider()
-    st.markdown(
-        f"<div style='text-align:center; font-size:12px;'>"
-        f"👤 <strong>{CURRENT_USER.get('name','')}</strong><br>"
-        f"<span style='color:#C9A0B0;'>{CURRENT_ROLE} · {CURRENT_BRANCH}</span></div>",
-        unsafe_allow_html=True,
-    )
-    if st.button("🚪 Log Out", use_container_width=True):
-        # Invalidate the server-side token so the URL token stops working
+with _bc3:
+    if st.button("🚪", help="Log out", key="top_logout"):
         _token = st.session_state.get("_session_token")
         if _token:
             db.delete_session_token(_token)
@@ -473,8 +717,6 @@ with st.sidebar:
         st.session_state._session_token = None
         st.query_params.clear()
         st.rerun()
-
-    st.markdown(f"<div style='font-size:11px; color:#C9A0B0; text-align:center; margin-top:8px;'>{datetime.now().strftime('%A, %B %d %Y')}</div>", unsafe_allow_html=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1196,7 +1438,7 @@ def page_all_orders():
     f_branch = c1.selectbox("Branch", ["All"] + branch_options, key="ao_branch")
     f_status = c2.selectbox("Status", ["All"] + STATUS_FLOW, key="ao_status")
     f_type   = c3.selectbox("Type",   ["All","Delivery","Pick-up"], key="ao_type")
-    f_date   = c4.date_input("Date",  value=None, key="ao_date")
+    f_date   = c4.date_input("Date",  value=date.today(), key="ao_date")
     search   = c5.text_input("🔍 Search", key="ao_search")
 
     show_all = st.checkbox("Show all orders (including older than 60 days) — may be slower", key="ao_show_all")
@@ -1453,7 +1695,7 @@ def page_florist_board():
     fb_branch = fc1.selectbox("Branch",["All"]+branch_opts_fb,key="fb_branch")
     fb_status = fc2.selectbox("Status",["All","Pending","Confirmed","In Progress"],key="fb_status")
     fb_type   = fc3.selectbox("Type",["All","Delivery","Pick-up"],key="fb_type")
-    fb_date   = fc4.date_input("Date",value=None,key="fb_date")
+    fb_date   = fc4.date_input("Date",value=date.today(),key="fb_date")
     fb_search = fc5.text_input("🔍 Search",key="fb_search")
     fb_sort   = fc6.selectbox("Sort by",["🚀 Rush First → Date → Time","📅 Date (earliest first)","🕐 Time (earliest first)","📋 Status (Pending first)"],key="fb_sort")
     ft1,ft2 = st.columns(2)
@@ -1776,7 +2018,7 @@ def page_rider_board():
     rc1,rc2,rc3,rc4,rc5 = st.columns(5)
     rb_branch = rc1.selectbox("Branch",["All"]+branch_opts_rb,key="rb_branch")
     rb_status = rc2.selectbox("Status",["All","Ready","Failed Delivery"],key="rb_status")
-    rb_date   = rc3.date_input("Date",value=None,key="rb_date")
+    rb_date   = rc3.date_input("Date",value=date.today(),key="rb_date")
     rb_search = rc4.text_input("🔍 Search",key="rb_search")
     rb_sort   = rc5.selectbox("Sort by",["📅 Date (earliest first)","🕐 Time (earliest first)","🚀 Rush First → Date → Time","💰 COD first"],key="rb_sort")
     rt1,rt2 = st.columns(2)
