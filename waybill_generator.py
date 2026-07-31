@@ -11,6 +11,7 @@ import qrcode
 from io import BytesIO
 import base64
 import secrets
+import urllib.parse
 from datetime import datetime
 
 RIDER_PAGE_BASE_URL = "https://yvbfggxavlaaohzupnqf.supabase.co/functions/v1/rider-delivery"
@@ -71,7 +72,8 @@ def _build_rider_page(order: dict, token: str) -> str:
     card_msg     = order.get("card_message", "")
     card_from    = order.get("card_from", "")
     notes        = order.get("special_instructions", "") or ""
-    maps_q       = address.replace(" ", "+")
+    _maps_dest   = " ".join(filter(None, [address, landmark]))
+    maps_q       = urllib.parse.quote(_maps_dest)
     rush_badge   = '<span class="rush-badge">RUSH</span>' if is_rush else ""
 
     # Payment row
@@ -198,7 +200,7 @@ def _build_rider_page(order: dict, token: str) -> str:
     <div class="card-body">
       <div class="address-text">{address}</div>
       <div class="zone-tag">Zone: {zone}</div>
-      <a href="https://www.google.com/maps/search/?api=1&query={maps_q}" target="_blank" class="maps-btn">
+      <a href="https://www.google.com/maps/dir/?api=1&destination={maps_q}" target="_blank" class="maps-btn">
         &#128506; Open in Google Maps
       </a>
     </div>
