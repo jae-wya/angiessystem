@@ -230,14 +230,14 @@ def scope_by_branch(items: list, field: str = "branch") -> list:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def gen_order_code(branch: str) -> str:
+    import time as _time
     date_str = datetime.now().strftime("%Y-%m-%d")
     bc = BRANCH_CODES.get(branch, "XX")
     orders = db.get_orders()
     today_branch = [o for o in orders if o.get("branch") == branch and str(o.get("order_code","")).startswith(date_str)]
-    import time as _time
-seq = str(len(today_branch) + 1).zfill(4)
-ts  = str(int(_time.time() * 1000))[-3:]
-return f"{date_str}-{bc}-{seq}-{ts}"
+    seq = str(len(today_branch) + 1).zfill(4)
+    ts  = str(int(_time.time() * 1000))[-3:]
+    return f"{date_str}-{bc}-{seq}-{ts}"
 
 
 def lookup_returning_customer(contact: str):
