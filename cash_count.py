@@ -47,14 +47,13 @@ def _delete_cash_count_session(session_id: str):
         pass
 
 
-def page_cash_count():
+def page_cash_count(CURRENT_USER, CURRENT_ROLE, CURRENT_BRANCH, BRANCHES, scope_by_branch):
     st.markdown("<div class='section-header'>💵 End-of-Day Cash Count</div>", unsafe_allow_html=True)
 
     tab_count, tab_history = st.tabs(["📋 Daily Count", "🗂️ History"])
 
     # ── TAB 1: DAILY COUNT ────────────────────────────────────────────────────
     with tab_count:
-        from angies_florist_v3 import CURRENT_USER, CURRENT_ROLE, CURRENT_BRANCH, BRANCHES, scope_by_branch
 
         # ── Filters ───────────────────────────────────────────────────────────
         f1, f2 = st.columns(2)
