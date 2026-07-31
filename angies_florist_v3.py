@@ -84,7 +84,7 @@ h1, h2, h3 { font-family: 'Playfair Display', serif !important; }
 # ─────────────────────────────────────────────────────────────────────────────
 # CONSTANTS
 # ─────────────────────────────────────────────────────────────────────────────
-BRANCHES = ["Main Branch", "San Pablo Branch", "Sta. Rosa Branch","Tiktok","WhatsApp"]
+BRANCHES = ["Main Branch", "San Pablo Branch", "Sta. Rosa Branch","TikTok","WhatsApp"]
 BRANCH_CODES = {"Main Branch": "MB", "San Pablo Branch": "SB", "Sta. Rosa Branch": "SR", "TikTok": "TK", "WhatsApp": "WA"}
 STATUS_FLOW = ["Pending","Confirmed","In Progress","Ready","Delivered","Picked Up","Cancelled","Failed Delivery"]
 SOURCE_PAGES = ["Facebook","Instagram","WhatsApp","TikTok","Website","Walk-in","Other"]
