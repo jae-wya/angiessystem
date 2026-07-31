@@ -2,7 +2,9 @@
 db.py — Supabase data layer for Angie's Florist v3.0
 Replaces all JSON file read/write with Supabase REST calls.
 Includes:
-  - Cached reads (st.cache_data) for snappier navigation
+  - Per-table cached reads (st.cache_data) for snappier navigation
+  - Surgical cache invalidation — only the affected table is cleared on writes
+    (previously: any write flushed ALL caches, causing thundering herd under load)
   - Supabase Storage helpers for persistent file uploads
 """
 import streamlit as st
@@ -43,18 +45,33 @@ def get_supabase() -> Client:
 
 
 # ─────────────────────────────────────────────────────────────
-# CACHE INVALIDATION
+# CACHE INVALIDATION — per-table (surgical)
+# One write = only that table's cache is cleared.
+# _invalidate_all() is kept as an emergency escape hatch only.
 # ─────────────────────────────────────────────────────────────
 
+def _invalidate_orders():           get_orders.clear()
+def _invalidate_inventory():        get_inventory.clear()
+def _invalidate_inventory_logs():   get_inventory_logs.clear()
+def _invalidate_waste():            get_waste.clear()
+def _invalidate_florists():         get_florists.clear()
+def _invalidate_riders():           get_riders.clear()
+def _invalidate_payment_txns():     get_payment_transactions.clear()
+def _invalidate_hr():               get_hr_logs.clear()
+def _invalidate_staff():            get_staff_accounts.clear()
+def _invalidate_stock_count():      get_stock_count_entries.clear()
+def _invalidate_expenses():         get_expenses.clear()
+def _invalidate_branch_costs():     get_branch_fixed_costs.clear()
+
 def _invalidate_all():
-    """Clear all cached reads. Called after any write so changes
-    are immediately visible to the current user, and within
-    CACHE_TTL seconds for everyone else."""
+    """Emergency full cache flush. Do NOT call during normal operations."""
     st.cache_data.clear()
 
 
 # ─────────────────────────────────────────────────────────────
 # GENERIC HELPERS (uncached — internal use)
+# NOTE: No auto-invalidation here. Each public write function
+#       calls the correct _invalidate_<table>() itself.
 # ─────────────────────────────────────────────────────────────
 
 def _select(table: str, filters: dict = None) -> list:
@@ -70,28 +87,24 @@ def _select(table: str, filters: dict = None) -> list:
 def _insert(table: str, row: dict) -> dict:
     sb = get_supabase()
     res = sb.table(table).insert(row).execute()
-    _invalidate_all()
     return res.data[0] if res.data else {}
 
 
 def _update(table: str, row_id: str, updates: dict) -> dict:
     sb = get_supabase()
     res = sb.table(table).update(updates).eq("id", row_id).execute()
-    _invalidate_all()
     return res.data[0] if res.data else {}
 
 
 def _delete(table: str, row_id: str) -> bool:
     sb = get_supabase()
     sb.table(table).delete().eq("id", row_id).execute()
-    _invalidate_all()
     return True
 
 
 def _upsert(table: str, row: dict) -> dict:
     sb = get_supabase()
     res = sb.table(table).upsert(row).execute()
-    _invalidate_all()
     return res.data[0] if res.data else {}
 
 
@@ -110,16 +123,22 @@ def save_order(order: dict) -> dict:
         order["rider_token"] = generate_rider_token()
     if not order.get("tracking_token"):
         order["tracking_token"] = generate_tracking_token()
-    return _upsert("orders", order)
+    result = _upsert("orders", order)
+    _invalidate_orders()
+    return result
 
 
 def update_order(order_id: str, updates: dict) -> dict:
     updates["updated_at"] = datetime.now().isoformat()
-    return _update("orders", order_id, updates)
+    result = _update("orders", order_id, updates)
+    _invalidate_orders()
+    return result
 
 
 def delete_order(order_id: str) -> bool:
-    return _delete("orders", order_id)
+    _delete("orders", order_id)
+    _invalidate_orders()
+    return True
 
 
 def update_order_status(order_id: str, new_status: str):
@@ -132,6 +151,7 @@ def update_order_status(order_id: str, new_status: str):
     elif new_status == "Picked Up":
         updates["picked_up_at"] = datetime.now().isoformat()
     _update("orders", order_id, updates)
+    _invalidate_orders()
 
 
 # ─────────────────────────────────────────────────────────────
@@ -144,15 +164,21 @@ def get_inventory() -> list:
 
 
 def save_inventory_item(item: dict) -> dict:
-    return _upsert("inventory", item)
+    result = _upsert("inventory", item)
+    _invalidate_inventory()
+    return result
 
 
 def update_inventory_item(item_id: str, updates: dict) -> dict:
-    return _update("inventory", item_id, updates)
+    result = _update("inventory", item_id, updates)
+    _invalidate_inventory()
+    return result
 
 
 def delete_inventory_item(item_id: str) -> bool:
-    return _delete("inventory", item_id)
+    _delete("inventory", item_id)
+    _invalidate_inventory()
+    return True
 
 
 # ─────────────────────────────────────────────────────────────
@@ -165,11 +191,15 @@ def get_waste() -> list:
 
 
 def save_waste_entry(entry: dict) -> dict:
-    return _insert("waste", entry)
+    result = _insert("waste", entry)
+    _invalidate_waste()
+    return result
 
 
 def delete_waste_entry(entry_id: str) -> bool:
-    return _delete("waste", entry_id)
+    _delete("waste", entry_id)
+    _invalidate_waste()
+    return True
 
 
 # ─────────────────────────────────────────────────────────────
@@ -182,11 +212,15 @@ def get_florists() -> list:
 
 
 def save_florist(florist: dict) -> dict:
-    return _insert("florists", florist)
+    result = _insert("florists", florist)
+    _invalidate_florists()
+    return result
 
 
 def delete_florist(florist_id: str) -> bool:
-    return _delete("florists", florist_id)
+    _delete("florists", florist_id)
+    _invalidate_florists()
+    return True
 
 
 # ─────────────────────────────────────────────────────────────
@@ -199,11 +233,15 @@ def get_riders() -> list:
 
 
 def save_rider(rider: dict) -> dict:
-    return _insert("riders", rider)
+    result = _insert("riders", rider)
+    _invalidate_riders()
+    return result
 
 
 def delete_rider(rider_id: str) -> bool:
-    return _delete("riders", rider_id)
+    _delete("riders", rider_id)
+    _invalidate_riders()
+    return True
 
 
 # ─────────────────────────────────────────────────────────────
@@ -216,7 +254,9 @@ def get_payment_transactions() -> list:
 
 
 def save_payment_transaction(txn: dict) -> dict:
-    return _insert("payment_transactions", txn)
+    result = _insert("payment_transactions", txn)
+    _invalidate_payment_txns()
+    return result
 
 
 # ─────────────────────────────────────────────────────────────
@@ -229,7 +269,9 @@ def get_hr_logs() -> list:
 
 
 def save_hr_log(entry: dict) -> dict:
-    return _insert("hr_logs", entry)
+    result = _insert("hr_logs", entry)
+    _invalidate_hr()
+    return result
 
 
 # ─────────────────────────────────────────────────────────────
@@ -301,15 +343,21 @@ def get_staff_accounts() -> list:
 
 
 def save_staff_account(account: dict) -> dict:
-    return _insert("staff_accounts", account)
+    result = _insert("staff_accounts", account)
+    _invalidate_staff()
+    return result
 
 
 def update_staff_account(account_id: str, updates: dict) -> dict:
-    return _update("staff_accounts", account_id, updates)
+    result = _update("staff_accounts", account_id, updates)
+    _invalidate_staff()
+    return result
 
 
 def delete_staff_account(account_id: str) -> bool:
-    return _delete("staff_accounts", account_id)
+    _delete("staff_accounts", account_id)
+    _invalidate_staff()
+    return True
 
 
 def verify_login(pin: str) -> Optional[dict]:
@@ -460,6 +508,7 @@ def deduct_inventory_for_order(flower_items: list, branch: str, order_id: str = 
                     "notes": "Auto-added from order. Please update unit cost and reorder point.",
                     "created_at": datetime.now().isoformat()}
                 _insert("inventory", new_item)
+                _invalidate_inventory()
                 inventory.append(new_item)
                 log_inventory_change(flower_name, branch, new_qty, 0, new_qty, "Auto-created from order", order_id, logged_by)
                 warnings.append(
@@ -486,6 +535,7 @@ def deduct_inventory_for_order(flower_items: list, branch: str, order_id: str = 
                 "notes": "Auto-added from order. Please update unit cost and reorder point.",
                 "created_at": datetime.now().isoformat()}
             _insert("inventory", new_item)
+            _invalidate_inventory()
             inventory.append(new_item)
             log_inventory_change(color_item_name, branch, new_qty, 0, new_qty, "Auto-created from order", order_id, logged_by)
             warnings.append(
@@ -551,6 +601,7 @@ def deduct_inventory_for_waste(item_name: str, qty: int, branch: str, logged_by:
             "unit": "pcs", "unit_cost": 0.0, "reorder_point": 10,
             "notes": "Auto-created by waste log. Please update unit cost.",
             "created_at": datetime.now().isoformat()})
+        _invalidate_inventory()
         log_inventory_change(item_name, branch, -qty, 0, new_qty, "Waste deduction (auto-created)", "", logged_by)
         warnings.append(f"⚠️ **{item_name}** was not in inventory. Auto-added with **{new_qty} pcs** at **{branch}**.")
     else:
@@ -582,6 +633,7 @@ def log_inventory_change(item_name, branch, change_qty, qty_before, qty_after, r
             "reason": reason, "order_id": order_id, "logged_by": logged_by,
             "created_at": datetime.now().isoformat(),
         })
+        _invalidate_inventory_logs()
     except Exception:
         pass  # Never block an order save due to log failure
 
@@ -619,7 +671,9 @@ def get_stock_count_entries() -> list:
 
 
 def save_stock_count_entry(entry: dict) -> dict:
-    return _insert("stock_count_entries", entry)
+    result = _insert("stock_count_entries", entry)
+    _invalidate_stock_count()
+    return result
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -632,11 +686,15 @@ def get_expenses() -> list:
 
 
 def save_expense(entry: dict) -> dict:
-    return _insert("expenses", entry)
+    result = _insert("expenses", entry)
+    _invalidate_expenses()
+    return result
 
 
 def delete_expense(expense_id: str) -> bool:
-    return _delete("expenses", expense_id)
+    _delete("expenses", expense_id)
+    _invalidate_expenses()
+    return True
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -649,7 +707,9 @@ def get_branch_fixed_costs() -> list:
 
 
 def upsert_branch_fixed_cost(row: dict) -> dict:
-    return _upsert("branch_fixed_costs", row)
+    result = _upsert("branch_fixed_costs", row)
+    _invalidate_branch_costs()
+    return result
 
 
 # ─────────────────────────────────────────────────────────────────────────────
