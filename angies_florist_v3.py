@@ -6,7 +6,7 @@
 DEPENDENCIES: pip install -r requirements.txt
 USAGE:        streamlit run angies_florist_v3.py
 """
-
+from cash_count import page_cash_count
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -133,9 +133,9 @@ STATUS_COLOR = {
 # ROLE-BASED PAGE ACCESS
 # ─────────────────────────────────────────────────────────────────────────────
 PAGE_ACCESS = {
-    "Super Admin":    {"Dashboard","New Order","All Orders","Edit Order","Florist Board","Rider Board","Schedule","Inventory","Waste Tracker","Staff Management","Reports","Customers","HR","Management KPI","Route Planner"},
-    "Branch Manager": {"Dashboard","New Order","All Orders","Edit Order","Florist Board","Rider Board","Schedule","Inventory","Waste Tracker","Staff Management","Reports","Customers","Management KPI","Route Planner"},
-    "Staff":          {"Dashboard","New Order","All Orders","Edit Order","Florist Board","Rider Board","Schedule","Inventory","Waste Tracker","Reports","Customers","Route Planner"},
+    "Super Admin":    {"Dashboard","New Order","All Orders","Edit Order","Florist Board","Rider Board","Schedule","Inventory","Waste Tracker","Staff Management","Reports","Customers","HR","Management KPI","Route Planner","Cash Count"},
+    "Branch Manager": {"Dashboard","New Order","All Orders","Edit Order","Florist Board","Rider Board","Schedule","Inventory","Waste Tracker","Staff Management","Reports","Customers","Management KPI","Route Planner","Cash Count"},
+    "Staff":          {"Dashboard","New Order","All Orders","Edit Order","Florist Board","Rider Board","Schedule","Inventory","Waste Tracker","Reports","Customers","Route Planner","Cash Count"},
     "Florist":        {"Dashboard","New Order","All Orders","Edit Order","Florist Board","Schedule"},
     "Rider":          {"Dashboard","Rider Board","Schedule"},
 }
@@ -429,6 +429,7 @@ with st.sidebar:
         "🌹 Florist Board":  "Florist Board",
         "🚴 Rider Board":    "Rider Board",
         "🗺️ Route Planner":  "Route Planner",
+        "💵 Cash Count":     "Cash Count",
         "📅 Schedule":       "Schedule",
         "👤 Customers":      "Customers",
         "📦 Inventory":      "Inventory",
@@ -3866,6 +3867,7 @@ def page_route_planner():
 # ─────────────────────────────────────────────────────────────────────────────
 page = st.session_state.active_page
 if   page == "Management KPI":   page_management_kpi()
+elif page == "Cash Count":       page_cash_count()
 elif page == "Route Planner":    page_route_planner()
 elif page == "Dashboard":        page_dashboard()
 elif page == "New Order":        page_new_order()
