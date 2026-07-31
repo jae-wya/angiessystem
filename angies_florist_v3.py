@@ -3867,7 +3867,7 @@ def page_route_planner():
 # ─────────────────────────────────────────────────────────────────────────────
 page = st.session_state.active_page
 if   page == "Management KPI":   page_management_kpi()
-elif page == "Cash Count":       page_cash_count()
+elif page == "Cash Count":       page_cash_count(CURRENT_USER, CURRENT_ROLE, CURRENT_BRANCH, BRANCHES, scope_by_branch)
 elif page == "Route Planner":    page_route_planner()
 elif page == "Dashboard":        page_dashboard()
 elif page == "New Order":        page_new_order()
