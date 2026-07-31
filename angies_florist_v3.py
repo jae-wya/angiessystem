@@ -6,7 +6,7 @@
 DEPENDENCIES: pip install -r requirements.txt
 USAGE:        streamlit run angies_florist_v3.py
 """
-
+from cash_count import page_cash_count
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -17,7 +17,6 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import db  # Supabase data layer
-from streamlit_option_menu import option_menu
 import secrets as _secrets
 
 # ── New feature modules ──
@@ -40,245 +39,52 @@ st.set_page_config(
 # ─────────────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=DM+Serif+Display&display=swap');
-
-/* ── Base ── */
-html, body, [class*="css"] {
-  font-family: 'Inter', sans-serif;
-  font-size: 14px;
-}
-h1, h2, h3 {
-  font-family: 'DM Serif Display', serif !important;
-  letter-spacing: -0.01em;
-}
-
-/* ── App background ── */
-.main { background-color: #F8F6F3; }
-.stApp { background: #F8F6F3; }
-
-/* ── Sidebar ── */
-[data-testid="stSidebar"] {
-  background: #1A1A1A !important;
-  border-right: 1px solid #2A2A2A;
-}
-[data-testid="stSidebar"] * { color: #E8E4DF !important; }
-[data-testid="stSidebar"] .stButton > button {
-  background: transparent !important;
-  border: none !important;
-  color: #C8C0B8 !important;
-  text-align: left !important;
-  font-weight: 500 !important;
-  border-radius: 8px !important;
-  padding: 8px 12px !important;
-  font-size: 13px !important;
-  box-shadow: none !important;
-  transition: all 0.15s !important;
-}
-[data-testid="stSidebar"] .stButton > button:hover {
-  background: #2A2A2A !important;
-  color: #FFFFFF !important;
-  transform: none !important;
-  box-shadow: none !important;
-}
-[data-testid="stSidebar"] .stButton > button[kind="primary"] {
-  background: #C8A96E !important;
-  color: #1A1A1A !important;
-  font-weight: 700 !important;
-}
-[data-testid="stSidebar"] hr {
-  border-color: #2A2A2A !important;
-}
-
-/* ── Metric cards ── */
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=DM+Sans:wght@300;400;500;600&display=swap');
+html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
+h1, h2, h3 { font-family: 'Playfair Display', serif !important; }
+.main { background-color: #FDF6F0; }
+.stApp { background: linear-gradient(135deg, #FDF6F0 0%, #FFF0F5 100%); }
 [data-testid="metric-container"] {
-  background: white;
-  border: 1px solid #EAE7E2;
-  border-radius: 12px;
-  padding: 16px;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  background: white; border: 1px solid #F0D9E0; border-radius: 16px;
+  padding: 16px; box-shadow: 0 2px 12px rgba(219,112,147,0.08);
 }
-[data-testid="metric-container"] [data-testid="stMetricValue"] {
-  font-family: 'DM Serif Display', serif !important;
-  font-size: 28px !important;
-  color: #1A1A1A !important;
-}
-[data-testid="metric-container"] [data-testid="stMetricLabel"] {
-  font-size: 11px !important;
-  font-weight: 600 !important;
-  letter-spacing: 0.08em !important;
-  text-transform: uppercase !important;
-  color: #888 !important;
-}
-
-/* ── Buttons ── */
+[data-testid="stSidebar"] { background: linear-gradient(180deg, #2D1B2E 0%, #1A0F1E 100%); }
+[data-testid="stSidebar"] * { color: #F5D5E0 !important; }
 .stButton > button {
-  background: #1A1A1A !important;
-  color: white !important;
-  border: none !important;
-  border-radius: 8px !important;
-  font-weight: 600 !important;
-  font-size: 13px !important;
-  padding: 8px 16px !important;
-  transition: all 0.15s !important;
-  box-shadow: none !important;
-  letter-spacing: 0.01em !important;
+  background: linear-gradient(135deg, #C85C8E, #A0355F); color: white !important;
+  border: none; border-radius: 10px; font-weight: 500; transition: all 0.2s;
+  box-shadow: 0 2px 8px rgba(200,92,142,0.3);
 }
-.stButton > button:hover {
-  background: #333 !important;
-  transform: none !important;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.15) !important;
-}
-.stButton > button[kind="secondary"] {
-  background: white !important;
-  color: #1A1A1A !important;
-  border: 1.5px solid #E0DDD8 !important;
-}
-.stButton > button[kind="secondary"]:hover {
-  background: #F5F3F0 !important;
-  border-color: #C8A96E !important;
-}
-
-/* ── Section header ── */
+.stButton > button:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(200,92,142,0.4); }
 .section-header {
-  font-family: 'DM Serif Display', serif;
-  font-size: 24px;
-  color: #1A1A1A;
-  border-bottom: 2px solid #C8A96E;
-  padding-bottom: 10px;
-  margin-bottom: 24px;
-  letter-spacing: -0.01em;
+  font-family: 'Playfair Display', serif; font-size: 22px; color: #2D1B2E;
+  border-bottom: 2px solid #F0D9E0; padding-bottom: 8px; margin-bottom: 20px;
 }
-
-/* ── Cards / containers ── */
 .print-sheet {
-  background: white;
-  border: 1.5px solid #EAE7E2;
-  border-radius: 12px;
-  padding: 24px;
+  background: white; border: 2px solid #C85C8E; border-radius: 12px;
+  padding: 24px; font-family: 'DM Sans', sans-serif;
 }
-.print-sheet h2, .print-sheet h3 {
-  font-family: 'DM Serif Display', serif;
-  color: #1A1A1A;
-}
+.print-sheet h2, .print-sheet h3 { font-family: 'Playfair Display', serif; color: #2D1B2E; }
 .print-sheet table { width: 100%; border-collapse: collapse; }
-.print-sheet td, .print-sheet th {
-  border: 1px solid #EAE7E2;
-  padding: 8px 12px;
-  text-align: left;
-}
-.print-sheet th {
-  background: #F8F6F3;
-  font-weight: 600;
-  font-size: 12px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: #888;
-}
-
-/* ── Balance box ── */
+.print-sheet td, .print-sheet th { border: 1px solid #F0D9E0; padding: 8px 12px; text-align: left; }
+.print-sheet th { background: #FDF6F0; font-weight: 600; }
 .balance-box {
-  background: #FFFDF9;
-  border: 1.5px solid #C8A96E;
-  border-radius: 10px;
-  padding: 14px 18px;
-  margin-top: 8px;
+  background: #FFF0F5; border: 1.5px solid #C85C8E; border-radius: 10px;
+  padding: 12px 18px; margin-top: 6px; font-family: 'DM Sans', sans-serif;
 }
-.balance-box .label {
-  font-size: 11px;
-  color: #999;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  font-weight: 600;
-}
-.balance-box .amount {
-  font-size: 26px;
-  font-weight: 800;
-  color: #1A1A1A;
-  font-family: 'DM Serif Display', serif;
-}
-
-/* ── City rank bar ── */
+.balance-box .label { font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 1px; }
+.balance-box .amount { font-size: 24px; font-weight: 700; color: #C85C8E; }
 .city-rank-bar {
-  background: #F8F6F3;
-  border-radius: 8px;
-  padding: 10px 14px;
-  margin-bottom: 6px;
-  border-left: 3px solid #C8A96E;
+  background: #FFF0F5; border-radius: 8px; padding: 10px 14px;
+  margin-bottom: 6px; border-left: 4px solid #C85C8E;
 }
-
-/* ── Inputs ── */
-.stTextInput > div > div > input,
-.stTextArea > div > div > textarea,
-.stSelectbox > div > div,
-.stNumberInput > div > div > input {
-  border-radius: 8px !important;
-  border-color: #E0DDD8 !important;
-  font-family: 'Inter', sans-serif !important;
-}
-.stTextInput > div > div > input:focus,
-.stTextArea > div > div > textarea:focus {
-  border-color: #C8A96E !important;
-  box-shadow: 0 0 0 2px rgba(200,169,110,0.15) !important;
-}
-
-/* ── Expanders ── */
-.streamlit-expanderHeader {
-  font-weight: 600 !important;
-  font-size: 13px !important;
-  background: #F8F6F3 !important;
-  border-radius: 8px !important;
-}
-
-/* ── Tabs ── */
-.stTabs [data-baseweb="tab"] {
-  font-size: 13px !important;
-  font-weight: 600 !important;
-}
-.stTabs [aria-selected="true"] {
-  color: #C8A96E !important;
-  border-bottom-color: #C8A96E !important;
-}
-
-/* ── Dataframes ── */
-.stDataFrame {
-  border-radius: 10px !important;
-  border: 1px solid #EAE7E2 !important;
-  overflow: hidden !important;
-}
-
-/* ── Alerts ── */
-.stAlert {
-  border-radius: 10px !important;
-  border: none !important;
-}
-
-/* ── Dividers ── */
-hr { border-color: #EAE7E2 !important; }
-
-/* ── Scrollbar ── */
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: #F8F6F3; }
-::-webkit-scrollbar-thumb { background: #D4CFC9; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #C8A96E; }
-
-/* ── Hide sidebar entirely — top nav replaces it ── */
-[data-testid="stSidebar"] { display: none !important; }
-[data-testid="collapsedControl"] { display: none !important; }
-.main .block-container {
-  max-width: 100% !important;
-  padding: 1rem 2rem !important;
-}
-
-/* ── Top nav option_menu overrides ── */
-.nav-link { border-radius: 0 !important; }
-header[data-testid="stHeader"] { background: #1A1A1A !important; }
 </style>
 """, unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CONSTANTS
 # ─────────────────────────────────────────────────────────────────────────────
-BRANCHES = ["Main Branch", "San Pablo Branch", "Sta. Rosa Branch","Tiktok","WhatsApp"]
+BRANCHES = ["Main Branch", "San Pablo Branch", "Sta. Rosa Branch","TikTok","WhatsApp"]
 BRANCH_CODES = {"Main Branch": "MB", "San Pablo Branch": "SB", "Sta. Rosa Branch": "SR", "TikTok": "TK", "WhatsApp": "WA"}
 STATUS_FLOW = ["Pending","Confirmed","In Progress","Ready","Delivered","Picked Up","Cancelled","Failed Delivery"]
 SOURCE_PAGES = ["Facebook","Instagram","WhatsApp","TikTok","Website","Walk-in","Other"]
@@ -327,9 +133,9 @@ STATUS_COLOR = {
 # ROLE-BASED PAGE ACCESS
 # ─────────────────────────────────────────────────────────────────────────────
 PAGE_ACCESS = {
-    "Super Admin":    {"Dashboard","New Order","All Orders","Edit Order","Florist Board","Rider Board","Schedule","Inventory","Waste Tracker","Staff Management","Reports","Customers","HR"},
-    "Branch Manager": {"Dashboard","New Order","All Orders","Edit Order","Florist Board","Rider Board","Schedule","Inventory","Waste Tracker","Staff Management","Reports","Customers"},
-    "Staff":          {"Dashboard","New Order","All Orders","Edit Order","Florist Board","Rider Board","Schedule","Inventory","Waste Tracker","Reports","Customers"},
+    "Super Admin":    {"Dashboard","New Order","All Orders","Edit Order","Florist Board","Rider Board","Schedule","Inventory","Waste Tracker","Staff Management","Reports","Customers","HR","Management KPI","Route Planner","Cash Count"},
+    "Branch Manager": {"Dashboard","New Order","All Orders","Edit Order","Florist Board","Rider Board","Schedule","Inventory","Waste Tracker","Staff Management","Reports","Customers","Management KPI","Route Planner","Cash Count"},
+    "Staff":          {"Dashboard","New Order","All Orders","Edit Order","Florist Board","Rider Board","Schedule","Inventory","Waste Tracker","Reports","Customers","Route Planner","Cash Count"},
     "Florist":        {"Dashboard","New Order","All Orders","Edit Order","Florist Board","Schedule"},
     "Rider":          {"Dashboard","Rider Board","Schedule"},
 }
@@ -384,19 +190,13 @@ def page_login():
             submitted = st.form_submit_button("🔓 Log In", use_container_width=True)
 
             if submitted:
-                st.write("🔵 Button clicked")
-                st.write(f"🔵 PIN length: {len(pin)}")
                 account = db.verify_login(pin.strip())
-                st.write(f"🔵 Account found: {account is not None}")
                 if account:
-                    st.write("🔵 Creating token...")
                     token = db.create_session_token(account["id"])
-                    st.write(f"🔵 Token created: {token is not None}")
                     st.session_state.auth_user      = account
                     st.session_state.active_page    = "Dashboard"
                     st.session_state._session_token = token
                     st.query_params["session"]      = token
-                    st.write("🔵 About to rerun...")
                     st.rerun()
                 else:
                     st.error("❌ Invalid PIN. Please try again.")
@@ -421,7 +221,8 @@ def scope_by_branch(items: list, field: str = "branch") -> list:
     unless they are Super Admin or have branch == 'All'."""
     if CURRENT_ROLE == "Super Admin" or CURRENT_BRANCH == "All":
         return items
-    return [i for i in items if i.get(field) == CURRENT_BRANCH]
+    return [i for i in items if i.get(field) == CURRENT_BRANCH
+        or i.get("fulfillment_branch") == CURRENT_BRANCH]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -429,12 +230,14 @@ def scope_by_branch(items: list, field: str = "branch") -> list:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def gen_order_code(branch: str) -> str:
+    import time as _time
     date_str = datetime.now().strftime("%Y-%m-%d")
     bc = BRANCH_CODES.get(branch, "XX")
     orders = db.get_orders()
     today_branch = [o for o in orders if o.get("branch") == branch and str(o.get("order_code","")).startswith(date_str)]
     seq = str(len(today_branch) + 1).zfill(4)
-    return f"{date_str}-{bc}-{seq}"
+    ts  = str(int(_time.time() * 1000))[-3:]
+    return f"{date_str}-{bc}-{seq}-{ts}"
 
 
 def lookup_returning_customer(contact: str):
@@ -598,117 +401,70 @@ def inventory_to_csv(inventory: list) -> bytes:
 # ─────────────────────────────────────────────────────────────────────────────
 # SIDEBAR
 # ─────────────────────────────────────────────────────────────────────────────
-# ── Top nav bar ──────────────────────────────────────────────────────────────
-st.markdown("""
-<div style='background:#1A1A1A;padding:12px 24px;display:flex;align-items:center;
-     justify-content:space-between;margin-bottom:0;position:sticky;top:0;z-index:999;'>
-  <div style='display:flex;align-items:baseline;gap:10px;'>
-    <span style='font-family:DM Serif Display,serif;font-size:20px;color:#FFFFFF;'>
-      Angie's Florist
-    </span>
-    <span style='font-size:10px;color:#555;letter-spacing:0.12em;text-transform:uppercase;'>
-      Management System
-    </span>
-  </div>
-</div>
-""", unsafe_allow_html=True)
+with st.sidebar:
+    st.markdown("""
+    <div style='text-align:center; padding: 10px 0 20px;'>
+      <div style='font-size:40px;'>🌸</div>
+      <div style='font-family: Playfair Display, serif; font-size:22px; font-weight:700; color:#F5D5E0;'>Angie's Florist</div>
+      <div style='font-size:11px; color:#C9A0B0; letter-spacing:2px;'>SYSTEM v3.0 · Supabase</div>
+    </div>
+    """, unsafe_allow_html=True)
+    st.divider()
 
-# Live order counts
-_orders_all = db.get_orders()
-_pending  = len([o for o in _orders_all if o["status"] == "Pending"])
-_making   = len([o for o in _orders_all if o["status"] == "In Progress"])
-_ready    = len([o for o in _orders_all if o["status"] == "Ready"])
+    orders_sb = db.get_orders()
+    pending_sb = len([o for o in orders_sb if o["status"] == "Pending"])
+    making_sb  = len([o for o in orders_sb if o["status"] == "In Progress"])
+    ready_sb   = len([o for o in orders_sb if o["status"] == "Ready"])
+    col1, col2, col3 = st.columns(3)
+    if pending_sb > 0: col1.metric("🔴", pending_sb)
+    if making_sb  > 0: col2.metric("🟡", making_sb)
+    if ready_sb   > 0: col3.metric("🟢", ready_sb)
+    st.divider()
 
-# Build allowed page list
-_pages_all = {
-    "Dashboard":       "📊 Dashboard",
-    "New Order":       "➕ New Order",
-    "All Orders":      "📋 All Orders",
-    "Florist Board":   "🌹 Florist Board",
-    "Rider Board":     "🚴 Rider Board",
-    "Schedule":        "📅 Schedule",
-    "Customers":       "👤 Customers",
-    "Inventory":       "📦 Inventory",
-    "Waste Tracker":   "♻️ Waste",
-    "Staff Management":"👥 Staff",
-    "Reports":         "📈 Reports",
-    "HR":              "👔 HR",
-}
-_allowed = PAGE_ACCESS.get(CURRENT_ROLE, set())
-_nav_keys   = [k for k in _pages_all if k in _allowed]
-_nav_labels = [_pages_all[k] for k in _nav_keys]
+    pages_all = {
+        "🎯 Mgmt KPI":       "Management KPI",
+        "📊 Dashboard":      "Dashboard",
+        "➕ New Order":      "New Order",
+        "📋 All Orders":     "All Orders",
+        "🌹 Florist Board":  "Florist Board",
+        "🚴 Rider Board":    "Rider Board",
+        "🗺️ Route Planner":  "Route Planner",
+        "💵 Cash Count":     "Cash Count",
+        "📅 Schedule":       "Schedule",
+        "👤 Customers":      "Customers",
+        "📦 Inventory":      "Inventory",
+        "♻️ Waste Tracker":  "Waste Tracker",
+        "👥 Staff Management":"Staff Management",
+        "📈 Reports":        "Reports",
+        "👔 HR Module":      "HR",
+    }
+    allowed = PAGE_ACCESS.get(CURRENT_ROLE, set())
+    pages = {label: key for label, key in pages_all.items() if key in allowed}
 
-if st.session_state.active_page not in _allowed:
-    st.session_state.active_page = "Dashboard"
+    if st.session_state.active_page not in allowed:
+        st.session_state.active_page = "Dashboard"
 
-_current_idx = _nav_keys.index(st.session_state.active_page) if st.session_state.active_page in _nav_keys else 0
+    for label, page_key in pages.items():
+        active = st.session_state.active_page == page_key
+        if st.button(label, use_container_width=True, key=f"nav_{page_key}", type="primary" if active else "secondary"):
+            st.session_state.active_page = page_key
+            st.session_state.edit_order_id = None
+            st.rerun()
 
-_selected = option_menu(
-    menu_title=None,
-    options=_nav_labels,
-    icons=[None]*len(_nav_labels),
-    default_index=_current_idx,
-    orientation="horizontal",
-    styles={
-        "container": {
-            "padding": "0",
-            "background-color": "#F8F6F3",
-            "border-bottom": "1px solid #EAE7E2",
-            "margin-bottom": "0",
-        },
-        "nav-link": {
-            "font-size": "12px",
-            "font-weight": "600",
-            "color": "#666",
-            "padding": "10px 14px",
-            "border-radius": "0",
-            "white-space": "nowrap",
-            "--hover-color": "#F0EDE8",
-        },
-        "nav-link-selected": {
-            "background-color": "#FFFFFF",
-            "color": "#1A1A1A",
-            "border-bottom": "2px solid #C8A96E",
-            "font-weight": "700",
-        },
-    },
-)
-
-# Sync selected nav to active page
-_selected_key = _nav_keys[_nav_labels.index(_selected)] if _selected in _nav_labels else "Dashboard"
-if _selected_key != st.session_state.active_page:
-    st.session_state.active_page = _selected_key
-    st.session_state.edit_order_id = None
-    st.rerun()
-
-# Status bar under nav
-_status_parts = []
-if _pending: _status_parts.append(f"🔴 {_pending} Pending")
-if _making:  _status_parts.append(f"🟡 {_making} In Progress")
-if _ready:   _status_parts.append(f"🟢 {_ready} Ready")
-_status_str = " &nbsp;·&nbsp; ".join(_status_parts) if _status_parts else "✅ All clear"
-
-st.markdown(
-    f"<div style='background:#FFFFFF;border-bottom:1px solid #EAE7E2;padding:6px 24px;"
-    f"display:flex;justify-content:space-between;align-items:center;font-size:12px;'>"
-    f"<span style='color:#555;'>{_status_str}</span>"
-    f"<span style='color:#999;font-size:11px;'>"
-    f"👤 <strong>{CURRENT_USER.get('name','')}</strong> &nbsp;·&nbsp; "
-    f"{CURRENT_ROLE} &nbsp;·&nbsp; {CURRENT_BRANCH} &nbsp;·&nbsp; "
-    f"{datetime.now().strftime('%a %b %d %Y')}"
-    f"&nbsp;&nbsp;"
-    f"</span></div>",
-    unsafe_allow_html=True,
-)
-
-# Action buttons row
-_bc1, _bc2, _bc3, _bc4 = st.columns([8, 1, 1, 1])
-with _bc2:
-    if st.button("🔄", help="Refresh data", key="top_refresh"):
+    st.divider()
+    if st.button("🔄 Refresh Data", use_container_width=True, help="Force-reload latest data from the database"):
         db._invalidate_all()
         st.rerun()
-with _bc3:
-    if st.button("🚪", help="Log out", key="top_logout"):
+
+    st.divider()
+    st.markdown(
+        f"<div style='text-align:center; font-size:12px;'>"
+        f"👤 <strong>{CURRENT_USER.get('name','')}</strong><br>"
+        f"<span style='color:#C9A0B0;'>{CURRENT_ROLE} · {CURRENT_BRANCH}</span></div>",
+        unsafe_allow_html=True,
+    )
+    if st.button("🚪 Log Out", use_container_width=True):
+        # Invalidate the server-side token so the URL token stops working
         _token = st.session_state.get("_session_token")
         if _token:
             db.delete_session_token(_token)
@@ -717,6 +473,8 @@ with _bc3:
         st.session_state._session_token = None
         st.query_params.clear()
         st.rerun()
+
+    st.markdown(f"<div style='font-size:11px; color:#C9A0B0; text-align:center; margin-top:8px;'>{datetime.now().strftime('%A, %B %d %Y')}</div>", unsafe_allow_html=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1438,7 +1196,7 @@ def page_all_orders():
     f_branch = c1.selectbox("Branch", ["All"] + branch_options, key="ao_branch")
     f_status = c2.selectbox("Status", ["All"] + STATUS_FLOW, key="ao_status")
     f_type   = c3.selectbox("Type",   ["All","Delivery","Pick-up"], key="ao_type")
-    f_date   = c4.date_input("Date",  value=date.today(), key="ao_date")
+    f_date   = c4.date_input("Date",  value=None, key="ao_date")
     search   = c5.text_input("🔍 Search", key="ao_search")
 
     show_all = st.checkbox("Show all orders (including older than 60 days) — may be slower", key="ao_show_all")
@@ -1695,7 +1453,7 @@ def page_florist_board():
     fb_branch = fc1.selectbox("Branch",["All"]+branch_opts_fb,key="fb_branch")
     fb_status = fc2.selectbox("Status",["All","Pending","Confirmed","In Progress"],key="fb_status")
     fb_type   = fc3.selectbox("Type",["All","Delivery","Pick-up"],key="fb_type")
-    fb_date   = fc4.date_input("Date",value=date.today(),key="fb_date")
+    fb_date   = fc4.date_input("Date",value=None,key="fb_date")
     fb_search = fc5.text_input("🔍 Search",key="fb_search")
     fb_sort   = fc6.selectbox("Sort by",["🚀 Rush First → Date → Time","📅 Date (earliest first)","🕐 Time (earliest first)","📋 Status (Pending first)"],key="fb_sort")
     ft1,ft2 = st.columns(2)
@@ -2018,7 +1776,7 @@ def page_rider_board():
     rc1,rc2,rc3,rc4,rc5 = st.columns(5)
     rb_branch = rc1.selectbox("Branch",["All"]+branch_opts_rb,key="rb_branch")
     rb_status = rc2.selectbox("Status",["All","Ready","Failed Delivery"],key="rb_status")
-    rb_date   = rc3.date_input("Date",value=date.today(),key="rb_date")
+    rb_date   = rc3.date_input("Date",value=None,key="rb_date")
     rb_search = rc4.text_input("🔍 Search",key="rb_search")
     rb_sort   = rc5.selectbox("Sort by",["📅 Date (earliest first)","🕐 Time (earliest first)","🚀 Rush First → Date → Time","💰 COD first"],key="rb_sort")
     rt1,rt2 = st.columns(2)
@@ -3504,12 +3262,614 @@ def page_hr():
                 db.save_hr_log({"id":str(uuid.uuid4())[:8],"employee":emp_name,"date":work_date.isoformat(),"regular_hours":reg_hours,"overtime_hours":ot_hours,"hourly_rate":hourly_rate,"ot_multiplier":ot_mult,"regular_pay":round(reg_pay,2),"overtime_pay":round(ot_pay,2),"total_pay":round(total_pay,2),"notes":notes_hr,"logged_at":datetime.now().isoformat()})
                 st.success(f"✅ Logged ₱{total_pay:,.2f} for {emp_name} on {work_date}.")
 
+# ─────────────────────────────────────────────────────────────────────────────
+# PAGE: MANAGEMENT KPI DASHBOARD
+# Visible to: Branch Manager, Super Admin
+# ─────────────────────────────────────────────────────────────────────────────
+def page_management_kpi():
+    st.markdown("<div class='section-header'>🎯 Management KPI Dashboard</div>", unsafe_allow_html=True)
+    st.caption(f"Live as of {datetime.now().strftime('%A, %B %d %Y · %I:%M %p')}  ·  Hit 🔄 Refresh Data in the sidebar to force-update.")
+
+    # ── DATA LOAD ─────────────────────────────────────────────────────────────
+    all_orders    = db.get_orders()
+    all_inventory = db.get_inventory()
+    all_waste     = db.get_waste()
+    all_staff     = db.get_staff_accounts()
+
+    today              = date.today()
+    today_str          = today.isoformat()
+    week_start         = (today - timedelta(days=today.weekday())).isoformat()
+    month_start        = today.replace(day=1).isoformat()
+    last_month_end     = today.replace(day=1) - timedelta(days=1)
+    last_month_start   = last_month_end.replace(day=1).isoformat()
+    last_month_end_str = last_month_end.isoformat()
+
+    TERMINAL  = {"Delivered", "Picked Up", "Cancelled", "Failed Delivery"}
+    COMPLETED = {"Delivered", "Picked Up"}
+
+    def _rev(order_list):
+        return sum(float(o.get("total_price", 0)) for o in order_list if o.get("status") in COMPLETED)
+
+    # ── SECTION 1: LIVE OPERATIONS ───────────────────────────────────────────
+    st.markdown("### 🔴 Live Operations")
+
+    orders_today       = [o for o in all_orders if str(o.get("target_date",""))[:10] == today_str]
+    delivered_today    = [o for o in all_orders if str(o.get("delivered_at",""))[:10] == today_str and o.get("status") in COMPLETED]
+    in_progress_now    = [o for o in all_orders if o.get("status") == "In Progress"]
+    ready_now          = [o for o in all_orders if o.get("status") == "Ready"]
+    rush_active        = [o for o in all_orders if o.get("priority_rush") and o.get("status") not in TERMINAL]
+    pending_no_florist = [o for o in all_orders if o.get("status") == "Pending" and not o.get("assigned_florist")]
+    failed_today       = [o for o in all_orders if str(o.get("target_date",""))[:10] == today_str and o.get("status") == "Failed Delivery"]
+    cod_outstanding    = sum(
+        float(o.get("total_balance", 0)) for o in all_orders
+        if o.get("balance_payment_method") == "COD"
+        and float(o.get("total_balance", 0)) > 0
+        and o.get("status") in {"Ready", "Delivered"}
+    )
+    rev_today = _rev([o for o in all_orders if str(o.get("target_date",""))[:10] == today_str])
+
+    c1,c2,c3,c4,c5,c6,c7 = st.columns(7)
+    c1.metric("📦 Today's Orders",  len(orders_today))
+    c2.metric("✅ Delivered",        len(delivered_today), f"₱{rev_today:,.0f}")
+    c3.metric("🛠️ In Progress",      len(in_progress_now))
+    c4.metric("🎉 Ready",            len(ready_now))
+    c5.metric("🚀 Rush Active",      len(rush_active))
+    c6.metric("⏳ Need Florist",     len(pending_no_florist))
+    c7.metric("❌ Failed Today",     len(failed_today))
+
+    if cod_outstanding > 0:
+        st.warning(f"⚠️ **COD Outstanding: ₱{cod_outstanding:,.2f}** — cash not yet collected from riders.")
+
+    st.divider()
+
+    # ── SECTION 2: REVENUE SCORECARD ─────────────────────────────────────────
+    st.markdown("### 💰 Revenue Scorecard")
+
+    rev_week       = _rev([o for o in all_orders if str(o.get("target_date",""))[:10] >= week_start])
+    rev_month      = _rev([o for o in all_orders if str(o.get("target_date",""))[:10] >= month_start])
+    rev_last_month = _rev([o for o in all_orders if last_month_start <= str(o.get("target_date",""))[:10] <= last_month_end_str])
+    rev_all_time   = _rev(all_orders)
+
+    mom_delta  = rev_month - rev_last_month
+    mom_pct    = (mom_delta / rev_last_month * 100) if rev_last_month > 0 else 0
+
+    waste_cost_all = sum(float(w.get("cost", 0)) for w in all_waste)
+    net_profit     = rev_all_time - waste_cost_all
+    margin_pct     = (net_profit / rev_all_time * 100) if rev_all_time > 0 else 0
+
+    r1,r2,r3,r4,r5 = st.columns(5)
+    r1.metric("Today",            f"₱{rev_today:,.0f}")
+    r2.metric("This Week",        f"₱{rev_week:,.0f}")
+    r3.metric("This Month",       f"₱{rev_month:,.0f}",
+              delta=f"{'▲' if mom_delta >= 0 else '▼'} ₱{abs(mom_delta):,.0f} vs last mo. ({mom_pct:+.1f}%)")
+    r4.metric("All-Time Revenue", f"₱{rev_all_time:,.0f}")
+    r5.metric("Net Margin",       f"{margin_pct:.1f}%",
+              delta=f"after ₱{waste_cost_all:,.0f} waste cost")
+
+    st.divider()
+
+    # ── SECTION 3: BRANCH COMPARISON (Super Admin only) ──────────────────────
+    if CURRENT_ROLE == "Super Admin":
+        st.markdown("### 🏢 Branch Performance — This Week")
+        branch_rows = []
+        for br in ["Main Branch", "San Pablo Branch", "Sta. Rosa Branch"]:
+            br_orders    = [o for o in all_orders if o.get("fulfillment_branch", o.get("branch","")) == br]
+            br_today     = [o for o in br_orders if str(o.get("target_date",""))[:10] == today_str]
+            br_week      = [o for o in br_orders if str(o.get("target_date",""))[:10] >= week_start]
+            br_complete  = [o for o in br_week if o.get("status") in COMPLETED]
+            br_rev_week  = _rev(br_week)
+            br_comp_rate = (len(br_complete) / len(br_week) * 100) if br_week else 0
+            br_inv       = [i for i in all_inventory if i.get("branch") == br]
+            br_low       = len([i for i in br_inv if int(i.get("quantity", 0)) <= int(i.get("reorder_point", 10))])
+            br_active    = len([o for o in br_orders if o.get("status") not in TERMINAL])
+            branch_rows.append({
+                "Branch":          br,
+                "Today's Orders":  len(br_today),
+                "Active Now":      br_active,
+                "Week Revenue":    f"₱{br_rev_week:,.0f}",
+                "Completion %":    f"{br_comp_rate:.0f}%",
+                "⚠️ Low Stock":    br_low,
+            })
+        st.dataframe(pd.DataFrame(branch_rows), use_container_width=True, hide_index=True)
+        st.divider()
+
+    # ── SECTION 4: 7-DAY TREND ───────────────────────────────────────────────
+    st.markdown("### 📈 7-Day Trend")
+    trend_data = []
+    for i in range(6, -1, -1):
+        d       = today - timedelta(days=i)
+        d_str   = d.isoformat()
+        d_ord   = [o for o in all_orders if str(o.get("target_date",""))[:10] == d_str]
+        d_comp  = [o for o in d_ord if o.get("status") in COMPLETED]
+        trend_data.append({
+            "label":    d.strftime("%a %d"),
+            "orders":   len(d_ord),
+            "completed":len(d_comp),
+            "revenue":  _rev(d_ord),
+        })
+
+    tc1, tc2 = st.columns(2)
+    with tc1:
+        fig, ax = plt.subplots(figsize=(7, 3.5), facecolor="#FDF6F0")
+        labels   = [t["label"]   for t in trend_data]
+        rev_vals = [t["revenue"] for t in trend_data]
+        bars = ax.bar(labels, rev_vals, color="#C85C8E", alpha=0.82)
+        peak = max(rev_vals) if rev_vals else 1
+        for bar, val in zip(bars, rev_vals):
+            if val > 0:
+                ax.text(
+                    bar.get_x() + bar.get_width() / 2,
+                    bar.get_height() + peak * 0.01,
+                    f"₱{val/1000:.1f}k" if val >= 1000 else f"₱{val:.0f}",
+                    ha="center", va="bottom", fontsize=8, color="#2D1B2E",
+                )
+        ax.set_facecolor("#FDF6F0")
+        ax.grid(True, axis="y", alpha=0.25)
+        ax.set_title("Daily Revenue", fontsize=11, color="#2D1B2E")
+        plt.tight_layout()
+        st.pyplot(fig)
+        plt.close(fig)
+
+    with tc2:
+        fig, ax = plt.subplots(figsize=(7, 3.5), facecolor="#FDF6F0")
+        ord_vals  = [t["orders"]    for t in trend_data]
+        comp_vals = [t["completed"] for t in trend_data]
+        ax.plot(labels, ord_vals,  marker="o", color="#C85C8E", linewidth=2,
+                label="Total Orders", markersize=6)
+        ax.plot(labels, comp_vals, marker="s", color="#28A745", linewidth=2,
+                label="Completed", markersize=6, linestyle="--")
+        ax.set_facecolor("#FDF6F0")
+        ax.grid(True, alpha=0.25)
+        ax.legend(fontsize=9)
+        ax.set_title("Orders vs Completed", fontsize=11, color="#2D1B2E")
+        plt.tight_layout()
+        st.pyplot(fig)
+        plt.close(fig)
+
+    st.divider()
+
+    # ── SECTION 5: TOP PERFORMERS — THIS WEEK ────────────────────────────────
+    st.markdown("### 🏆 Top Performers — This Week")
+    week_completed = [o for o in all_orders if str(o.get("target_date",""))[:10] >= week_start and o.get("status") in COMPLETED]
+
+    florist_counts = {}
+    for o in week_completed:
+        f = o.get("assigned_florist","")
+        if f: florist_counts[f] = florist_counts.get(f, 0) + 1
+    top_florist = max(florist_counts.items(), key=lambda x: x[1]) if florist_counts else ("—", 0)
+
+    rider_counts = {}
+    for o in week_completed:
+        r = o.get("assigned_rider","")
+        if r: rider_counts[r] = rider_counts.get(r, 0) + 1
+    top_rider = max(rider_counts.items(), key=lambda x: x[1]) if rider_counts else ("—", 0)
+
+    arr_counts = {}
+    week_orders = [o for o in all_orders if str(o.get("target_date",""))[:10] >= week_start]
+    for o in week_orders:
+        a = o.get("arrangement","")
+        if a: arr_counts[a] = arr_counts.get(a, 0) + int(o.get("quantity", 1))
+    top_arr = max(arr_counts.items(), key=lambda x: x[1]) if arr_counts else ("—", 0)
+
+    p1, p2, p3 = st.columns(3)
+    p1.metric("🌹 Top Florist",      top_florist[0], f"{top_florist[1]} orders completed this week")
+    p2.metric("🚴 Top Rider",        top_rider[0],   f"{top_rider[1]} deliveries this week")
+    p3.metric("🏆 Best Arrangement", top_arr[0][:28] if top_arr[0] != "—" else "—", f"{top_arr[1]} units sold")
+
+    st.divider()
+
+    # ── SECTION 6: SYSTEM HEALTH ──────────────────────────────────────────────
+    st.markdown("### 🖥️ System Health")
+    active_staff  = len([s for s in all_staff if s.get("active") is not False])
+    total_orders  = len(all_orders)
+    completed_all = len([o for o in all_orders if o.get("status") in COMPLETED])
+    cancelled_all = len([o for o in all_orders if o.get("status") == "Cancelled"])
+    cancel_rate   = (cancelled_all / total_orders * 100) if total_orders > 0 else 0
+    low_stock     = len([i for i in all_inventory if int(i.get("quantity", 0)) <= int(i.get("reorder_point", 10))])
+    inv_items     = len(all_inventory)
+
+    sh1,sh2,sh3,sh4,sh5,sh6 = st.columns(6)
+    sh1.metric("📦 Total Orders Processed", total_orders)
+    sh2.metric("✅ Total Completed",         completed_all)
+    sh3.metric("❌ Cancellation Rate",       f"{cancel_rate:.1f}%")
+    sh4.metric("👥 Active Staff Accounts",   active_staff)
+    sh5.metric("🌿 Inventory Items",
+               inv_items,
+               delta=f"{low_stock} low stock" if low_stock else "All stocked",
+               delta_color="inverse" if low_stock else "normal")
+    sh6.metric("💰 Total Revenue Tracked",  f"₱{rev_all_time:,.0f}")
+    st.caption("System live since June 2026  ·  Data from Supabase (real-time)  ·  Built by Jr")
+
+    st.divider()
+
+    # ── SECTION 7: WHATSAPP-READY END-OF-DAY RECAP ───────────────────────────
+    st.markdown("### 📋 End-of-Day Group Chat Recap")
+    st.caption("Live-generated. Copy and paste to Messenger or WhatsApp.")
+
+    cancelled_today = len([o for o in orders_today if o.get("status") == "Cancelled"])
+    completed_today = len([o for o in orders_today if o.get("status") in COMPLETED])
+    still_active    = len(in_progress_now) + len(ready_now)
+    top_arr_name    = top_arr[0] if top_arr[0] != "—" else "N/A"
+
+    recap = (
+        f"🌸 *Angie's Florist — Daily Report*\n"
+        f"📅 {today.strftime('%A, %B %d, %Y')}\n"
+        f"{'─' * 28}\n"
+        f"📦 Orders Today: {len(orders_today)}\n"
+        f"✅ Completed: {completed_today}\n"
+        f"🛠️ Still Active: {still_active}\n"
+        f"❌ Cancelled: {cancelled_today}\n"
+        f"🚀 Rush Orders: {len(rush_active)}\n"
+        f"{'─' * 28}\n"
+        f"💰 Revenue Today: ₱{rev_today:,.2f}\n"
+        f"📈 This Week: ₱{rev_week:,.2f}\n"
+        f"📊 This Month: ₱{rev_month:,.2f}\n"
+        f"{'─' * 28}\n"
+        f"🏆 Top Arrangement: {top_arr_name}\n"
+        f"🌹 Top Florist: {top_florist[0]} ({top_florist[1]} orders)\n"
+        f"🚴 Top Rider: {top_rider[0]} ({top_rider[1]} deliveries)\n"
+    )
+    if cod_outstanding > 0:
+        recap += f"{'─' * 28}\n⚠️ COD to Collect: ₱{cod_outstanding:,.2f}\n"
+    if low_stock > 0:
+        low_names = [
+            i["name"] for i in all_inventory
+            if int(i.get("quantity", 0)) <= int(i.get("reorder_point", 10))
+        ][:5]
+        recap += f"⚠️ Low Stock ({low_stock} items): {', '.join(low_names)}\n"
+    recap += f"\n_Powered by Angie's Florist System_"
+
+    st.text_area("Recap (copy this)", value=recap, height=380, key="mgmt_recap_area")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PAGE: DELIVERY ROUTE PLANNER
+# Visible to: Staff, Branch Manager, Super Admin
+# ─────────────────────────────────────────────────────────────────────────────
+def page_route_planner():
+    import urllib.parse
+    st.markdown("<div class='section-header'>🗺️ Delivery Route Planner</div>", unsafe_allow_html=True)
+
+    # Branch origin addresses for Google Maps starting point
+    BRANCH_ORIGINS = {
+        "Main Branch":      "Angie's Florist Main Branch, Calamba, Laguna, Philippines",
+        "San Pablo Branch": "Angie's Florist San Pablo Branch, San Pablo City, Laguna, Philippines",
+        "Sta. Rosa Branch": "Angie's Florist Sta. Rosa Branch, Sta. Rosa, Laguna, Philippines",
+    }
+
+    def build_maps_url(origin: str, addresses: list) -> str:
+        """Build a Google Maps multi-stop directions URL."""
+        if not addresses:
+            return ""
+        all_stops = [origin] + addresses
+        encoded   = [urllib.parse.quote(a) for a in all_stops]
+        return "https://www.google.com/maps/dir/" + "/".join(encoded)
+
+    def build_single_maps_url(address: str) -> str:
+        return f"https://maps.google.com/?q={urllib.parse.quote(address)}"
+
+    # ── FILTERS ───────────────────────────────────────────────────────────────
+    f1, f2, f3, f4 = st.columns(4)
+    rp_date   = f1.date_input("📅 Delivery Date", value=date.today(), key="rp_date")
+    branch_opts = BRANCHES if (CURRENT_ROLE == "Super Admin" or CURRENT_BRANCH == "All") else [CURRENT_BRANCH]
+    rp_branch = f2.selectbox("🏢 Branch", ["All"] + branch_opts, key="rp_branch")
+    rp_status = f3.multiselect(
+        "📋 Order Status",
+        ["Ready", "In Progress", "Confirmed", "Pending"],
+        default=["Ready", "In Progress"],
+        key="rp_status",
+    )
+    rp_date_str = rp_date.isoformat()
+
+    # ── DATA ──────────────────────────────────────────────────────────────────
+    all_orders  = scope_by_branch(db.get_orders())
+    all_riders  = scope_by_branch(db.get_riders())
+    rider_names = [r["name"] for r in all_riders]
+
+    # Delivery orders for the selected date + statuses
+    route_orders = [
+        o for o in all_orders
+        if o.get("order_type") == "Delivery"
+        and str(o.get("target_date", ""))[:10] == rp_date_str
+        and o.get("status") in (rp_status or ["Ready"])
+        and (rp_branch == "All"
+             or o.get("fulfillment_branch", o.get("branch", "")) == rp_branch)
+    ]
+
+    # Sort: Rush first → time → zone
+    def _sort_key(o):
+        rush = 0 if o.get("priority_rush") else 1
+        t = o.get("target_time", "23:59")
+        try: t = datetime.strptime(t, "%I:%M %p").strftime("%H:%M")
+        except: pass
+        return (rush, t, o.get("delivery_zone", ""))
+
+    route_orders = sorted(route_orders, key=_sort_key)
+
+    # ── SUMMARY METRICS ───────────────────────────────────────────────────────
+    total_del    = len(route_orders)
+    assigned     = [o for o in route_orders if o.get("assigned_rider")]
+    unassigned   = [o for o in route_orders if not o.get("assigned_rider")]
+    rush_orders  = [o for o in route_orders if o.get("priority_rush")]
+    cod_total    = sum(
+        float(o.get("total_balance", 0)) for o in route_orders
+        if o.get("balance_payment_method") == "COD" and float(o.get("total_balance", 0)) > 0
+    )
+    zones_active = len(set(o.get("delivery_zone", "Unspecified") for o in route_orders))
+
+    m1, m2, m3, m4, m5, m6 = st.columns(6)
+    m1.metric("🚴 Total Deliveries",  total_del)
+    m2.metric("✅ Rider Assigned",    len(assigned))
+    m3.metric("⏳ Unassigned",        len(unassigned),
+              delta=f"{len(unassigned)} need rider" if unassigned else None,
+              delta_color="inverse" if unassigned else "normal")
+    m4.metric("🚀 Rush",              len(rush_orders))
+    m5.metric("📍 Zones",             zones_active)
+    m6.metric("💰 COD to Collect",   f"₱{cod_total:,.2f}")
+
+    if not route_orders:
+        st.info(f"No delivery orders found for **{rp_date_str}** with the selected status filter.")
+        return
+
+    st.divider()
+
+    # ── UNASSIGNED ALERT ──────────────────────────────────────────────────────
+    if unassigned:
+        st.warning(f"⚠️ **{len(unassigned)} order(s) have no rider assigned.** Use the Zone view below to batch-assign by zone.")
+
+    # ── TABS ─────────────────────────────────────────────────────────────────
+    tab_rider, tab_zone = st.tabs(["🚴 By Rider (Dispatch)", "📍 By Zone (Planning)"])
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # TAB 1: BY RIDER — Dispatcher view. One card per rider + unassigned section.
+    # ═══════════════════════════════════════════════════════════════════════════
+    with tab_rider:
+        st.caption("Each rider's full delivery batch for the day. Use the Google Maps link to give them their route in one tap.")
+
+        # Group orders by rider
+        rider_batches = {}
+        for o in route_orders:
+            key = o.get("assigned_rider") or "⏳ Unassigned"
+            rider_batches.setdefault(key, []).append(o)
+
+        # Unassigned first (action needed), then riders alphabetically
+        sorted_keys = (
+            (["⏳ Unassigned"] if "⏳ Unassigned" in rider_batches else [])
+            + sorted(k for k in rider_batches if k != "⏳ Unassigned")
+        )
+
+        for rider_key in sorted_keys:
+            batch = rider_batches[rider_key]
+            is_unassigned = rider_key == "⏳ Unassigned"
+
+            batch_cod = sum(
+                float(o.get("total_balance", 0)) for o in batch
+                if o.get("balance_payment_method") == "COD" and float(o.get("total_balance", 0)) > 0
+            )
+            batch_zones = sorted(set(o.get("delivery_zone", "Unspecified") for o in batch))
+            batch_rush  = sum(1 for o in batch if o.get("priority_rush"))
+
+            # Card header
+            header_color = "#FFF3CD" if is_unassigned else "#F0FFF4"
+            border_color = "#FFC107" if is_unassigned else "#28A745"
+            rider_label  = f"⏳ Unassigned ({len(batch)} order{'s' if len(batch)>1 else ''})" if is_unassigned else f"🚴 {rider_key} — {len(batch)} order{'s' if len(batch)>1 else ''}"
+
+            st.markdown(
+                f"<div style='background:{header_color}; border-left:4px solid {border_color}; "
+                f"border-radius:8px; padding:12px 16px; margin-bottom:8px;'>"
+                f"<strong style='font-size:16px;'>{rider_label}</strong>"
+                f"{'&nbsp;&nbsp;🚀 ' + str(batch_rush) + ' rush' if batch_rush else ''}"
+                f"{'&nbsp;&nbsp;💰 COD: ₱' + f'{batch_cod:,.2f}' if batch_cod > 0 else ''}"
+                f"<br><span style='font-size:12px; color:#555;'>Zones: {', '.join(batch_zones)}</span>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+
+            # Google Maps multi-stop link (only for assigned riders with addresses)
+            if not is_unassigned:
+                addresses = [
+                    o.get("delivery_address", "").strip()
+                    for o in batch
+                    if o.get("delivery_address", "").strip()
+                ]
+                if addresses:
+                    # Determine origin from branch
+                    batch_branch = batch[0].get("fulfillment_branch", batch[0].get("branch", "Main Branch"))
+                    origin = BRANCH_ORIGINS.get(batch_branch, BRANCH_ORIGINS["Main Branch"])
+                    maps_url = build_maps_url(origin, addresses)
+                    st.markdown(
+                        f"<a href='{maps_url}' target='_blank' style='"
+                        f"display:inline-block; background:#4285F4; color:white; font-weight:600; "
+                        f"padding:8px 16px; border-radius:8px; text-decoration:none; font-size:13px; margin-bottom:10px;'>"
+                        f"📍 Open Full Route in Google Maps ({len(addresses)} stop{'s' if len(addresses)>1 else ''})</a>",
+                        unsafe_allow_html=True,
+                    )
+
+            # Order rows
+            for o in batch:
+                order_code    = o.get("order_code", o.get("id", "N/A"))
+                recip_name    = o.get("recipient_name") or o.get("customer_name", "—")
+                recip_contact = o.get("recipient_contact") or o.get("customer_contact", "—")
+                address       = o.get("delivery_address", "—")
+                zone          = o.get("delivery_zone", "—")
+                ttime         = o.get("target_time", "—")
+                balance       = float(o.get("total_balance", 0))
+                bal_method    = o.get("balance_payment_method", "—")
+                is_rush       = o.get("priority_rush", False)
+                is_surprise   = o.get("is_surprise", False)
+                status        = o.get("status", "—")
+                status_color  = STATUS_COLOR.get(status, "#888")
+
+                rush_tag     = " 🚀 **RUSH**" if is_rush else ""
+                surprise_tag = " 🤫 SURPRISE" if is_surprise else ""
+                cod_tag      = f" | 💰 COD ₱{balance:,.0f}" if balance > 0 and bal_method == "COD" else ""
+                single_maps  = build_single_maps_url(address) if address and address != "—" else ""
+
+                with st.expander(
+                    f"`{order_code}` — {recip_name} · {zone}{rush_tag}{cod_tag}",
+                    expanded=is_unassigned or is_rush,
+                ):
+                    col_a, col_b = st.columns([2, 1])
+                    with col_a:
+                        st.markdown(
+                            f"**Recipient:** {recip_name}  \n"
+                            f"**Contact:** {recip_contact}  \n"
+                            f"**Address:** {address}  \n"
+                            f"**Zone:** {zone}  \n"
+                            f"**Time:** {ttime}  \n"
+                            f"**Arrangement:** {o.get('arrangement','—')} × {o.get('quantity',1)}  \n"
+                            f"**Status:** <span style='color:{status_color}; font-weight:700;'>{status}</span>"
+                            + (f"  \n{surprise_tag}" if surprise_tag else ""),
+                            unsafe_allow_html=True,
+                        )
+                        if cod_tag:
+                            st.error(f"💰 Collect **₱{balance:,.2f}** via COD on delivery")
+                    with col_b:
+                        if single_maps:
+                            st.markdown(
+                                f"<a href='{single_maps}' target='_blank' style='"
+                                f"display:inline-block; background:#34A853; color:white; font-weight:600; "
+                                f"padding:6px 12px; border-radius:6px; text-decoration:none; font-size:12px;'>"
+                                f"📍 Maps</a>",
+                                unsafe_allow_html=True,
+                            )
+                        # Assign / reassign rider
+                        if rider_names and CURRENT_ROLE in ("Super Admin", "Branch Manager", "Staff"):
+                            current_idx = rider_names.index(o.get("assigned_rider")) if o.get("assigned_rider") in rider_names else 0
+                            sel = st.selectbox(
+                                "Assign Rider",
+                                rider_names,
+                                index=current_idx,
+                                key=f"rp_assign_{order_code}",
+                                label_visibility="collapsed",
+                            )
+                            btn_label = "✓ Assign" if is_unassigned else "↺ Reassign"
+                            if st.button(btn_label, key=f"rp_btn_{order_code}", use_container_width=True):
+                                db.update_order(o["id"], {"assigned_rider": sel})
+                                st.success(f"✅ {order_code} → {sel}")
+                                st.rerun()
+
+            st.divider()
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # TAB 2: BY ZONE — Planning view. Zone → orders grouped, batch assign.
+    # ═══════════════════════════════════════════════════════════════════════════
+    with tab_zone:
+        st.caption("Group orders by zone to plan efficient rider batching. Assign a rider to an entire zone at once.")
+
+        # Group by zone
+        zone_groups = {}
+        for o in route_orders:
+            z = o.get("delivery_zone", "Unspecified") or "Unspecified"
+            zone_groups.setdefault(z, []).append(o)
+
+        # Sort zones by order count descending
+        sorted_zones = sorted(zone_groups.items(), key=lambda x: len(x[1]), reverse=True)
+
+        for zone_name, z_orders in sorted_zones:
+            z_assigned   = [o for o in z_orders if o.get("assigned_rider")]
+            z_unassigned = [o for o in z_orders if not o.get("assigned_rider")]
+            z_rush       = sum(1 for o in z_orders if o.get("priority_rush"))
+            z_cod        = sum(
+                float(o.get("total_balance", 0)) for o in z_orders
+                if o.get("balance_payment_method") == "COD" and float(o.get("total_balance", 0)) > 0
+            )
+
+            # Zone header
+            has_unassigned = len(z_unassigned) > 0
+            card_color  = "#FFF3CD" if has_unassigned else "#E8F5E9"
+            border_col  = "#FFC107" if has_unassigned else "#28A745"
+            assigned_riders = list(set(o.get("assigned_rider","") for o in z_assigned if o.get("assigned_rider","")))
+
+            st.markdown(
+                f"<div style='background:{card_color}; border-left:4px solid {border_col}; "
+                f"border-radius:8px; padding:10px 16px; margin-bottom:6px;'>"
+                f"<strong style='font-size:15px;'>📍 {zone_name}</strong> "
+                f"&nbsp;—&nbsp; {len(z_orders)} order{'s' if len(z_orders)>1 else ''}"
+                f"{'&nbsp;&nbsp;🚀 ' + str(z_rush) + ' rush' if z_rush else ''}"
+                f"{'&nbsp;&nbsp;💰 COD ₱' + f'{z_cod:,.0f}' if z_cod > 0 else ''}"
+                f"<br><span style='font-size:12px; color:#555;'>"
+                f"Assigned to: {', '.join(assigned_riders) if assigned_riders else '— none'}"
+                f"{' &nbsp;·&nbsp; ' + str(len(z_unassigned)) + ' unassigned' if z_unassigned else ''}"
+                f"</span></div>",
+                unsafe_allow_html=True,
+            )
+
+            with st.expander(f"View {len(z_orders)} order(s) in {zone_name}", expanded=has_unassigned):
+                # Batch assign all unassigned in this zone
+                if z_unassigned and rider_names and CURRENT_ROLE in ("Super Admin", "Branch Manager", "Staff"):
+                    bz1, bz2 = st.columns([2, 1])
+                    batch_rider = bz1.selectbox(
+                        f"Batch assign all {len(z_unassigned)} unassigned to:",
+                        rider_names,
+                        key=f"batch_zone_{zone_name}",
+                    )
+                    if bz2.button(f"✓ Assign All in {zone_name}", key=f"batch_btn_{zone_name}", use_container_width=True):
+                        for o in z_unassigned:
+                            db.update_order(o["id"], {"assigned_rider": batch_rider})
+                        st.success(f"✅ {len(z_unassigned)} order(s) in **{zone_name}** assigned to **{batch_rider}**")
+                        st.rerun()
+                    st.divider()
+
+                # Order rows for this zone
+                for o in sorted(z_orders, key=_sort_key):
+                    order_code    = o.get("order_code", o.get("id", "N/A"))
+                    recip_name    = o.get("recipient_name") or o.get("customer_name", "—")
+                    address       = o.get("delivery_address", "—")
+                    ttime         = o.get("target_time", "—")
+                    rider_name    = o.get("assigned_rider", "")
+                    balance       = float(o.get("total_balance", 0))
+                    bal_method    = o.get("balance_payment_method", "—")
+                    is_rush       = o.get("priority_rush", False)
+                    status        = o.get("status", "—")
+                    status_color  = STATUS_COLOR.get(status, "#888")
+                    single_maps   = build_single_maps_url(address) if address and address != "—" else ""
+
+                    rc1, rc2, rc3 = st.columns([3, 2, 1])
+                    with rc1:
+                        rush_icon = "🚀 " if is_rush else ""
+                        st.markdown(
+                            f"{rush_icon}**`{order_code}`** — {recip_name}  \n"
+                            f"📍 {address}  \n"
+                            f"🕐 {ttime} &nbsp;|&nbsp; "
+                            f"<span style='color:{status_color}; font-weight:600;'>{status}</span>"
+                            + (f"  \n💰 COD ₱{balance:,.0f}" if balance > 0 and bal_method == "COD" else ""),
+                            unsafe_allow_html=True,
+                        )
+                    with rc2:
+                        if rider_names and CURRENT_ROLE in ("Super Admin", "Branch Manager", "Staff"):
+                            current_idx = rider_names.index(rider_name) if rider_name in rider_names else 0
+                            sel = st.selectbox(
+                                "Rider",
+                                rider_names,
+                                index=current_idx,
+                                key=f"zpick_{order_code}",
+                                label_visibility="collapsed",
+                            )
+                            if st.button("✓", key=f"zbtn_{order_code}", help="Assign this rider"):
+                                db.update_order(o["id"], {"assigned_rider": sel})
+                                st.success(f"✅ {order_code} → {sel}")
+                                st.rerun()
+                        else:
+                            st.caption(rider_name or "— unassigned")
+                    with rc3:
+                        if single_maps:
+                            st.markdown(
+                                f"<a href='{single_maps}' target='_blank' style='"
+                                f"display:inline-block; background:#4285F4; color:white; "
+                                f"padding:5px 10px; border-radius:6px; text-decoration:none; font-size:12px;'>"
+                                f"📍</a>",
+                                unsafe_allow_html=True,
+                            )
+                    st.markdown("---")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # ROUTER
 # ─────────────────────────────────────────────────────────────────────────────
 page = st.session_state.active_page
-if   page == "Dashboard":        page_dashboard()
+if   page == "Management KPI":   page_management_kpi()
+elif page == "Cash Count":       page_cash_count(CURRENT_USER, CURRENT_ROLE, CURRENT_BRANCH, BRANCHES, scope_by_branch)
+elif page == "Route Planner":    page_route_planner()
+elif page == "Dashboard":        page_dashboard()
 elif page == "New Order":        page_new_order()
 elif page == "All Orders":       page_all_orders()
 elif page == "Edit Order":       page_edit_order()

@@ -11,6 +11,7 @@ import qrcode
 from io import BytesIO
 import base64
 import secrets
+import urllib.parse
 from datetime import datetime
 
 RIDER_PAGE_BASE_URL = "https://yvbfggxavlaaohzupnqf.supabase.co/functions/v1/rider-delivery"
@@ -27,6 +28,7 @@ def generate_order_token() -> str:
 
 
 def generate_qr_base64(order_code: str, token: str) -> str:
+    """Legacy — kept for compatibility."""
     url = f"{RIDER_PAGE_BASE_URL}?order={order_code}&token={token}"
     qr  = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=10, border=2)
     qr.add_data(url)
@@ -36,6 +38,347 @@ def generate_qr_base64(order_code: str, token: str) -> str:
     img.save(buf, format="PNG")
     return base64.b64encode(buf.getvalue()).decode("utf-8")
 
+
+def _build_rider_page(order: dict, token: str) -> str:
+    """
+    Returns a self-contained HTML delivery page for riders.
+    Embedded into the QR as a data:text/html URL and linked via the test link.
+    Riders can: call recipient, open maps, take photo, confirm delivery.
+    Confirm uploads photo to Supabase Storage and patches order status to Delivered.
+    """
+    SUPABASE_URL     = "https://yvbfggxavlaaohzupnqf.supabase.co"
+    SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl2YmZnZ3hhdmxhYW9oenVwbnFmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDMwNzI3NTIsImV4cCI6MjA1ODY0ODc1Mn0.MBLn7JRHbLCGwFYlwFR-5YBFbvqaZRvP2z0o5x2J1Oo"
+    STORAGE_BUCKET   = "angies-florist-uploads"
+
+    order_code   = order.get("order_code", "")
+    recip_name   = order.get("recipient_name") or order.get("customer_name", "")
+    recip_phone  = (order.get("recipient_phone") or order.get("customer_contact", "")).replace(" ", "")
+    recip_fmt    = recip_phone
+    if len(recip_phone) == 11:
+        recip_fmt = f"{recip_phone[:4]} {recip_phone[4:7]} {recip_phone[7:]}"
+    address      = order.get("delivery_address", "")
+    zone         = order.get("delivery_zone", "—")
+    landmark     = order.get("landmark", "")
+    target_date  = order.get("delivery_date", "")
+    target_time  = order.get("delivery_time", "")
+    arrangement  = order.get("arrangement_name", "")
+    balance      = float(order.get("total_balance", 0) or 0)
+    pay_method   = str(order.get("payment_method", ""))
+    pay_status   = str(order.get("payment_status", "Paid"))
+    is_cod       = pay_method.upper() == "COD" and balance > 0
+    is_surprise  = bool(order.get("is_surprise", False))
+    is_rush      = bool(order.get("priority_rush", False)) or str(order.get("order_type", "")).lower() == "rush"
+    card_to      = order.get("card_to", "")
+    card_msg     = order.get("card_message", "")
+    card_from    = order.get("card_from", "")
+    notes        = order.get("special_instructions", "") or ""
+    _maps_dest   = " ".join(filter(None, [address, landmark]))
+    maps_q       = urllib.parse.quote(_maps_dest)
+    rush_badge   = '<span class="rush-badge">RUSH</span>' if is_rush else ""
+
+    # Payment row
+    if is_cod:
+        payment_row = f'<div class="detail-row"><span class="detail-label">COD Amount</span><span class="detail-value"><span class="cod-highlight">&#8369;{balance:,.0f} — Collect cash</span></span></div>'
+    else:
+        payment_row = f'<div class="detail-row"><span class="detail-label">Payment</span><span class="detail-value">{pay_method} — {pay_status} &#10003;</span></div>'
+
+    surprise_row = '<div class="detail-row"><span class="detail-label">Sender</span><span class="detail-value"><span class="surprise-tag">&#127873; Surprise — Hidden</span></span></div>' if is_surprise else ""
+    landmark_row = f'<div class="detail-row"><span class="detail-label">Landmark</span><span class="detail-value muted">{landmark}</span></div>' if landmark else ""
+    notes_row    = f'<div class="detail-row"><span class="detail-label">Special note</span><span class="detail-value muted">{notes}</span></div>' if notes else ""
+    card_row     = ""
+    if card_to or card_msg or card_from:
+        card_inner = " | ".join(filter(None, [
+            f"To: {card_to}" if card_to else "",
+            card_msg,
+            f"From: {card_from}" if card_from else "",
+        ]))
+        card_row = f'<div class="detail-row"><span class="detail-label">Card</span><span class="detail-value muted">{card_inner}</span></div>'
+
+    # Escape notes for JS string (used in PATCH body)
+    notes_js = notes.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Angie's Florist — Delivery</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=DM+Serif+Display&display=swap');
+  *{{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}}
+  :root{{--gold:#c8a96e;--dark:#1a1a1a;--mid:#555;--light:#f7f4f0;--border:#e8e3dc;--green:#2d6a4f;--red:#c0392b}}
+  body{{font-family:'Inter',sans-serif;background:#f0ede8;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:0 0 48px}}
+  .page-header{{width:100%;background:var(--dark);padding:16px 20px 14px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:10}}
+  .header-brand{{font-family:'DM Serif Display',serif;font-size:20px;color:#fff}}
+  .header-order{{text-align:right}}
+  .header-order .order-label{{font-size:9px;color:#888;letter-spacing:.12em;text-transform:uppercase}}
+  .header-order .order-code{{font-size:14px;font-weight:700;color:var(--gold);letter-spacing:.06em}}
+  .status-bar{{width:100%;background:var(--gold);padding:8px 20px;display:flex;align-items:center;justify-content:space-between}}
+  .status-bar .status-text{{font-size:11px;font-weight:600;color:#fff;letter-spacing:.1em;text-transform:uppercase}}
+  .rush-badge{{background:#e53e3e;color:#fff;font-size:9px;font-weight:700;padding:3px 8px;border-radius:2px;letter-spacing:.08em}}
+  .card{{width:100%;max-width:420px;background:#fff;overflow:hidden;margin-bottom:12px}}
+  .card-header{{padding:12px 20px 10px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px}}
+  .card-icon{{font-size:16px}}.card-title{{font-size:10px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--gold)}}
+  .card-body{{padding:16px 20px}}
+  .recipient-name{{font-size:24px;font-weight:700;color:var(--dark);line-height:1.1;margin-bottom:4px}}
+  .recipient-number{{font-size:16px;color:var(--mid);font-weight:500;margin-bottom:14px}}
+  .call-btn{{display:flex;align-items:center;gap:8px;background:var(--light);border:1.5px solid var(--border);border-radius:8px;padding:10px 16px;font-size:14px;font-weight:600;color:var(--dark);text-decoration:none;width:fit-content}}
+  .address-text{{font-size:17px;font-weight:500;color:var(--dark);line-height:1.5;margin-bottom:6px}}
+  .zone-tag{{display:inline-block;background:var(--light);border:1px solid var(--border);color:var(--mid);font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;padding:3px 8px;border-radius:3px;margin-bottom:14px}}
+  .maps-btn{{display:flex;align-items:center;justify-content:center;gap:10px;background:var(--dark);color:#fff;border:none;border-radius:10px;padding:14px 20px;font-size:15px;font-weight:600;width:100%;cursor:pointer;text-decoration:none}}
+  .detail-row{{display:flex;justify-content:space-between;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--border);gap:12px}}
+  .detail-row:last-child{{border-bottom:none}}
+  .detail-label{{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#aaa;min-width:90px;padding-top:1px}}
+  .detail-value{{font-size:13px;font-weight:500;color:var(--dark);text-align:right;line-height:1.4}}
+  .detail-value.muted{{color:var(--mid);font-weight:400}}
+  .cod-highlight{{background:#fff3cd;border:1px solid #e6c200;color:#7a6000;font-size:13px;font-weight:700;padding:3px 10px;border-radius:3px}}
+  .surprise-tag{{background:#fce8ff;border:1px solid #d4a0e0;color:#7b3f8c;font-size:11px;font-weight:600;padding:2px 8px;border-radius:3px;letter-spacing:.06em}}
+  .pod-section{{padding:20px}}
+  .pod-title{{font-size:16px;font-weight:700;color:var(--dark);margin-bottom:4px}}
+  .pod-sub{{font-size:13px;color:var(--mid);margin-bottom:18px;line-height:1.5}}
+  .upload-zone{{border:2px dashed var(--gold);border-radius:12px;padding:28px 20px;text-align:center;background:#fdfaf6;cursor:pointer;position:relative;margin-bottom:16px}}
+  .upload-zone input[type="file"]{{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}}
+  .upload-icon{{font-size:36px;margin-bottom:8px}}
+  .upload-label{{font-size:15px;font-weight:600;color:var(--dark);margin-bottom:4px}}
+  .upload-hint{{font-size:12px;color:#aaa}}
+  .preview-wrap{{display:none;position:relative;margin-bottom:16px;border-radius:10px;overflow:hidden;border:2px solid var(--gold)}}
+  .preview-wrap img{{width:100%;max-height:240px;object-fit:cover;display:block}}
+  .preview-remove{{position:absolute;top:8px;right:8px;background:rgba(0,0,0,.6);color:#fff;border:none;border-radius:50%;width:28px;height:28px;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center}}
+  .notes-label{{font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:#aaa;margin-bottom:6px;display:block}}
+  .notes-input{{width:100%;border:1.5px solid var(--border);border-radius:8px;padding:10px 14px;font-size:14px;font-family:'Inter',sans-serif;color:var(--dark);background:var(--light);resize:none;outline:none;margin-bottom:20px}}
+  .notes-input:focus{{border-color:var(--gold)}}
+  .submit-btn{{width:100%;background:var(--green);color:#fff;border:none;border-radius:12px;padding:16px;font-size:16px;font-weight:700;cursor:pointer;letter-spacing:.04em;transition:opacity .15s}}
+  .submit-btn:disabled{{opacity:.4;cursor:not-allowed}}
+  .submit-btn:not(:disabled):active{{opacity:.85}}
+  .error-msg{{background:#fce8e8;border:1px solid var(--red);color:var(--red);border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:12px;display:none}}
+  .success-screen{{display:none;width:100%;max-width:420px;flex-direction:column;align-items:center;padding:48px 24px;text-align:center}}
+  .success-icon{{font-size:64px;margin-bottom:16px}}
+  .success-title{{font-family:'DM Serif Display',serif;font-size:28px;color:var(--dark);margin-bottom:8px}}
+  .success-sub{{font-size:15px;color:var(--mid);line-height:1.6;margin-bottom:24px}}
+  .success-order{{font-size:13px;font-weight:600;color:var(--gold);letter-spacing:.1em}}
+  .success-timestamp{{font-size:12px;color:#bbb;margin-top:4px}}
+  .loading-overlay{{display:none;position:fixed;inset:0;background:rgba(26,26,26,.7);z-index:100;align-items:center;justify-content:center;flex-direction:column;gap:16px}}
+  .loading-overlay.active{{display:flex}}
+  .spinner{{width:40px;height:40px;border:3px solid rgba(200,169,110,.3);border-top-color:var(--gold);border-radius:50%;animation:spin .8s linear infinite}}
+  .loading-text{{color:#fff;font-size:14px;font-weight:500}}
+  @keyframes spin{{to{{transform:rotate(360deg)}}}}
+  .content{{width:100%;max-width:420px;display:flex;flex-direction:column}}
+</style>
+</head>
+<body>
+
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="spinner"></div>
+  <div class="loading-text" id="loadingText">Confirming delivery…</div>
+</div>
+
+<div class="page-header">
+  <div class="header-brand">Angie's Florist</div>
+  <div class="header-order">
+    <div class="order-label">Order</div>
+    <div class="order-code">{order_code}</div>
+  </div>
+</div>
+<div class="status-bar">
+  <span class="status-text">&#128692; Out for Delivery</span>
+  {rush_badge}
+</div>
+
+<div class="content" id="mainContent">
+
+  <div class="card">
+    <div class="card-header"><span class="card-icon">&#128100;</span><span class="card-title">Recipient</span></div>
+    <div class="card-body">
+      <div class="recipient-name">{recip_name}</div>
+      <div class="recipient-number">{recip_fmt}</div>
+      <a href="tel:{recip_phone}" class="call-btn"><span class="call-icon">&#128222;</span> Call recipient</a>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><span class="card-icon">&#128205;</span><span class="card-title">Delivery Address</span></div>
+    <div class="card-body">
+      <div class="address-text">{address}</div>
+      <div class="zone-tag">Zone: {zone}</div>
+      <a href="https://www.google.com/maps/dir/?api=1&destination={maps_q}" target="_blank" class="maps-btn">
+        &#128506; Open in Google Maps
+      </a>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><span class="card-icon">&#128230;</span><span class="card-title">Order Details</span></div>
+    <div class="card-body" style="padding:0 20px">
+      <div class="detail-row"><span class="detail-label">Arrangement</span><span class="detail-value">{arrangement}</span></div>
+      <div class="detail-row"><span class="detail-label">Deliver by</span><span class="detail-value">{target_date} &middot; {target_time}</span></div>
+      {payment_row}
+      {surprise_row}
+      {card_row}
+      {landmark_row}
+      {notes_row}
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><span class="card-icon">&#128248;</span><span class="card-title">Proof of Delivery</span></div>
+    <div class="pod-section">
+      <div class="pod-title">Take a photo to confirm</div>
+      <div class="pod-sub">Photo with the recipient or at the door. This marks the order as Delivered.</div>
+      <div class="upload-zone" id="uploadZone">
+        <input type="file" accept="image/*" capture="environment" id="photoInput" onchange="handlePhoto(this)">
+        <div class="upload-icon">&#128247;</div>
+        <div class="upload-label">Tap to take photo</div>
+        <div class="upload-hint">or choose from gallery</div>
+      </div>
+      <div class="preview-wrap" id="previewWrap">
+        <img id="previewImg" src="" alt="Proof">
+        <button class="preview-remove" onclick="removePhoto()">&#10005;</button>
+      </div>
+      <label class="notes-label" for="deliveryNotes">Delivery notes (optional)</label>
+      <textarea class="notes-input" id="deliveryNotes" rows="2" placeholder="e.g. Left with guard, recipient was not home…"></textarea>
+      <div class="error-msg" id="errorMsg"></div>
+      <button class="submit-btn" id="submitBtn" disabled onclick="confirmDelivery()">&#10003; Confirm Delivery</button>
+    </div>
+  </div>
+
+</div>
+
+<div class="success-screen" id="successScreen">
+  <div class="success-icon">&#9989;</div>
+  <div class="success-title">Delivered!</div>
+  <div class="success-sub">Order marked as delivered. Great work!</div>
+  <div class="success-order">{order_code}</div>
+  <div class="success-timestamp" id="successTimestamp"></div>
+</div>
+
+<script>
+const SUPA_URL    = "{SUPABASE_URL}";
+const SUPA_KEY    = "{SUPABASE_ANON_KEY}";
+const BUCKET      = "{STORAGE_BUCKET}";
+const ORDER_CODE  = "{order_code}";
+const ORIG_NOTES  = "{notes_js}";
+let photoFile = null;
+
+function handlePhoto(input) {{
+  if (!input.files || !input.files[0]) return;
+  photoFile = input.files[0];
+  const reader = new FileReader();
+  reader.onload = e => {{
+    document.getElementById('previewImg').src = e.target.result;
+    document.getElementById('previewWrap').style.display = 'block';
+    document.getElementById('uploadZone').style.display  = 'none';
+    document.getElementById('submitBtn').disabled = false;
+  }};
+  reader.readAsDataURL(photoFile);
+}}
+
+function removePhoto() {{
+  photoFile = null;
+  document.getElementById('previewImg').src = '';
+  document.getElementById('previewWrap').style.display = 'none';
+  document.getElementById('uploadZone').style.display  = 'block';
+  document.getElementById('photoInput').value = '';
+  document.getElementById('submitBtn').disabled = true;
+}}
+
+function showError(msg) {{
+  const el = document.getElementById('errorMsg');
+  el.textContent = msg;
+  el.style.display = 'block';
+}}
+
+async function confirmDelivery() {{
+  if (!photoFile) return;
+  document.getElementById('errorMsg').style.display = 'none';
+  document.getElementById('loadingOverlay').classList.add('active');
+  document.getElementById('loadingText').textContent = 'Uploading photo…';
+  try {{
+    // 1. Upload photo
+    const ext  = (photoFile.name.split('.').pop() || 'jpg').toLowerCase();
+    const path = `orders/${{ORDER_CODE}}/delivery_proof/${{Date.now()}}.${{ext}}`;
+    const upRes = await fetch(`${{SUPA_URL}}/storage/v1/object/${{BUCKET}}/${{path}}`, {{
+      method: 'POST',
+      headers: {{
+        'Authorization': `Bearer ${{SUPA_KEY}}`,
+        'Content-Type': photoFile.type || 'image/jpeg',
+        'x-upsert': 'true',
+      }},
+      body: photoFile,
+    }});
+    if (!upRes.ok) throw new Error('Photo upload failed: ' + await upRes.text());
+    const photoUrl = `${{SUPA_URL}}/storage/v1/object/public/${{BUCKET}}/${{path}}`;
+
+    // 2. Find order row
+    document.getElementById('loadingText').textContent = 'Updating order…';
+    const findRes = await fetch(
+      `${{SUPA_URL}}/rest/v1/orders?order_code=eq.${{ORDER_CODE}}&select=id`,
+      {{ headers: {{ apikey: SUPA_KEY, Authorization: `Bearer ${{SUPA_KEY}}` }} }}
+    );
+    const rows = await findRes.json();
+    if (!rows || !rows.length) throw new Error('Order not found in system.');
+    const orderId = rows[0].id;
+
+    // 3. Patch order
+    const riderNotes = document.getElementById('deliveryNotes').value.trim();
+    const combinedNotes = riderNotes
+      ? (ORIG_NOTES ? ORIG_NOTES + '\\n[Rider] ' + riderNotes : '[Rider] ' + riderNotes)
+      : ORIG_NOTES;
+    const now = new Date().toISOString();
+    const patchRes = await fetch(`${{SUPA_URL}}/rest/v1/orders?id=eq.${{orderId}}`, {{
+      method: 'PATCH',
+      headers: {{
+        apikey: SUPA_KEY,
+        Authorization: `Bearer ${{SUPA_KEY}}`,
+        'Content-Type': 'application/json',
+        Prefer: 'return=minimal',
+      }},
+      body: JSON.stringify({{
+        status: 'Delivered',
+        proof_of_delivery: photoUrl,
+        delivered_at: now,
+        updated_at: now,
+        notes: combinedNotes,
+      }}),
+    }});
+    if (!patchRes.ok) throw new Error('Order update failed: ' + await patchRes.text());
+
+    // 4. Success
+    document.getElementById('loadingOverlay').classList.remove('active');
+    document.getElementById('mainContent').style.display = 'none';
+    const sc = document.getElementById('successScreen');
+    sc.style.display = 'flex';
+    const ts = new Date();
+    document.getElementById('successTimestamp').textContent =
+      'Confirmed at ' + ts.toLocaleTimeString('en-PH', {{hour:'2-digit',minute:'2-digit'}}) +
+      ' · ' + ts.toLocaleDateString('en-PH', {{month:'short',day:'numeric',year:'numeric'}});
+    window.scrollTo({{top:0,behavior:'smooth'}});
+  }} catch(err) {{
+    document.getElementById('loadingOverlay').classList.remove('active');
+    showError('&#9888; ' + err.message + ' — please try again or contact the shop.');
+  }}
+}}
+</script>
+</body>
+</html>"""
+
+
+def generate_qr_for_order(order: dict, token: str) -> tuple:
+    order_code   = order.get("order_code", "")
+    delivery_url = f"{RIDER_PAGE_BASE_URL}?order={order_code}&token={token}"
+
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_M,
+        box_size=8,
+        border=2,
+    )
+    qr.add_data(delivery_url)
+    qr.make(fit=True)
+
+    img = qr.make_image(fill_color="#1a1a1a", back_color="white")
+    buf = BytesIO()
+    img.save(buf, format="PNG")
+    return base64.b64encode(buf.getvalue()).decode("utf-8"), delivery_url
 
 def _fmt(amount) -> str:
     try:
@@ -77,7 +420,7 @@ def generate_waybill_html(order: dict, token: str = None) -> str:
 
     import re
 
-    qr_b64       = generate_qr_base64(order.get("order_code", "PREVIEW"), token)
+    qr_b64, delivery_data_url = generate_qr_for_order(order, token)
     branch_label = BRANCH_NAMES.get(order.get("branch", ""), order.get("branch", "Main Branch"))
     is_rush      = str(order.get("order_type", "")).lower() == "rush"
     is_surprise  = bool(order.get("is_surprise", False))
@@ -333,6 +676,8 @@ def generate_waybill_html(order: dict, token: str = None) -> str:
   .rider-right{{display:flex;flex-direction:column;align-items:center;gap:3px;}}
   .rider-right img{{width:100px;height:100px;border-radius:3px;}}
   .qr-label{{font-size:6.5px;color:#999;letter-spacing:.08em;text-transform:uppercase;text-align:center;}}
+  .qr-test-link{{font-size:7px;color:#c8a96e;text-align:center;text-decoration:none;display:block;margin-top:3px;}}
+  .qr-test-link:hover{{text-decoration:underline;}}
 
   /* ── Footer bar ── */
   .ftr{{
@@ -348,33 +693,18 @@ def generate_waybill_html(order: dict, token: str = None) -> str:
 
   /* ── Print ── */
   @media print{{
-    @page{{
-      size:148mm 210mm;
-      margin:0;
-    }}
-    html,body{{
-      width:148mm;
-      height:210mm;
-      margin:0;
-      padding:0;
-      background:none;
-    }}
+    @page{{size:148mm 210mm;margin:0!important;}}
+    html{{width:148mm!important;height:210mm!important;margin:0!important;padding:0!important;}}
+    body{{width:148mm!important;height:210mm!important;margin:0!important;padding:0!important;background:none!important;display:block!important;}}
     .hint{{display:none!important;}}
-    .wb{{
-      width:148mm;
-      height:210mm;
-      min-height:unset;
-      max-height:210mm;
-      box-shadow:none;
-      border-radius:0;
-      overflow:hidden;
-    }}
+    .no-print{{display:none!important;}}
+    .wb{{width:148mm!important;height:210mm!important;min-height:unset!important;max-height:210mm!important;box-shadow:none!important;border-radius:0!important;overflow:hidden!important;}}
   }}
 </style>
 </head>
 <body>
 
-<p class="hint">A5 · Ctrl+P or ⌘+P to print</p>
+<p class="hint">A5 · <button onclick="window.print()" style="background:#1a1a1a;color:#fff;border:none;padding:4px 12px;border-radius:4px;cursor:pointer;font-size:11px;">&#128424; Print</button> — set paper to <strong>A5</strong> in print dialog</p>
 
 <div class="wb">
 
@@ -463,6 +793,7 @@ def generate_waybill_html(order: dict, token: str = None) -> str:
     <div class="rider-right">
       <img src="data:image/png;base64,{qr_b64}" alt="QR">
       <span class="qr-label">Scan to deliver</span>
+      <a href="{delivery_data_url}" target="_blank" class="qr-test-link no-print">&#128279; Test link</a>
     </div>
   </div>
 
