@@ -133,9 +133,9 @@ STATUS_COLOR = {
 # ROLE-BASED PAGE ACCESS
 # ─────────────────────────────────────────────────────────────────────────────
 PAGE_ACCESS = {
-    "Super Admin":    {"Dashboard","New Order","All Orders","Edit Order","Florist Board","Rider Board","Schedule","Inventory","Waste Tracker","Staff Management","Reports","Customers","HR","Management KPI"},
-    "Branch Manager": {"Dashboard","New Order","All Orders","Edit Order","Florist Board","Rider Board","Schedule","Inventory","Waste Tracker","Staff Management","Reports","Customers","Management KPI"},
-    "Staff":          {"Dashboard","New Order","All Orders","Edit Order","Florist Board","Rider Board","Schedule","Inventory","Waste Tracker","Reports","Customers"},
+    "Super Admin":    {"Dashboard","New Order","All Orders","Edit Order","Florist Board","Rider Board","Schedule","Inventory","Waste Tracker","Staff Management","Reports","Customers","HR","Management KPI","Route Planner"},
+    "Branch Manager": {"Dashboard","New Order","All Orders","Edit Order","Florist Board","Rider Board","Schedule","Inventory","Waste Tracker","Staff Management","Reports","Customers","Management KPI","Route Planner"},
+    "Staff":          {"Dashboard","New Order","All Orders","Edit Order","Florist Board","Rider Board","Schedule","Inventory","Waste Tracker","Reports","Customers","Route Planner"},
     "Florist":        {"Dashboard","New Order","All Orders","Edit Order","Florist Board","Schedule"},
     "Rider":          {"Dashboard","Rider Board","Schedule"},
 }
@@ -425,6 +425,7 @@ with st.sidebar:
         "📋 All Orders":     "All Orders",
         "🌹 Florist Board":  "Florist Board",
         "🚴 Rider Board":    "Rider Board",
+        "🗺️ Route Planner":  "Route Planner",
         "📅 Schedule":       "Schedule",
         "👤 Customers":      "Customers",
         "📦 Inventory":      "Inventory",
@@ -3517,10 +3518,352 @@ def page_management_kpi():
     st.text_area("Recap (copy this)", value=recap, height=380, key="mgmt_recap_area")
 
 # ─────────────────────────────────────────────────────────────────────────────
+# PAGE: DELIVERY ROUTE PLANNER
+# Visible to: Staff, Branch Manager, Super Admin
+# ─────────────────────────────────────────────────────────────────────────────
+def page_route_planner():
+    import urllib.parse
+    st.markdown("<div class='section-header'>🗺️ Delivery Route Planner</div>", unsafe_allow_html=True)
+
+    # Branch origin addresses for Google Maps starting point
+    BRANCH_ORIGINS = {
+        "Main Branch":      "Angie's Florist Main Branch, Calamba, Laguna, Philippines",
+        "San Pablo Branch": "Angie's Florist San Pablo Branch, San Pablo City, Laguna, Philippines",
+        "Sta. Rosa Branch": "Angie's Florist Sta. Rosa Branch, Sta. Rosa, Laguna, Philippines",
+    }
+
+    def build_maps_url(origin: str, addresses: list) -> str:
+        """Build a Google Maps multi-stop directions URL."""
+        if not addresses:
+            return ""
+        all_stops = [origin] + addresses
+        encoded   = [urllib.parse.quote(a) for a in all_stops]
+        return "https://www.google.com/maps/dir/" + "/".join(encoded)
+
+    def build_single_maps_url(address: str) -> str:
+        return f"https://maps.google.com/?q={urllib.parse.quote(address)}"
+
+    # ── FILTERS ───────────────────────────────────────────────────────────────
+    f1, f2, f3, f4 = st.columns(4)
+    rp_date   = f1.date_input("📅 Delivery Date", value=date.today(), key="rp_date")
+    branch_opts = BRANCHES if (CURRENT_ROLE == "Super Admin" or CURRENT_BRANCH == "All") else [CURRENT_BRANCH]
+    rp_branch = f2.selectbox("🏢 Branch", ["All"] + branch_opts, key="rp_branch")
+    rp_status = f3.multiselect(
+        "📋 Order Status",
+        ["Ready", "In Progress", "Confirmed", "Pending"],
+        default=["Ready", "In Progress"],
+        key="rp_status",
+    )
+    rp_date_str = rp_date.isoformat()
+
+    # ── DATA ──────────────────────────────────────────────────────────────────
+    all_orders  = scope_by_branch(db.get_orders())
+    all_riders  = scope_by_branch(db.get_riders())
+    rider_names = [r["name"] for r in all_riders]
+
+    # Delivery orders for the selected date + statuses
+    route_orders = [
+        o for o in all_orders
+        if o.get("order_type") == "Delivery"
+        and str(o.get("target_date", ""))[:10] == rp_date_str
+        and o.get("status") in (rp_status or ["Ready"])
+        and (rp_branch == "All"
+             or o.get("fulfillment_branch", o.get("branch", "")) == rp_branch)
+    ]
+
+    # Sort: Rush first → time → zone
+    def _sort_key(o):
+        rush = 0 if o.get("priority_rush") else 1
+        t = o.get("target_time", "23:59")
+        try: t = datetime.strptime(t, "%I:%M %p").strftime("%H:%M")
+        except: pass
+        return (rush, t, o.get("delivery_zone", ""))
+
+    route_orders = sorted(route_orders, key=_sort_key)
+
+    # ── SUMMARY METRICS ───────────────────────────────────────────────────────
+    total_del    = len(route_orders)
+    assigned     = [o for o in route_orders if o.get("assigned_rider")]
+    unassigned   = [o for o in route_orders if not o.get("assigned_rider")]
+    rush_orders  = [o for o in route_orders if o.get("priority_rush")]
+    cod_total    = sum(
+        float(o.get("total_balance", 0)) for o in route_orders
+        if o.get("balance_payment_method") == "COD" and float(o.get("total_balance", 0)) > 0
+    )
+    zones_active = len(set(o.get("delivery_zone", "Unspecified") for o in route_orders))
+
+    m1, m2, m3, m4, m5, m6 = st.columns(6)
+    m1.metric("🚴 Total Deliveries",  total_del)
+    m2.metric("✅ Rider Assigned",    len(assigned))
+    m3.metric("⏳ Unassigned",        len(unassigned),
+              delta=f"{len(unassigned)} need rider" if unassigned else None,
+              delta_color="inverse" if unassigned else "normal")
+    m4.metric("🚀 Rush",              len(rush_orders))
+    m5.metric("📍 Zones",             zones_active)
+    m6.metric("💰 COD to Collect",   f"₱{cod_total:,.2f}")
+
+    if not route_orders:
+        st.info(f"No delivery orders found for **{rp_date_str}** with the selected status filter.")
+        return
+
+    st.divider()
+
+    # ── UNASSIGNED ALERT ──────────────────────────────────────────────────────
+    if unassigned:
+        st.warning(f"⚠️ **{len(unassigned)} order(s) have no rider assigned.** Use the Zone view below to batch-assign by zone.")
+
+    # ── TABS ─────────────────────────────────────────────────────────────────
+    tab_rider, tab_zone = st.tabs(["🚴 By Rider (Dispatch)", "📍 By Zone (Planning)"])
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # TAB 1: BY RIDER — Dispatcher view. One card per rider + unassigned section.
+    # ═══════════════════════════════════════════════════════════════════════════
+    with tab_rider:
+        st.caption("Each rider's full delivery batch for the day. Use the Google Maps link to give them their route in one tap.")
+
+        # Group orders by rider
+        rider_batches = {}
+        for o in route_orders:
+            key = o.get("assigned_rider") or "⏳ Unassigned"
+            rider_batches.setdefault(key, []).append(o)
+
+        # Unassigned first (action needed), then riders alphabetically
+        sorted_keys = (
+            (["⏳ Unassigned"] if "⏳ Unassigned" in rider_batches else [])
+            + sorted(k for k in rider_batches if k != "⏳ Unassigned")
+        )
+
+        for rider_key in sorted_keys:
+            batch = rider_batches[rider_key]
+            is_unassigned = rider_key == "⏳ Unassigned"
+
+            batch_cod = sum(
+                float(o.get("total_balance", 0)) for o in batch
+                if o.get("balance_payment_method") == "COD" and float(o.get("total_balance", 0)) > 0
+            )
+            batch_zones = sorted(set(o.get("delivery_zone", "Unspecified") for o in batch))
+            batch_rush  = sum(1 for o in batch if o.get("priority_rush"))
+
+            # Card header
+            header_color = "#FFF3CD" if is_unassigned else "#F0FFF4"
+            border_color = "#FFC107" if is_unassigned else "#28A745"
+            rider_label  = f"⏳ Unassigned ({len(batch)} order{'s' if len(batch)>1 else ''})" if is_unassigned else f"🚴 {rider_key} — {len(batch)} order{'s' if len(batch)>1 else ''}"
+
+            st.markdown(
+                f"<div style='background:{header_color}; border-left:4px solid {border_color}; "
+                f"border-radius:8px; padding:12px 16px; margin-bottom:8px;'>"
+                f"<strong style='font-size:16px;'>{rider_label}</strong>"
+                f"{'&nbsp;&nbsp;🚀 ' + str(batch_rush) + ' rush' if batch_rush else ''}"
+                f"{'&nbsp;&nbsp;💰 COD: ₱' + f'{batch_cod:,.2f}' if batch_cod > 0 else ''}"
+                f"<br><span style='font-size:12px; color:#555;'>Zones: {', '.join(batch_zones)}</span>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+
+            # Google Maps multi-stop link (only for assigned riders with addresses)
+            if not is_unassigned:
+                addresses = [
+                    o.get("delivery_address", "").strip()
+                    for o in batch
+                    if o.get("delivery_address", "").strip()
+                ]
+                if addresses:
+                    # Determine origin from branch
+                    batch_branch = batch[0].get("fulfillment_branch", batch[0].get("branch", "Main Branch"))
+                    origin = BRANCH_ORIGINS.get(batch_branch, BRANCH_ORIGINS["Main Branch"])
+                    maps_url = build_maps_url(origin, addresses)
+                    st.markdown(
+                        f"<a href='{maps_url}' target='_blank' style='"
+                        f"display:inline-block; background:#4285F4; color:white; font-weight:600; "
+                        f"padding:8px 16px; border-radius:8px; text-decoration:none; font-size:13px; margin-bottom:10px;'>"
+                        f"📍 Open Full Route in Google Maps ({len(addresses)} stop{'s' if len(addresses)>1 else ''})</a>",
+                        unsafe_allow_html=True,
+                    )
+
+            # Order rows
+            for o in batch:
+                order_code    = o.get("order_code", o.get("id", "N/A"))
+                recip_name    = o.get("recipient_name") or o.get("customer_name", "—")
+                recip_contact = o.get("recipient_contact") or o.get("customer_contact", "—")
+                address       = o.get("delivery_address", "—")
+                zone          = o.get("delivery_zone", "—")
+                ttime         = o.get("target_time", "—")
+                balance       = float(o.get("total_balance", 0))
+                bal_method    = o.get("balance_payment_method", "—")
+                is_rush       = o.get("priority_rush", False)
+                is_surprise   = o.get("is_surprise", False)
+                status        = o.get("status", "—")
+                status_color  = STATUS_COLOR.get(status, "#888")
+
+                rush_tag     = " 🚀 **RUSH**" if is_rush else ""
+                surprise_tag = " 🤫 SURPRISE" if is_surprise else ""
+                cod_tag      = f" | 💰 COD ₱{balance:,.0f}" if balance > 0 and bal_method == "COD" else ""
+                single_maps  = build_single_maps_url(address) if address and address != "—" else ""
+
+                with st.expander(
+                    f"`{order_code}` — {recip_name} · {zone}{rush_tag}{cod_tag}",
+                    expanded=is_unassigned or is_rush,
+                ):
+                    col_a, col_b = st.columns([2, 1])
+                    with col_a:
+                        st.markdown(
+                            f"**Recipient:** {recip_name}  \n"
+                            f"**Contact:** {recip_contact}  \n"
+                            f"**Address:** {address}  \n"
+                            f"**Zone:** {zone}  \n"
+                            f"**Time:** {ttime}  \n"
+                            f"**Arrangement:** {o.get('arrangement','—')} × {o.get('quantity',1)}  \n"
+                            f"**Status:** <span style='color:{status_color}; font-weight:700;'>{status}</span>"
+                            + (f"  \n{surprise_tag}" if surprise_tag else ""),
+                            unsafe_allow_html=True,
+                        )
+                        if cod_tag:
+                            st.error(f"💰 Collect **₱{balance:,.2f}** via COD on delivery")
+                    with col_b:
+                        if single_maps:
+                            st.markdown(
+                                f"<a href='{single_maps}' target='_blank' style='"
+                                f"display:inline-block; background:#34A853; color:white; font-weight:600; "
+                                f"padding:6px 12px; border-radius:6px; text-decoration:none; font-size:12px;'>"
+                                f"📍 Maps</a>",
+                                unsafe_allow_html=True,
+                            )
+                        # Assign / reassign rider
+                        if rider_names and CURRENT_ROLE in ("Super Admin", "Branch Manager", "Staff"):
+                            current_idx = rider_names.index(o.get("assigned_rider")) if o.get("assigned_rider") in rider_names else 0
+                            sel = st.selectbox(
+                                "Assign Rider",
+                                rider_names,
+                                index=current_idx,
+                                key=f"rp_assign_{order_code}",
+                                label_visibility="collapsed",
+                            )
+                            btn_label = "✓ Assign" if is_unassigned else "↺ Reassign"
+                            if st.button(btn_label, key=f"rp_btn_{order_code}", use_container_width=True):
+                                db.update_order(o["id"], {"assigned_rider": sel})
+                                st.success(f"✅ {order_code} → {sel}")
+                                st.rerun()
+
+            st.divider()
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # TAB 2: BY ZONE — Planning view. Zone → orders grouped, batch assign.
+    # ═══════════════════════════════════════════════════════════════════════════
+    with tab_zone:
+        st.caption("Group orders by zone to plan efficient rider batching. Assign a rider to an entire zone at once.")
+
+        # Group by zone
+        zone_groups = {}
+        for o in route_orders:
+            z = o.get("delivery_zone", "Unspecified") or "Unspecified"
+            zone_groups.setdefault(z, []).append(o)
+
+        # Sort zones by order count descending
+        sorted_zones = sorted(zone_groups.items(), key=lambda x: len(x[1]), reverse=True)
+
+        for zone_name, z_orders in sorted_zones:
+            z_assigned   = [o for o in z_orders if o.get("assigned_rider")]
+            z_unassigned = [o for o in z_orders if not o.get("assigned_rider")]
+            z_rush       = sum(1 for o in z_orders if o.get("priority_rush"))
+            z_cod        = sum(
+                float(o.get("total_balance", 0)) for o in z_orders
+                if o.get("balance_payment_method") == "COD" and float(o.get("total_balance", 0)) > 0
+            )
+
+            # Zone header
+            has_unassigned = len(z_unassigned) > 0
+            card_color  = "#FFF3CD" if has_unassigned else "#E8F5E9"
+            border_col  = "#FFC107" if has_unassigned else "#28A745"
+            assigned_riders = list(set(o.get("assigned_rider","") for o in z_assigned if o.get("assigned_rider","")))
+
+            st.markdown(
+                f"<div style='background:{card_color}; border-left:4px solid {border_col}; "
+                f"border-radius:8px; padding:10px 16px; margin-bottom:6px;'>"
+                f"<strong style='font-size:15px;'>📍 {zone_name}</strong> "
+                f"&nbsp;—&nbsp; {len(z_orders)} order{'s' if len(z_orders)>1 else ''}"
+                f"{'&nbsp;&nbsp;🚀 ' + str(z_rush) + ' rush' if z_rush else ''}"
+                f"{'&nbsp;&nbsp;💰 COD ₱' + f'{z_cod:,.0f}' if z_cod > 0 else ''}"
+                f"<br><span style='font-size:12px; color:#555;'>"
+                f"Assigned to: {', '.join(assigned_riders) if assigned_riders else '— none'}"
+                f"{' &nbsp;·&nbsp; ' + str(len(z_unassigned)) + ' unassigned' if z_unassigned else ''}"
+                f"</span></div>",
+                unsafe_allow_html=True,
+            )
+
+            with st.expander(f"View {len(z_orders)} order(s) in {zone_name}", expanded=has_unassigned):
+                # Batch assign all unassigned in this zone
+                if z_unassigned and rider_names and CURRENT_ROLE in ("Super Admin", "Branch Manager", "Staff"):
+                    bz1, bz2 = st.columns([2, 1])
+                    batch_rider = bz1.selectbox(
+                        f"Batch assign all {len(z_unassigned)} unassigned to:",
+                        rider_names,
+                        key=f"batch_zone_{zone_name}",
+                    )
+                    if bz2.button(f"✓ Assign All in {zone_name}", key=f"batch_btn_{zone_name}", use_container_width=True):
+                        for o in z_unassigned:
+                            db.update_order(o["id"], {"assigned_rider": batch_rider})
+                        st.success(f"✅ {len(z_unassigned)} order(s) in **{zone_name}** assigned to **{batch_rider}**")
+                        st.rerun()
+                    st.divider()
+
+                # Order rows for this zone
+                for o in sorted(z_orders, key=_sort_key):
+                    order_code    = o.get("order_code", o.get("id", "N/A"))
+                    recip_name    = o.get("recipient_name") or o.get("customer_name", "—")
+                    address       = o.get("delivery_address", "—")
+                    ttime         = o.get("target_time", "—")
+                    rider_name    = o.get("assigned_rider", "")
+                    balance       = float(o.get("total_balance", 0))
+                    bal_method    = o.get("balance_payment_method", "—")
+                    is_rush       = o.get("priority_rush", False)
+                    status        = o.get("status", "—")
+                    status_color  = STATUS_COLOR.get(status, "#888")
+                    single_maps   = build_single_maps_url(address) if address and address != "—" else ""
+
+                    rc1, rc2, rc3 = st.columns([3, 2, 1])
+                    with rc1:
+                        rush_icon = "🚀 " if is_rush else ""
+                        st.markdown(
+                            f"{rush_icon}**`{order_code}`** — {recip_name}  \n"
+                            f"📍 {address}  \n"
+                            f"🕐 {ttime} &nbsp;|&nbsp; "
+                            f"<span style='color:{status_color}; font-weight:600;'>{status}</span>"
+                            + (f"  \n💰 COD ₱{balance:,.0f}" if balance > 0 and bal_method == "COD" else ""),
+                            unsafe_allow_html=True,
+                        )
+                    with rc2:
+                        if rider_names and CURRENT_ROLE in ("Super Admin", "Branch Manager", "Staff"):
+                            current_idx = rider_names.index(rider_name) if rider_name in rider_names else 0
+                            sel = st.selectbox(
+                                "Rider",
+                                rider_names,
+                                index=current_idx,
+                                key=f"zpick_{order_code}",
+                                label_visibility="collapsed",
+                            )
+                            if st.button("✓", key=f"zbtn_{order_code}", help="Assign this rider"):
+                                db.update_order(o["id"], {"assigned_rider": sel})
+                                st.success(f"✅ {order_code} → {sel}")
+                                st.rerun()
+                        else:
+                            st.caption(rider_name or "— unassigned")
+                    with rc3:
+                        if single_maps:
+                            st.markdown(
+                                f"<a href='{single_maps}' target='_blank' style='"
+                                f"display:inline-block; background:#4285F4; color:white; "
+                                f"padding:5px 10px; border-radius:6px; text-decoration:none; font-size:12px;'>"
+                                f"📍</a>",
+                                unsafe_allow_html=True,
+                            )
+                    st.markdown("---")
+
+# ─────────────────────────────────────────────────────────────────────────────
 # ROUTER
 # ─────────────────────────────────────────────────────────────────────────────
 page = st.session_state.active_page
 if   page == "Management KPI":   page_management_kpi()
+elif page == "Route Planner":    page_route_planner()
 elif page == "Dashboard":        page_dashboard()
 elif page == "New Order":        page_new_order()
 elif page == "All Orders":       page_all_orders()
