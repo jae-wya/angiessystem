@@ -363,42 +363,22 @@ async function confirmDelivery() {{
 
 
 def generate_qr_for_order(order: dict, token: str) -> tuple:
-    """
-    Returns (qr_png_base64, data_url).
-    The QR encodes the full rider delivery page as a data:text/html URL —
-    no server, no auth, works on any phone camera.
-    """
-    html     = _build_rider_page(order, token)
-    encoded  = base64.b64encode(html.encode("utf-8")).decode("utf-8")
-    data_url = f"data:text/html;base64,{encoded}"
+    order_code   = order.get("order_code", "")
+    delivery_url = f"{RIDER_PAGE_BASE_URL}?order={order_code}&token={token}"
 
     qr = qrcode.QRCode(
-        version=None,
-        error_correction=qrcode.constants.ERROR_CORRECT_L,
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_M,
         box_size=8,
         border=2,
     )
-    try:
-        qr.add_data(data_url)
-        qr.make(fit=True)
-        if qr.version and qr.version > 40:
-            raise ValueError("too large")
-    except Exception:
-        txt = (
-            f"ANGIES FLORIST {order.get('order_code','')} | "
-            f"{order.get('recipient_name','') or order.get('customer_name','')} | "
-            f"{order.get('recipient_phone','') or order.get('customer_contact','')} | "
-            f"{order.get('delivery_address','')}"
-        )
-        qr = qrcode.QRCode(version=None, error_correction=qrcode.constants.ERROR_CORRECT_L, box_size=8, border=2)
-        qr.add_data(txt)
-        qr.make(fit=True)
+    qr.add_data(delivery_url)
+    qr.make(fit=True)
 
     img = qr.make_image(fill_color="#1a1a1a", back_color="white")
     buf = BytesIO()
     img.save(buf, format="PNG")
-    return base64.b64encode(buf.getvalue()).decode("utf-8"), data_url
-
+    return base64.b64encode(buf.getvalue()).decode("utf-8"), delivery_url
 
 def _fmt(amount) -> str:
     try:
