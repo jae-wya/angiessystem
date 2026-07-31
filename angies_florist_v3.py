@@ -133,8 +133,8 @@ STATUS_COLOR = {
 # ROLE-BASED PAGE ACCESS
 # ─────────────────────────────────────────────────────────────────────────────
 PAGE_ACCESS = {
-    "Super Admin":    {"Dashboard","New Order","All Orders","Edit Order","Florist Board","Rider Board","Schedule","Inventory","Waste Tracker","Staff Management","Reports","Customers","HR"},
-    "Branch Manager": {"Dashboard","New Order","All Orders","Edit Order","Florist Board","Rider Board","Schedule","Inventory","Waste Tracker","Staff Management","Reports","Customers"},
+    "Super Admin":    {"Dashboard","New Order","All Orders","Edit Order","Florist Board","Rider Board","Schedule","Inventory","Waste Tracker","Staff Management","Reports","Customers","HR","Management KPI"},
+    "Branch Manager": {"Dashboard","New Order","All Orders","Edit Order","Florist Board","Rider Board","Schedule","Inventory","Waste Tracker","Staff Management","Reports","Customers","Management KPI"},
     "Staff":          {"Dashboard","New Order","All Orders","Edit Order","Florist Board","Rider Board","Schedule","Inventory","Waste Tracker","Reports","Customers"},
     "Florist":        {"Dashboard","New Order","All Orders","Edit Order","Florist Board","Schedule"},
     "Rider":          {"Dashboard","Rider Board","Schedule"},
@@ -419,6 +419,7 @@ with st.sidebar:
     st.divider()
 
     pages_all = {
+        "🎯 Mgmt KPI":       "Management KPI",
         "📊 Dashboard":      "Dashboard",
         "➕ New Order":      "New Order",
         "📋 All Orders":     "All Orders",
@@ -3256,12 +3257,271 @@ def page_hr():
                 db.save_hr_log({"id":str(uuid.uuid4())[:8],"employee":emp_name,"date":work_date.isoformat(),"regular_hours":reg_hours,"overtime_hours":ot_hours,"hourly_rate":hourly_rate,"ot_multiplier":ot_mult,"regular_pay":round(reg_pay,2),"overtime_pay":round(ot_pay,2),"total_pay":round(total_pay,2),"notes":notes_hr,"logged_at":datetime.now().isoformat()})
                 st.success(f"✅ Logged ₱{total_pay:,.2f} for {emp_name} on {work_date}.")
 
+# ─────────────────────────────────────────────────────────────────────────────
+# PAGE: MANAGEMENT KPI DASHBOARD
+# Visible to: Branch Manager, Super Admin
+# ─────────────────────────────────────────────────────────────────────────────
+def page_management_kpi():
+    st.markdown("<div class='section-header'>🎯 Management KPI Dashboard</div>", unsafe_allow_html=True)
+    st.caption(f"Live as of {datetime.now().strftime('%A, %B %d %Y · %I:%M %p')}  ·  Hit 🔄 Refresh Data in the sidebar to force-update.")
+
+    # ── DATA LOAD ─────────────────────────────────────────────────────────────
+    all_orders    = db.get_orders()
+    all_inventory = db.get_inventory()
+    all_waste     = db.get_waste()
+    all_staff     = db.get_staff_accounts()
+
+    today              = date.today()
+    today_str          = today.isoformat()
+    week_start         = (today - timedelta(days=today.weekday())).isoformat()
+    month_start        = today.replace(day=1).isoformat()
+    last_month_end     = today.replace(day=1) - timedelta(days=1)
+    last_month_start   = last_month_end.replace(day=1).isoformat()
+    last_month_end_str = last_month_end.isoformat()
+
+    TERMINAL  = {"Delivered", "Picked Up", "Cancelled", "Failed Delivery"}
+    COMPLETED = {"Delivered", "Picked Up"}
+
+    def _rev(order_list):
+        return sum(float(o.get("total_price", 0)) for o in order_list if o.get("status") in COMPLETED)
+
+    # ── SECTION 1: LIVE OPERATIONS ───────────────────────────────────────────
+    st.markdown("### 🔴 Live Operations")
+
+    orders_today       = [o for o in all_orders if str(o.get("target_date",""))[:10] == today_str]
+    delivered_today    = [o for o in all_orders if str(o.get("delivered_at",""))[:10] == today_str and o.get("status") in COMPLETED]
+    in_progress_now    = [o for o in all_orders if o.get("status") == "In Progress"]
+    ready_now          = [o for o in all_orders if o.get("status") == "Ready"]
+    rush_active        = [o for o in all_orders if o.get("priority_rush") and o.get("status") not in TERMINAL]
+    pending_no_florist = [o for o in all_orders if o.get("status") == "Pending" and not o.get("assigned_florist")]
+    failed_today       = [o for o in all_orders if str(o.get("target_date",""))[:10] == today_str and o.get("status") == "Failed Delivery"]
+    cod_outstanding    = sum(
+        float(o.get("total_balance", 0)) for o in all_orders
+        if o.get("balance_payment_method") == "COD"
+        and float(o.get("total_balance", 0)) > 0
+        and o.get("status") in {"Ready", "Delivered"}
+    )
+    rev_today = _rev([o for o in all_orders if str(o.get("target_date",""))[:10] == today_str])
+
+    c1,c2,c3,c4,c5,c6,c7 = st.columns(7)
+    c1.metric("📦 Today's Orders",  len(orders_today))
+    c2.metric("✅ Delivered",        len(delivered_today), f"₱{rev_today:,.0f}")
+    c3.metric("🛠️ In Progress",      len(in_progress_now))
+    c4.metric("🎉 Ready",            len(ready_now))
+    c5.metric("🚀 Rush Active",      len(rush_active))
+    c6.metric("⏳ Need Florist",     len(pending_no_florist))
+    c7.metric("❌ Failed Today",     len(failed_today))
+
+    if cod_outstanding > 0:
+        st.warning(f"⚠️ **COD Outstanding: ₱{cod_outstanding:,.2f}** — cash not yet collected from riders.")
+
+    st.divider()
+
+    # ── SECTION 2: REVENUE SCORECARD ─────────────────────────────────────────
+    st.markdown("### 💰 Revenue Scorecard")
+
+    rev_week       = _rev([o for o in all_orders if str(o.get("target_date",""))[:10] >= week_start])
+    rev_month      = _rev([o for o in all_orders if str(o.get("target_date",""))[:10] >= month_start])
+    rev_last_month = _rev([o for o in all_orders if last_month_start <= str(o.get("target_date",""))[:10] <= last_month_end_str])
+    rev_all_time   = _rev(all_orders)
+
+    mom_delta  = rev_month - rev_last_month
+    mom_pct    = (mom_delta / rev_last_month * 100) if rev_last_month > 0 else 0
+
+    waste_cost_all = sum(float(w.get("cost", 0)) for w in all_waste)
+    net_profit     = rev_all_time - waste_cost_all
+    margin_pct     = (net_profit / rev_all_time * 100) if rev_all_time > 0 else 0
+
+    r1,r2,r3,r4,r5 = st.columns(5)
+    r1.metric("Today",            f"₱{rev_today:,.0f}")
+    r2.metric("This Week",        f"₱{rev_week:,.0f}")
+    r3.metric("This Month",       f"₱{rev_month:,.0f}",
+              delta=f"{'▲' if mom_delta >= 0 else '▼'} ₱{abs(mom_delta):,.0f} vs last mo. ({mom_pct:+.1f}%)")
+    r4.metric("All-Time Revenue", f"₱{rev_all_time:,.0f}")
+    r5.metric("Net Margin",       f"{margin_pct:.1f}%",
+              delta=f"after ₱{waste_cost_all:,.0f} waste cost")
+
+    st.divider()
+
+    # ── SECTION 3: BRANCH COMPARISON (Super Admin only) ──────────────────────
+    if CURRENT_ROLE == "Super Admin":
+        st.markdown("### 🏢 Branch Performance — This Week")
+        branch_rows = []
+        for br in ["Main Branch", "San Pablo Branch", "Sta. Rosa Branch"]:
+            br_orders    = [o for o in all_orders if o.get("fulfillment_branch", o.get("branch","")) == br]
+            br_today     = [o for o in br_orders if str(o.get("target_date",""))[:10] == today_str]
+            br_week      = [o for o in br_orders if str(o.get("target_date",""))[:10] >= week_start]
+            br_complete  = [o for o in br_week if o.get("status") in COMPLETED]
+            br_rev_week  = _rev(br_week)
+            br_comp_rate = (len(br_complete) / len(br_week) * 100) if br_week else 0
+            br_inv       = [i for i in all_inventory if i.get("branch") == br]
+            br_low       = len([i for i in br_inv if int(i.get("quantity", 0)) <= int(i.get("reorder_point", 10))])
+            br_active    = len([o for o in br_orders if o.get("status") not in TERMINAL])
+            branch_rows.append({
+                "Branch":          br,
+                "Today's Orders":  len(br_today),
+                "Active Now":      br_active,
+                "Week Revenue":    f"₱{br_rev_week:,.0f}",
+                "Completion %":    f"{br_comp_rate:.0f}%",
+                "⚠️ Low Stock":    br_low,
+            })
+        st.dataframe(pd.DataFrame(branch_rows), use_container_width=True, hide_index=True)
+        st.divider()
+
+    # ── SECTION 4: 7-DAY TREND ───────────────────────────────────────────────
+    st.markdown("### 📈 7-Day Trend")
+    trend_data = []
+    for i in range(6, -1, -1):
+        d       = today - timedelta(days=i)
+        d_str   = d.isoformat()
+        d_ord   = [o for o in all_orders if str(o.get("target_date",""))[:10] == d_str]
+        d_comp  = [o for o in d_ord if o.get("status") in COMPLETED]
+        trend_data.append({
+            "label":    d.strftime("%a %d"),
+            "orders":   len(d_ord),
+            "completed":len(d_comp),
+            "revenue":  _rev(d_ord),
+        })
+
+    tc1, tc2 = st.columns(2)
+    with tc1:
+        fig, ax = plt.subplots(figsize=(7, 3.5), facecolor="#FDF6F0")
+        labels   = [t["label"]   for t in trend_data]
+        rev_vals = [t["revenue"] for t in trend_data]
+        bars = ax.bar(labels, rev_vals, color="#C85C8E", alpha=0.82)
+        peak = max(rev_vals) if rev_vals else 1
+        for bar, val in zip(bars, rev_vals):
+            if val > 0:
+                ax.text(
+                    bar.get_x() + bar.get_width() / 2,
+                    bar.get_height() + peak * 0.01,
+                    f"₱{val/1000:.1f}k" if val >= 1000 else f"₱{val:.0f}",
+                    ha="center", va="bottom", fontsize=8, color="#2D1B2E",
+                )
+        ax.set_facecolor("#FDF6F0")
+        ax.grid(True, axis="y", alpha=0.25)
+        ax.set_title("Daily Revenue", fontsize=11, color="#2D1B2E")
+        plt.tight_layout()
+        st.pyplot(fig)
+        plt.close(fig)
+
+    with tc2:
+        fig, ax = plt.subplots(figsize=(7, 3.5), facecolor="#FDF6F0")
+        ord_vals  = [t["orders"]    for t in trend_data]
+        comp_vals = [t["completed"] for t in trend_data]
+        ax.plot(labels, ord_vals,  marker="o", color="#C85C8E", linewidth=2,
+                label="Total Orders", markersize=6)
+        ax.plot(labels, comp_vals, marker="s", color="#28A745", linewidth=2,
+                label="Completed", markersize=6, linestyle="--")
+        ax.set_facecolor("#FDF6F0")
+        ax.grid(True, alpha=0.25)
+        ax.legend(fontsize=9)
+        ax.set_title("Orders vs Completed", fontsize=11, color="#2D1B2E")
+        plt.tight_layout()
+        st.pyplot(fig)
+        plt.close(fig)
+
+    st.divider()
+
+    # ── SECTION 5: TOP PERFORMERS — THIS WEEK ────────────────────────────────
+    st.markdown("### 🏆 Top Performers — This Week")
+    week_completed = [o for o in all_orders if str(o.get("target_date",""))[:10] >= week_start and o.get("status") in COMPLETED]
+
+    florist_counts = {}
+    for o in week_completed:
+        f = o.get("assigned_florist","")
+        if f: florist_counts[f] = florist_counts.get(f, 0) + 1
+    top_florist = max(florist_counts.items(), key=lambda x: x[1]) if florist_counts else ("—", 0)
+
+    rider_counts = {}
+    for o in week_completed:
+        r = o.get("assigned_rider","")
+        if r: rider_counts[r] = rider_counts.get(r, 0) + 1
+    top_rider = max(rider_counts.items(), key=lambda x: x[1]) if rider_counts else ("—", 0)
+
+    arr_counts = {}
+    week_orders = [o for o in all_orders if str(o.get("target_date",""))[:10] >= week_start]
+    for o in week_orders:
+        a = o.get("arrangement","")
+        if a: arr_counts[a] = arr_counts.get(a, 0) + int(o.get("quantity", 1))
+    top_arr = max(arr_counts.items(), key=lambda x: x[1]) if arr_counts else ("—", 0)
+
+    p1, p2, p3 = st.columns(3)
+    p1.metric("🌹 Top Florist",      top_florist[0], f"{top_florist[1]} orders completed this week")
+    p2.metric("🚴 Top Rider",        top_rider[0],   f"{top_rider[1]} deliveries this week")
+    p3.metric("🏆 Best Arrangement", top_arr[0][:28] if top_arr[0] != "—" else "—", f"{top_arr[1]} units sold")
+
+    st.divider()
+
+    # ── SECTION 6: SYSTEM HEALTH ──────────────────────────────────────────────
+    st.markdown("### 🖥️ System Health")
+    active_staff  = len([s for s in all_staff if s.get("active") is not False])
+    total_orders  = len(all_orders)
+    completed_all = len([o for o in all_orders if o.get("status") in COMPLETED])
+    cancelled_all = len([o for o in all_orders if o.get("status") == "Cancelled"])
+    cancel_rate   = (cancelled_all / total_orders * 100) if total_orders > 0 else 0
+    low_stock     = len([i for i in all_inventory if int(i.get("quantity", 0)) <= int(i.get("reorder_point", 10))])
+    inv_items     = len(all_inventory)
+
+    sh1,sh2,sh3,sh4,sh5,sh6 = st.columns(6)
+    sh1.metric("📦 Total Orders Processed", total_orders)
+    sh2.metric("✅ Total Completed",         completed_all)
+    sh3.metric("❌ Cancellation Rate",       f"{cancel_rate:.1f}%")
+    sh4.metric("👥 Active Staff Accounts",   active_staff)
+    sh5.metric("🌿 Inventory Items",
+               inv_items,
+               delta=f"{low_stock} low stock" if low_stock else "All stocked",
+               delta_color="inverse" if low_stock else "normal")
+    sh6.metric("💰 Total Revenue Tracked",  f"₱{rev_all_time:,.0f}")
+    st.caption("System live since June 2026  ·  Data from Supabase (real-time)  ·  Built by Jr")
+
+    st.divider()
+
+    # ── SECTION 7: WHATSAPP-READY END-OF-DAY RECAP ───────────────────────────
+    st.markdown("### 📋 End-of-Day Group Chat Recap")
+    st.caption("Live-generated. Copy and paste to Messenger or WhatsApp.")
+
+    cancelled_today = len([o for o in orders_today if o.get("status") == "Cancelled"])
+    completed_today = len([o for o in orders_today if o.get("status") in COMPLETED])
+    still_active    = len(in_progress_now) + len(ready_now)
+    top_arr_name    = top_arr[0] if top_arr[0] != "—" else "N/A"
+
+    recap = (
+        f"🌸 *Angie's Florist — Daily Report*\n"
+        f"📅 {today.strftime('%A, %B %d, %Y')}\n"
+        f"{'─' * 28}\n"
+        f"📦 Orders Today: {len(orders_today)}\n"
+        f"✅ Completed: {completed_today}\n"
+        f"🛠️ Still Active: {still_active}\n"
+        f"❌ Cancelled: {cancelled_today}\n"
+        f"🚀 Rush Orders: {len(rush_active)}\n"
+        f"{'─' * 28}\n"
+        f"💰 Revenue Today: ₱{rev_today:,.2f}\n"
+        f"📈 This Week: ₱{rev_week:,.2f}\n"
+        f"📊 This Month: ₱{rev_month:,.2f}\n"
+        f"{'─' * 28}\n"
+        f"🏆 Top Arrangement: {top_arr_name}\n"
+        f"🌹 Top Florist: {top_florist[0]} ({top_florist[1]} orders)\n"
+        f"🚴 Top Rider: {top_rider[0]} ({top_rider[1]} deliveries)\n"
+    )
+    if cod_outstanding > 0:
+        recap += f"{'─' * 28}\n⚠️ COD to Collect: ₱{cod_outstanding:,.2f}\n"
+    if low_stock > 0:
+        low_names = [
+            i["name"] for i in all_inventory
+            if int(i.get("quantity", 0)) <= int(i.get("reorder_point", 10))
+        ][:5]
+        recap += f"⚠️ Low Stock ({low_stock} items): {', '.join(low_names)}\n"
+    recap += f"\n_Powered by Angie's Florist System_"
+
+    st.text_area("Recap (copy this)", value=recap, height=380, key="mgmt_recap_area")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # ROUTER
 # ─────────────────────────────────────────────────────────────────────────────
 page = st.session_state.active_page
-if   page == "Dashboard":        page_dashboard()
+if   page == "Management KPI":   page_management_kpi()
+elif page == "Dashboard":        page_dashboard()
 elif page == "New Order":        page_new_order()
 elif page == "All Orders":       page_all_orders()
 elif page == "Edit Order":       page_edit_order()
