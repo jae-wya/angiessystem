@@ -39,44 +39,116 @@ st.set_page_config(
 # ─────────────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=DM+Sans:wght@300;400;500;600&display=swap');
-html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
-h1, h2, h3 { font-family: 'Playfair Display', serif !important; }
-.main { background-color: #FDF6F0; }
-.stApp { background: linear-gradient(135deg, #FDF6F0 0%, #FFF0F5 100%); }
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Inter:wght@400;500;600;700;800&display=swap');
+
+html, body, [class*="css"] { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+h1, h2, h3 { font-family: 'Playfair Display', serif !important; color: #2D1B2E; }
+h4, h5 { font-family: 'Inter', sans-serif !important; font-weight: 700 !important; color: #4A3540 !important; }
+
+.main { background-color: #FAF7F5; }
+.stApp { background: linear-gradient(135deg, #FAF7F5 0%, #FFF5F8 100%); }
+
+/* Tighten default Streamlit chrome so cards feel like an app, not a report */
+.block-container { padding-top: 1.5rem; padding-bottom: 2rem; max-width: 1400px; }
+
+/* ── Metric widgets ──────────────────────────────────────────────────── */
 [data-testid="metric-container"] {
-  background: white; border: 1px solid #F0D9E0; border-radius: 16px;
-  padding: 16px; box-shadow: 0 2px 12px rgba(219,112,147,0.08);
+  background: white; border: 1px solid #F0D9E0; border-radius: 12px;
+  padding: 16px 18px; box-shadow: 0 1px 3px rgba(45,27,46,0.06);
 }
+[data-testid="stMetricValue"] { font-size: 28px; font-weight: 800; color: #2D1B2E; }
+[data-testid="stMetricLabel"] { font-size: 12px; font-weight: 600; color: #A0728A; text-transform: uppercase; letter-spacing: 0.5px; }
+
 [data-testid="stSidebar"] { background: linear-gradient(180deg, #2D1B2E 0%, #1A0F1E 100%); }
 [data-testid="stSidebar"] * { color: #F5D5E0 !important; }
+
+/* ── Buttons ─────────────────────────────────────────────────────────── */
 .stButton > button {
   background: linear-gradient(135deg, #C85C8E, #A0355F); color: white !important;
-  border: none; border-radius: 10px; font-weight: 500; transition: all 0.2s;
-  box-shadow: 0 2px 8px rgba(200,92,142,0.3);
+  border: none; border-radius: 8px; font-weight: 600; font-size: 14px;
+  transition: all 0.15s ease; box-shadow: 0 1px 4px rgba(200,92,142,0.25);
 }
-.stButton > button:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(200,92,142,0.4); }
+.stButton > button:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(200,92,142,0.35); }
+.stButton > button:active { transform: translateY(0); }
+.stDownloadButton > button { border-radius: 8px; font-weight: 600; }
+
+/* ── Section headers ─────────────────────────────────────────────────── */
 .section-header {
-  font-family: 'Playfair Display', serif; font-size: 22px; color: #2D1B2E;
-  border-bottom: 2px solid #F0D9E0; padding-bottom: 8px; margin-bottom: 20px;
+  font-family: 'Playfair Display', serif; font-size: 22px; font-weight: 700; color: #2D1B2E;
+  border-left: 4px solid #C85C8E; padding: 2px 0 2px 14px; margin-bottom: 18px;
 }
+.subsection-header {
+  font-size: 13px; font-weight: 700; color: #6B4A5C; text-transform: uppercase;
+  letter-spacing: 0.5px; margin: 4px 0 10px; padding-left: 2px;
+}
+
+/* ── Print sheet (unchanged look) ───────────────────────────────────── */
 .print-sheet {
   background: white; border: 2px solid #C85C8E; border-radius: 12px;
-  padding: 24px; font-family: 'DM Sans', sans-serif;
+  padding: 24px; font-family: 'Inter', sans-serif;
 }
 .print-sheet h2, .print-sheet h3 { font-family: 'Playfair Display', serif; color: #2D1B2E; }
 .print-sheet table { width: 100%; border-collapse: collapse; }
 .print-sheet td, .print-sheet th { border: 1px solid #F0D9E0; padding: 8px 12px; text-align: left; }
 .print-sheet th { background: #FDF6F0; font-weight: 600; }
+
 .balance-box {
   background: #FFF0F5; border: 1.5px solid #C85C8E; border-radius: 10px;
-  padding: 12px 18px; margin-top: 6px; font-family: 'DM Sans', sans-serif;
+  padding: 12px 18px; margin-top: 6px; font-family: 'Inter', sans-serif;
 }
-.balance-box .label { font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 1px; }
-.balance-box .amount { font-size: 24px; font-weight: 700; color: #C85C8E; }
+.balance-box .label { font-size: 11px; color: #A0728A; text-transform: uppercase; letter-spacing: 0.6px; font-weight: 600; }
+.balance-box .amount { font-size: 24px; font-weight: 800; color: #C85C8E; }
+
 .city-rank-bar {
   background: #FFF0F5; border-radius: 8px; padding: 10px 14px;
   margin-bottom: 6px; border-left: 4px solid #C85C8E;
+}
+
+/* ── Order cards ─────────────────────────────────────────────────────── */
+.af-card {
+  background: white; border-radius: 8px; padding: 14px 18px;
+  margin-bottom: 10px; box-shadow: 0 1px 4px rgba(45,27,46,0.08);
+  border: 1px solid #F0E4EA; border-left-width: 5px; border-left-style: solid;
+}
+.order-code {
+  font-family: 'SFMono-Regular', Consolas, 'Courier New', monospace; font-size: 13px;
+  font-weight: 700; color: #2D1B2E; background: #FDF6F0; padding: 2px 8px; border-radius: 5px;
+}
+.card-title { font-size: 17px; font-weight: 700; color: #2D1B2E; line-height: 1.3; }
+.card-meta { font-size: 12.5px; color: #7A6570; margin-top: 3px; line-height: 1.7; }
+
+/* ── Status / rush badges ────────────────────────────────────────────── */
+.status-badge {
+  display: inline-block; padding: 3px 11px; border-radius: 999px;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.3px; white-space: nowrap;
+}
+.rush-badge {
+  display: inline-block; padding: 3px 10px; border-radius: 999px;
+  font-size: 11px; font-weight: 800; letter-spacing: 0.3px;
+  background: #DC3545; color: white !important; margin-right: 6px;
+}
+.rush-banner-card {
+  background: #DC3545; color: white; font-size: 12.5px; font-weight: 700;
+  padding: 6px 12px; border-radius: 6px; margin-bottom: 10px; text-align: center;
+  letter-spacing: 0.3px;
+}
+.unassigned-tag {
+  display: inline-block; padding: 3px 10px; border-radius: 999px;
+  font-size: 11px; font-weight: 700; background: #FFF3CD; color: #7A5A00; margin-left: 6px;
+}
+.overdue-banner {
+  background: linear-gradient(135deg, #FF6B35, #DC3545); color: white; font-size: 13px;
+  font-weight: 800; letter-spacing: 0.3px; padding: 8px 14px; border-radius: 8px 8px 0 0;
+  margin-bottom: -1px;
+}
+
+/* ── Kanban columns (Florist Board) ─────────────────────────────────── */
+.kanban-header {
+  display: flex; align-items: center; gap: 8px; margin: 18px 0 10px;
+  font-size: 13.5px; font-weight: 800; color: #2D1B2E; text-transform: uppercase; letter-spacing: 0.4px;
+}
+.kanban-count {
+  background: #2D1B2E; color: white; border-radius: 999px; padding: 1px 9px; font-size: 12px; font-weight: 700;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -124,10 +196,20 @@ BRANCH_CONFIG = {
     "Sta. Rosa Branch": {"order_cutoff_time":"13:00","free_delivery_min_order":3000.0,"florist_max_concurrent":3},
 }
 STATUS_COLOR = {
-    "Pending":"#FFC107","Confirmed":"#17A2B8","In Progress":"#007BFF",
-    "Ready":"#28A745","Delivered":"#6C757D","Picked Up":"#6C757D",
+    "Pending":"#FFC107","Confirmed":"#17A2B8","In Progress":"#6F42C1",
+    "Ready":"#28A745","Delivered":"#20C997","Picked Up":"#20C997",
     "Cancelled":"#DC3545","Failed Delivery":"#FF6B35",
 }
+
+
+def status_badge_html(status: str) -> str:
+    """Pill-shaped colored badge for an order status — presentation only."""
+    color = STATUS_COLOR.get(status, "#888")
+    return f"<span class='status-badge' style='background:{color}1A; color:{color}; border:1px solid {color}55;'>{status}</span>"
+
+
+def rush_badge_html() -> str:
+    return "<span class='rush-badge'>🚀 RUSH</span>"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # ROLE-BASED PAGE ACCESS
@@ -174,13 +256,11 @@ if st.session_state.auth_user is None:
 # LOGIN SCREEN
 # ─────────────────────────────────────────────────────────────────────────────
 def page_login():
-    st.markdown("""
-    <div style='text-align:center; padding: 60px 0 20px;'>
+    st.markdown("""<div style='text-align:center; padding: 60px 0 20px;'>
       <div style='font-size:60px;'>🌸</div>
       <div style='font-family: Playfair Display, serif; font-size:28px; font-weight:700; color:#2D1B2E;'>Angie's Florist</div>
       <div style='font-size:12px; color:#C9A0B0; letter-spacing:2px; margin-top:4px;'>STAFF LOGIN</div>
-    </div>
-    """, unsafe_allow_html=True)
+    </div>""", unsafe_allow_html=True)
 
     _, mid, _ = st.columns([1, 1.2, 1])
     with mid:
@@ -402,13 +482,11 @@ def inventory_to_csv(inventory: list) -> bytes:
 # SIDEBAR
 # ─────────────────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown("""
-    <div style='text-align:center; padding: 10px 0 20px;'>
+    st.markdown("""<div style='text-align:center; padding: 10px 0 20px;'>
       <div style='font-size:40px;'>🌸</div>
       <div style='font-family: Playfair Display, serif; font-size:22px; font-weight:700; color:#F5D5E0;'>Angie's Florist</div>
       <div style='font-size:11px; color:#C9A0B0; letter-spacing:2px;'>SYSTEM v3.0 · Supabase</div>
-    </div>
-    """, unsafe_allow_html=True)
+    </div>""", unsafe_allow_html=True)
     st.divider()
 
     orders_sb = db.get_orders()
@@ -508,37 +586,53 @@ def page_dashboard():
     c6.metric("⚠️ COD Balance",    f"₱{cod_balance:,.0f}")
     st.divider()
 
+    CHART_FACE = "#FFFFFF"
+    plt.rcParams["font.family"] = "sans-serif"
+
+    def _style_axes(ax):
+        for spine in ("top","right","left"):
+            ax.spines[spine].set_visible(False)
+        ax.spines["bottom"].set_color("#E5D5DC")
+        ax.tick_params(colors="#7A6570", labelsize=9)
+        ax.set_facecolor(CHART_FACE)
+
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.markdown("#### 📊 Orders by Status")
+        st.markdown("<div class='subsection-header'>📊 Orders by Status</div>", unsafe_allow_html=True)
         if orders:
             status_counts = pd.Series([o["status"] for o in orders]).value_counts()
-            fig, ax = plt.subplots(figsize=(8,5), facecolor="#FDF6F0")
-            ax.bar(status_counts.index, status_counts.values, color="#C85C8E", alpha=0.8)
-            ax.set_facecolor("#FDF6F0"); ax.grid(True, axis="y", alpha=0.3)
-            plt.xticks(rotation=45, ha="right"); plt.tight_layout()
+            bar_colors = [STATUS_COLOR.get(s, "#C85C8E") for s in status_counts.index]
+            fig, ax = plt.subplots(figsize=(8,5), facecolor=CHART_FACE)
+            ax.bar(status_counts.index, status_counts.values, color=bar_colors, width=0.6)
+            _style_axes(ax); ax.grid(True, axis="y", alpha=0.2, color="#E5D5DC")
+            plt.xticks(rotation=40, ha="right"); plt.tight_layout()
             st.pyplot(fig); plt.close(fig)
 
     with col2:
-        st.markdown("#### 🌹 Inventory Status")
+        st.markdown("<div class='subsection-header'>🌹 Inventory Status</div>", unsafe_allow_html=True)
         low  = len([i for i in inventory if i.get("quantity",0) <= i.get("reorder_point",10)])
         med  = len([i for i in inventory if i.get("reorder_point",10) < i.get("quantity",0) <= i.get("reorder_point",10)*2])
         high = len([i for i in inventory if i.get("quantity",0) > i.get("reorder_point",10)*2])
         if low+med+high > 0:
-            fig, ax = plt.subplots(figsize=(8,5), facecolor="#FDF6F0")
-            ax.pie([low,med,high], labels=["Low Stock","Medium","Optimal"], colors=["#DC3545","#FFC107","#28A745"], autopct="%1.0f%%")
+            fig, ax = plt.subplots(figsize=(8,5), facecolor=CHART_FACE)
+            wedges, texts, autotexts = ax.pie(
+                [low,med,high], labels=["Low Stock","Medium","Optimal"],
+                colors=["#DC3545","#FFC107","#28A745"], autopct="%1.0f%%",
+                textprops={"color":"#4A3540","fontsize":9}, wedgeprops={"edgecolor":CHART_FACE,"linewidth":2},
+            )
+            for at in autotexts: at.set_color("white"); at.set_fontweight("bold")
             plt.tight_layout(); st.pyplot(fig); plt.close(fig)
 
     with col3:
-        st.markdown("#### 💳 Revenue vs Waste")
+        st.markdown("<div class='subsection-header'>💳 Revenue vs Waste</div>", unsafe_allow_html=True)
         if revenue_all > 0:
-            fig, ax = plt.subplots(figsize=(8,5), facecolor="#FDF6F0")
-            ax.bar(["Revenue","Waste"], [revenue_all, waste_cost], color=["#28A745","#DC3545"], alpha=0.8)
-            ax.set_facecolor("#FDF6F0"); ax.grid(True, axis="y", alpha=0.3)
+            fig, ax = plt.subplots(figsize=(8,5), facecolor=CHART_FACE)
+            ax.bar(["Revenue","Waste"], [revenue_all, waste_cost], color=["#C85C8E","#4A3540"], width=0.5)
+            _style_axes(ax); ax.grid(True, axis="y", alpha=0.2, color="#E5D5DC")
             plt.tight_layout(); st.pyplot(fig); plt.close(fig)
 
     st.divider()
-    st.markdown("#### 📈 Summary")
+    st.markdown("<div class='subsection-header'>📈 Summary</div>", unsafe_allow_html=True)
     c1,c2,c3 = st.columns(3)
     c1.metric("💰 Total Revenue",    f"₱{revenue_all:,.0f}")
     c2.metric("📉 Total Waste Cost", f"₱{waste_cost:,.0f}")
@@ -1192,23 +1286,27 @@ def page_all_orders():
         return
 
     branch_options = BRANCHES if (CURRENT_ROLE == "Super Admin" or CURRENT_BRANCH == "All") else [CURRENT_BRANCH]
-    c1,c2,c3,c4,c5 = st.columns(5)
+    st.markdown("<div class='subsection-header'>Filters</div>", unsafe_allow_html=True)
+    c1,c2,c3,c4,c5,c6 = st.columns([1.2,1.2,1,1.1,1.5,1.4])
     f_branch = c1.selectbox("Branch", ["All"] + branch_options, key="ao_branch")
     f_status = c2.selectbox("Status", ["All"] + STATUS_FLOW, key="ao_status")
     f_type   = c3.selectbox("Type",   ["All","Delivery","Pick-up"], key="ao_type")
-    f_date   = c4.date_input("Date",  value=None, key="ao_date")
+    f_date   = c4.date_input("Date",  value=date.today(), key="ao_date")
     search   = c5.text_input("🔍 Search", key="ao_search")
+    show_all = c6.checkbox("Show 60+ days", key="ao_show_all", help="Include orders older than 60 days — may be slower")
 
-    show_all = st.checkbox("Show all orders (including older than 60 days) — may be slower", key="ao_show_all")
-
-    filtered = orders.copy()
-    if not show_all and not f_date and f_status == "All":
+    # Date filter runs first — defaults to today, so on page load the working set is
+    # cut down immediately, before branch/status/type/search processing runs on it.
+    if f_date:
+        filtered = [o for o in orders if str(o.get("target_date",""))[:10] == f_date.isoformat()]
+    elif not show_all and f_status == "All":
         cutoff = (date.today() - timedelta(days=60)).isoformat()
-        filtered = [o for o in filtered if str(o.get("target_date",""))[:10] >= cutoff]
+        filtered = [o for o in orders if str(o.get("target_date",""))[:10] >= cutoff]
+    else:
+        filtered = orders.copy()
     if f_branch != "All": filtered = [o for o in filtered if o.get("branch") == f_branch]
     if f_status != "All": filtered = [o for o in filtered if o.get("status") == f_status]
     if f_type   != "All": filtered = [o for o in filtered if o.get("order_type") == f_type]
-    if f_date:            filtered = [o for o in filtered if str(o.get("target_date",""))[:10] == f_date.isoformat()]
     if search:
         q = search.lower()
         filtered = [o for o in filtered if q in o.get("customer_name","").lower() or q in o.get("order_code","").lower() or q in o.get("arrangement","").lower()]
@@ -1221,8 +1319,14 @@ def page_all_orders():
     for o in filtered: _date_groups.setdefault(str(o.get("target_date",""))[:10],[]).append(o)
     filtered=[]
     for _d in sorted(_date_groups.keys(),reverse=True): filtered.extend(sorted(_date_groups[_d],key=_ao_time))
+    if f_date == date.today():
+        _ao_caption = " — Showing today's orders — change date or check 'Show all' to view others"
+    elif not show_all and not f_date and f_status == "All":
+        _ao_caption = " (last 60 days — check *Show all* for older)"
+    else:
+        _ao_caption = ""
     col_count, col_export = st.columns([3,1])
-    col_count.markdown(f"**{len(filtered)} order(s) found** {'(last 60 days — check *Show all* for older)' if not show_all and not f_date and f_status=='All' else ''}")
+    col_count.markdown(f"**{len(filtered)} order(s) found**{_ao_caption}")
     if filtered:
         col_export.download_button("⬇️ Export CSV", data=orders_to_csv(filtered),
             file_name=f"angies_orders_{datetime.now().strftime('%Y%m%d_%H%M')}.csv", mime="text/csv", use_container_width=True)
@@ -1243,48 +1347,39 @@ def page_all_orders():
         order_type   = o["order_type"]
         order_code   = o.get("order_code", o.get("id","N/A"))
         assigned_florist = o.get("assigned_florist","")
-        priority_badge   = "🚀 **RUSH**" if o.get("priority_rush") else ""
+        is_rush          = bool(o.get("priority_rush"))
         status_color     = STATUS_COLOR.get(status,"#888")
         balance          = float(o.get("total_balance",0))
 
-        hc1,hc2,hc3,hc4,hc5 = st.columns([3, 1.2, 1.2, 0.7, 0.7])
-        with hc1:
-            st.markdown(
-                f"**`{order_code}`** {priority_badge} \n"
-                f"👤 {o['customer_name']} &nbsp; 📞 {o['customer_contact']} \n"
-                f"📦 {o.get('arrangement','')} ×{o.get('quantity',1)} &nbsp; "
-                f"📅 {str(o.get('target_date',''))[:10]} {o.get('target_time','')} \n"
-                f"🏪 {o.get('fulfillment_branch',o.get('branch',''))} "
-                f"&nbsp; 💳 ₱{float(o.get('total_price',0)):,.0f} "
-                f"&nbsp; <span style='color:{status_color}; font-weight:700;'>{status}</span>",
-                unsafe_allow_html=True,
+        card = st.container(border=True)
+        with card:
+            balance_color = "#DC3545" if balance > 0 else "#28A745"
+            balance_line  = f"₱{balance:,.0f} due" if balance > 0 else "Paid in full"
+            rush_html     = rush_badge_html() if is_rush else ""
+            card_header_html = (
+                f"<div style='border-left: 4px solid {status_color}; padding: 2px 0 2px 14px; margin: -0.25rem 0 0.75rem 0;'>"
+                f"<div style='display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:10px;'>"
+                f"<div>"
+                f"<span class='order-code'>{order_code}</span> {rush_html}"
+                f"<div class='card-title' style='margin-top:5px;'>{o['customer_name']}</div>"
+                f"<div class='card-meta'>"
+                f"📞 {o['customer_contact']} &nbsp;·&nbsp; "
+                f"📦 {o.get('arrangement','')} ×{o.get('quantity',1)} &nbsp;·&nbsp; "
+                f"📅 {str(o.get('target_date',''))[:10]} {o.get('target_time','')} &nbsp;·&nbsp; "
+                f"🏪 {o.get('fulfillment_branch',o.get('branch',''))}"
+                f"</div>"
+                f"</div>"
+                f"<div style='text-align:right; white-space:nowrap;'>"
+                f"{status_badge_html(status)}"
+                f"<div style='margin-top:6px; font-size:13px; font-weight:700; color:#2D1B2E;'>💳 ₱{float(o.get('total_price',0)):,.0f}</div>"
+                f"<div style='font-size:11.5px; font-weight:600; color:{balance_color};'>💰 {balance_line}</div>"
+                f"</div>"
+                f"</div>"
+                f"</div>"
             )
+            st.markdown(card_header_html, unsafe_allow_html=True)
 
-        with hc2:
-            if status == "Pending":
-                florist_labels = []
-                for f in florists:
-                    load = db.get_florist_active_load(f["name"])
-                    max_load = f.get("max_concurrent_orders",5)
-                    florist_labels.append(f"{f['name']} ({load}/{max_load})")
-                florist_label_map = {lbl: f["name"] for lbl, f in zip(florist_labels, florists)}
-                sel_label = st.selectbox("Florist", ["— assign —"] + florist_labels, key=f"flst_{order_code}", label_visibility="collapsed")
-                sel_f = florist_label_map.get(sel_label,"")
-                if sel_f and sel_f != assigned_florist:
-                    chosen_obj = next((f for f in florists if f["name"] == sel_f), None)
-                    at_capacity = False
-                    if chosen_obj:
-                        load = db.get_florist_active_load(sel_f)
-                        at_capacity = load >= chosen_obj.get("max_concurrent_orders",5)
-                    if at_capacity:
-                        st.error(f"⛔ {sel_f} is at full capacity.")
-                    else:
-                        if st.button("✓ Assign Florist", key=f"af_{order_code}", use_container_width=True):
-                            db.update_order(o["id"], {"assigned_florist": sel_f, "florist_assigned_at": datetime.now().isoformat()})
-                            st.rerun()
-            else:
-                st.caption(f"🌹 {assigned_florist or '—'}")
-
+        hc3,hc4,hc5 = card.columns([2, 0.6, 0.6])
         with hc3:
             if status == "Pending":
                 if not assigned_florist:
@@ -1318,37 +1413,64 @@ def page_all_orders():
             if st.button("🗑", key=f"del_{order_code}", use_container_width=True):
                 db.delete_order(o["id"]); st.rerun()
 
-        # Cancellation modal
-        if status not in ("Cancelled","Delivered","Picked Up","Failed Delivery"):
-            if st.button("🚫 Cancel Order", key=f"cancel_btn_{order_code}"):
-                st.session_state[f"cancelling_{order_code}"] = True
-            if st.session_state.get(f"cancelling_{order_code}"):
-                with st.container():
-                    st.warning(f"⚠️ Cancelling order **{order_code}** — please provide a reason.")
-                    ccol1,ccol2 = st.columns(2)
-                    cancel_reason = ccol1.selectbox("Reason *", CANCELLATION_REASONS, key=f"crsn_{order_code}")
-                    cancel_notes  = ccol2.text_input("Notes (optional)", key=f"cnts_{order_code}")
-                    ok_col, abort_col = st.columns(2)
-                    if ok_col.button("✅ Confirm Cancellation", key=f"cok_{order_code}"):
-                        db.update_order(o["id"],{"status":"Cancelled","cancellation_reason":cancel_reason,"cancellation_notes":cancel_notes})
-                        # Auto-return stock
-                        if o.get("flower_items"):
-                            ret = db.return_inventory_for_order(
-                                o["flower_items"],
-                                o.get("fulfillment_branch", o.get("branch","")),
-                                reason=f"Order cancelled ({cancel_reason})",
-                                order_id=order_code, logged_by=CURRENT_USER.get("name","")
-                            )
-                            for r in ret: st.success(r)
-                        st.session_state.pop(f"cancelling_{order_code}", None); st.rerun()
-                    if abort_col.button("↩️ Keep Order", key=f"cabort_{order_code}"):
-                        st.session_state.pop(f"cancelling_{order_code}", None); st.rerun()
+        with card:
+            # Expandable detail — assign-florist and cancel-order controls live here too,
+            # keeping the collapsed card limited to the summary + edit/delete buttons.
+            with st.expander(f"📄 Full Details — {order_code}", expanded=False):
+                if status == "Pending":
+                    st.markdown("**🌹 Assign Florist**")
+                    florist_labels = []
+                    for f in florists:
+                        load = db.get_florist_active_load(f["name"])
+                        max_load = f.get("max_concurrent_orders",5)
+                        florist_labels.append(f"{f['name']} ({load}/{max_load})")
+                    florist_label_map = {lbl: f["name"] for lbl, f in zip(florist_labels, florists)}
+                    sel_label = st.selectbox("Florist", ["— assign —"] + florist_labels, key=f"flst_{order_code}", label_visibility="collapsed")
+                    sel_f = florist_label_map.get(sel_label,"")
+                    if sel_f and sel_f != assigned_florist:
+                        chosen_obj = next((f for f in florists if f["name"] == sel_f), None)
+                        at_capacity = False
+                        if chosen_obj:
+                            load = db.get_florist_active_load(sel_f)
+                            at_capacity = load >= chosen_obj.get("max_concurrent_orders",5)
+                        if at_capacity:
+                            st.error(f"⛔ {sel_f} is at full capacity.")
+                        else:
+                            if st.button("✓ Assign Florist", key=f"af_{order_code}", use_container_width=True):
+                                db.update_order(o["id"], {"assigned_florist": sel_f, "florist_assigned_at": datetime.now().isoformat()})
+                                st.rerun()
+                    st.divider()
 
-        # Expandable detail
-        with st.expander(f"📄 Full Details — {order_code}", expanded=False):
-            dc1,dc2 = st.columns(2)
-            with dc1:
-                st.markdown(f"""
+                # Cancellation modal
+                if status not in ("Cancelled","Delivered","Picked Up","Failed Delivery"):
+                    if st.button("🚫 Cancel Order", key=f"cancel_btn_{order_code}"):
+                        st.session_state[f"cancelling_{order_code}"] = True
+                    if st.session_state.get(f"cancelling_{order_code}"):
+                        with st.container():
+                            st.warning(f"⚠️ Cancelling order **{order_code}** — please provide a reason.")
+                            ccol1,ccol2 = st.columns(2)
+                            cancel_reason = ccol1.selectbox("Reason *", CANCELLATION_REASONS, key=f"crsn_{order_code}")
+                            cancel_notes  = ccol2.text_input("Notes (optional)", key=f"cnts_{order_code}")
+                            ok_col, abort_col = st.columns(2)
+                            if ok_col.button("✅ Confirm Cancellation", key=f"cok_{order_code}"):
+                                db.update_order(o["id"],{"status":"Cancelled","cancellation_reason":cancel_reason,"cancellation_notes":cancel_notes})
+                                # Auto-return stock
+                                if o.get("flower_items"):
+                                    ret = db.return_inventory_for_order(
+                                        o["flower_items"],
+                                        o.get("fulfillment_branch", o.get("branch","")),
+                                        reason=f"Order cancelled ({cancel_reason})",
+                                        order_id=order_code, logged_by=CURRENT_USER.get("name","")
+                                    )
+                                    for r in ret: st.success(r)
+                                st.session_state.pop(f"cancelling_{order_code}", None); st.rerun()
+                            if abort_col.button("↩️ Keep Order", key=f"cabort_{order_code}"):
+                                st.session_state.pop(f"cancelling_{order_code}", None); st.rerun()
+                    st.divider()
+
+                dc1,dc2 = st.columns(2)
+                with dc1:
+                    st.markdown(f"""
 **Order Code:** `{order_code}`  
 **Customer:** {o.get('customer_name','')}  
 **Contact:** {o.get('customer_contact','')}  
@@ -1369,71 +1491,69 @@ def page_all_orders():
 **Delivery Zone:** {o.get('delivery_zone','—')}  
 **Priority Rush:** {'🚀 YES' if o.get('priority_rush') else 'No'}
                 """)
-            with dc2:
-                st.markdown(f"""
-**Status:** {status}  
-**Florist:** {o.get('assigned_florist','—')}  
-**Rider:** {o.get('assigned_rider','—')}  
-**Flower Price:** ₱{float(o.get('price',0)):,.2f}  
-**Delivery Fee:** ₱{float(o.get('delivery_fee',0)):,.2f}  
-**Total Price:** ₱{float(o.get('total_price',0)):,.2f}  
-**Down Payment:** ₱{float(o.get('down_payment_amount',0)):,.2f}  
-**Split Payment:** ₱{float(o.get('split_payment_amount',0)):,.2f} {o.get('split_payment_method','')}  
-**Balance Due:** ₱{balance:,.2f}  
-**Balance Method:** {o.get('balance_payment_method','N/A')}  
-**Payment Status:** {o.get('payment_status','—')}  
-**Delivery Attempts:** {o.get('delivery_attempts',0)}  
-**Cancellation Reason:** {o.get('cancellation_reason','—')}  
-**Created:** {str(o.get('created_at',''))[:19]}  
+                with dc2:
+                    st.markdown(f"""
+**Status:** {status}
+**Florist:** {o.get('assigned_florist','—')}
+**Rider:** {o.get('assigned_rider','—')}
+**Flower Price:** ₱{float(o.get('price',0)):,.2f}
+**Delivery Fee:** ₱{float(o.get('delivery_fee',0)):,.2f}
+**Total Price:** ₱{float(o.get('total_price',0)):,.2f}
+**Down Payment:** ₱{float(o.get('down_payment_amount',0)):,.2f}
+**Split Payment:** ₱{float(o.get('split_payment_amount',0)):,.2f} {o.get('split_payment_method','')}
+**Balance Due:** ₱{balance:,.2f}
+**Balance Method:** {o.get('balance_payment_method','N/A')}
+**Payment Status:** {o.get('payment_status','—')}
+**Delivery Attempts:** {o.get('delivery_attempts',0)}
+**Cancellation Reason:** {o.get('cancellation_reason','—')}
+**Created:** {str(o.get('created_at',''))[:19]}
 **Updated:** {str(o.get('updated_at',''))[:19]}
 **Logged by:** {o.get('encoded_by','—') or '—'} · {o.get('encoded_at','—') or '—'}
                 """)
-                
-            if any([o.get("message_card_to"), o.get("message_card_body"), o.get("message_card_from")]):
-                st.markdown("**💌 Message Card:**")
-                st.info(f"**To:** {o.get('message_card_to','')}\n\n{o.get('message_card_body','')}\n\n**From:** {o.get('message_card_from','')}")
 
-            inspo = o.get("inspo_pictures", [])
-            if inspo:
-                st.markdown("**📸 Inspiration Pictures:**")
-                cols = st.columns(min(3, len(inspo)))
-                for i, url in enumerate(inspo):
-                    cols[i % len(cols)].image(url, caption=f"Ref {i+1}", use_container_width=True)
+                if any([o.get("message_card_to"), o.get("message_card_body"), o.get("message_card_from")]):
+                    st.markdown("**💌 Message Card:**")
+                    st.info(f"**To:** {o.get('message_card_to','')}\n\n{o.get('message_card_body','')}\n\n**From:** {o.get('message_card_from','')}")
 
-            pod = o.get("proof_of_delivery")
-            if pod:
-                st.markdown("**📷 Proof of Delivery:**")
-                st.image(pod, caption="Delivery Proof", width=300)
+                inspo = o.get("inspo_pictures", [])
+                if inspo:
+                    st.markdown("**📸 Inspiration Pictures:**")
+                    cols = st.columns(min(3, len(inspo)))
+                    for i, url in enumerate(inspo):
+                        cols[i % len(cols)].image(url, caption=f"Ref {i+1}", use_container_width=True)
 
-            # ── Waybill Print (All Orders) ─────────────────────────────────
-            if o.get("order_type") == "Delivery":
-                _ao_wb_key = f"waybill_ao_triggered_{order_code}"
-                if st.button("🖨️ Print Waybill", key=f"waybill_ao_{order_code}"):
-                    if not o.get("rider_token"):
-                        _new_token = generate_order_token()
-                        db.update_order(o["id"], {"rider_token": _new_token})
-                        o["rider_token"] = _new_token
-                    st.session_state[_ao_wb_key] = True
-                if st.session_state.get(_ao_wb_key):
-                    import base64
-                    import streamlit.components.v1 as components
-                    _wb_html = generate_waybill_html(adapt_order_for_waybill(o), o.get("rider_token"))
-                    _wb_b64  = base64.b64encode(_wb_html.encode("utf-8")).decode("utf-8")
-                    _wb_js   = (
-                        "<script>(function(){"
-                        "var b=atob('" + _wb_b64 + "');"
-                        "var by=new Uint8Array(b.length);"
-                        "for(var i=0;i<b.length;i++){by[i]=b.charCodeAt(i);}"
-                        "var bl=new Blob([by],{type:'text/html;charset=utf-8'});"
-                        "var u=URL.createObjectURL(bl);"
-                        "var w=window.open(u,'_blank');"
-                        "if(!w){alert('Pop-up blocked! Allow pop-ups and try again.');}"
-                        "})();</script>"
-                    )
-                    components.html(_wb_js, height=0, scrolling=False)
-                    st.session_state[_ao_wb_key] = False
+                pod = o.get("proof_of_delivery")
+                if pod:
+                    st.markdown("**📷 Proof of Delivery:**")
+                    st.image(pod, caption="Delivery Proof", width=300)
 
-        st.divider()
+                # ── Waybill Print (All Orders) ─────────────────────────────
+                if o.get("order_type") == "Delivery":
+                    _ao_wb_key = f"waybill_ao_triggered_{order_code}"
+                    if st.button("🖨️ Print Waybill", key=f"waybill_ao_{order_code}"):
+                        if not o.get("rider_token"):
+                            _new_token = generate_order_token()
+                            db.update_order(o["id"], {"rider_token": _new_token})
+                            o["rider_token"] = _new_token
+                        st.session_state[_ao_wb_key] = True
+                    if st.session_state.get(_ao_wb_key):
+                        import base64
+                        import streamlit.components.v1 as components
+                        _wb_html = generate_waybill_html(adapt_order_for_waybill(o), o.get("rider_token"))
+                        _wb_b64  = base64.b64encode(_wb_html.encode("utf-8")).decode("utf-8")
+                        _wb_js   = (
+                            "<script>(function(){"
+                            "var b=atob('" + _wb_b64 + "');"
+                            "var by=new Uint8Array(b.length);"
+                            "for(var i=0;i<b.length;i++){by[i]=b.charCodeAt(i);}"
+                            "var bl=new Blob([by],{type:'text/html;charset=utf-8'});"
+                            "var u=URL.createObjectURL(bl);"
+                            "var w=window.open(u,'_blank');"
+                            "if(!w){alert('Pop-up blocked! Allow pop-ups and try again.');}"
+                            "})();</script>"
+                        )
+                        components.html(_wb_js, height=0, scrolling=False)
+                        st.session_state[_ao_wb_key] = False
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1449,20 +1569,21 @@ def page_florist_board():
     if not production:
         st.success("✅ All clear! No active orders."); return
     branch_opts_fb = BRANCHES if (CURRENT_ROLE=="Super Admin" or CURRENT_BRANCH=="All") else [CURRENT_BRANCH]
-    fc1,fc2,fc3,fc4,fc5,fc6 = st.columns(6)
-    fb_branch = fc1.selectbox("Branch",["All"]+branch_opts_fb,key="fb_branch")
-    fb_status = fc2.selectbox("Status",["All","Pending","Confirmed","In Progress"],key="fb_status")
-    fb_type   = fc3.selectbox("Type",["All","Delivery","Pick-up"],key="fb_type")
-    fb_date   = fc4.date_input("Date",value=None,key="fb_date")
-    fb_search = fc5.text_input("🔍 Search",key="fb_search")
-    fb_sort   = fc6.selectbox("Sort by",["🚀 Rush First → Date → Time","📅 Date (earliest first)","🕐 Time (earliest first)","📋 Status (Pending first)"],key="fb_sort")
-    ft1,ft2 = st.columns(2)
-    fb_time_from = ft1.time_input("Time from",value=None,key="fb_time_from")
-    fb_time_to   = ft2.time_input("Time to",value=None,key="fb_time_to")
+    with st.container():
+        st.markdown("<div class='subsection-header'>Filters</div>", unsafe_allow_html=True)
+        fc1,fc2,fc3,fc4,fc5,fc6 = st.columns(6)
+        fb_branch = fc1.selectbox("Branch",["All"]+branch_opts_fb,key="fb_branch")
+        fb_status = fc2.selectbox("Status",["All","Pending","Confirmed","In Progress"],key="fb_status")
+        fb_type   = fc3.selectbox("Type",["All","Delivery","Pick-up"],key="fb_type")
+        fb_date   = fc4.date_input("Date",value=date.today(),key="fb_date")
+        fb_search = fc5.text_input("🔍 Search",key="fb_search")
+        fb_sort   = fc6.selectbox("Sort by",["🚀 Rush First → Date → Time","📅 Date (earliest first)","🕐 Time (earliest first)","📋 Status (Pending first)"],key="fb_sort")
+        ft1,ft2 = st.columns(2)
+        fb_time_from = ft1.time_input("Time from",value=None,key="fb_time_from")
+        fb_time_to   = ft2.time_input("Time to",value=None,key="fb_time_to")
     if fb_branch!="All": production=[o for o in production if o.get("branch")==fb_branch or o.get("fulfillment_branch")==fb_branch]
     if fb_status!="All": production=[o for o in production if o.get("status")==fb_status]
     if fb_type!="All":   production=[o for o in production if o.get("order_type")==fb_type]
-    if fb_date:          production=[o for o in production if str(o.get("target_date",""))[:10]==fb_date.isoformat()]
     if fb_search:
         q=fb_search.lower(); production=[o for o in production if q in o.get("customer_name","").lower() or q in o.get("order_code","").lower() or q in o.get("arrangement","").lower() or q in o.get("assigned_florist","").lower()]
     def _fb_t(o):
@@ -1480,14 +1601,72 @@ def page_florist_board():
         elif fb_sort.startswith("📅"): return (d,t)
         elif fb_sort.startswith("🕐"): return (t,d)
         else: return (s,d,t)
-    production=sorted(production,key=sort_key)
-    if not production: st.info("No orders match."); return
-    st.markdown(f"**{len(production)} order(s) in production**")
+    # Split by date instead of the old OR-clause (which showed every active order
+    # regardless of the selected date, defeating the filter). Today's orders drive
+    # the normal kanban view; anything from a previous day that's still active is
+    # tucked into a collapsed overdue section so it stays visible without bloating
+    # the default, fast-loading view.
+    today_orders   = [o for o in production if str(o.get("target_date",""))[:10] == fb_date.isoformat()]
+    overdue_orders = [o for o in production if str(o.get("target_date",""))[:10] < fb_date.isoformat()
+                       and o.get("status") in ("Pending","Confirmed","In Progress")]
 
-    for o in production:
+    if not today_orders and not overdue_orders:
+        st.info("No orders match."); return
+
+    today_orders   = sorted(today_orders, key=sort_key)
+    overdue_orders = sorted(overdue_orders, key=sort_key)
+
+    if overdue_orders:
+        # st.expander does NOT lazy-render — its contents (every widget on every card)
+        # execute on every script run even while visually collapsed. With 100+ overdue
+        # orders that means hundreds of selectboxes/buttons/file_uploaders/nested
+        # expanders being built on every single rerun (and this page auto-reruns every
+        # 30s), which is heavy enough to stall the render. Cap what actually renders.
+        OVERDUE_CAP = 30
+        total_overdue = len(overdue_orders)
+        overdue_display = overdue_orders[:OVERDUE_CAP]
+        cap_note = f" (showing {len(overdue_display)} of {total_overdue})" if total_overdue > OVERDUE_CAP else ""
+        st.markdown(
+            f"<div class='overdue-banner'>⚠️ OVERDUE — {total_overdue} order(s) from previous days</div>",
+            unsafe_allow_html=True,
+        )
+        with st.expander(f"⚠️ OVERDUE — {total_overdue} orders from previous days{cap_note}", expanded=False):
+            if total_overdue > OVERDUE_CAP:
+                st.caption(f"Showing the {OVERDUE_CAP} most urgent overdue orders. Narrow the Branch/Status filters above to see the rest.")
+            _render_florist_board_cards(overdue_display, florists)
+        st.divider()
+
+    # ── Kanban-style sections, grouped by status, each keeping the chosen sort order ──
+    # NOTE: "Ready" is included here for labeling completeness, but the `production`
+    # query above only fetches Pending/Confirmed/In Progress (Ready orders intentionally
+    # leave the florist queue), so this section will always render empty and be skipped
+    # unless that query is changed — left untouched here since it's business logic.
+    if not today_orders:
+        st.info("No orders scheduled for today.")
+    else:
+        KANBAN_SECTIONS = [("Pending","🟡"), ("Confirmed","🔵"), ("In Progress","🟣"), ("Ready","🟢")]
+        for _section_status, _section_icon in KANBAN_SECTIONS:
+            section_orders = [o for o in today_orders if o["status"] == _section_status]
+            if not section_orders:
+                continue
+            _section_color = STATUS_COLOR.get(_section_status, "#888")
+            st.markdown(
+                f"<div class='kanban-header' style='border-left:4px solid {_section_color}; padding-left:10px;'>"
+                f"{_section_icon} {_section_status} "
+                f"<span class='kanban-count'>{len(section_orders)}</span></div>",
+                unsafe_allow_html=True,
+            )
+            _render_florist_board_cards(section_orders, florists)
+
+
+def _render_florist_board_cards(section_orders: list, florists: list):
+    for o in section_orders:
         florist    = o.get("assigned_florist","Unassigned")
         order_code = o.get("order_code", o.get("id","N/A"))
+        status_group = str(o.get("status","")).replace(" ", "")
         priority   = "🚀 RUSH ORDER" if o.get("priority_rush") else "Normal"
+        is_rush    = bool(o.get("priority_rush"))
+        is_unassigned = o["status"] == "Pending" and not o.get("assigned_florist")
         fi_list    = o.get("flower_items",[])
         msg_to_val   = o.get("message_card_to","")
         msg_body_val = o.get("message_card_body","")
@@ -1501,9 +1680,97 @@ def page_florist_board():
         else:
             arrangement_block = f"<tr><th>Arrangement</th><td colspan='2'><strong>{o.get('arrangement','')}</strong></td></tr><tr><th>Quantity</th><td colspan='2'>{o.get('quantity',1)} pc(s)</td></tr>"
 
-        with st.expander(f"🌸 {order_code} — {o['customer_name']} | {str(o.get('target_date',''))[:10]} | {florist}"):
-            st.markdown(f"""
-            <div class="print-sheet">
+        arrangement_label = o.get("arrangement","") or flower_items_to_arrangement_str(fi_list) or "—"
+
+        with st.container(border=True):
+            accent_color = "#DC3545" if is_rush else ("#FFC107" if is_unassigned else STATUS_COLOR.get(o["status"], "#ddd"))
+
+            # Rush banner is rendered first and full-width — always visible, never hidden inside an expander.
+            if is_rush:
+                st.markdown("<div class='rush-banner-card'>🚀 RUSH ORDER — PRIORITISE IMMEDIATELY</div>", unsafe_allow_html=True)
+
+            unassigned_tag = "<span class='unassigned-tag'>⏳ UNASSIGNED</span>" if is_unassigned else ""
+            card_header_html = (
+                f"<div style='border-left: 4px solid {accent_color}; padding: 2px 0 2px 14px; margin: -0.25rem 0 0.75rem 0;'>"
+                f"<div style='display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:10px;'>"
+                f"<div>"
+                f"<span class='order-code'>{order_code}</span>"
+                f"&nbsp; <span class='card-title'>{o['customer_name']}</span>"
+                f"<div class='card-meta'>"
+                f"🌸 {arrangement_label} &nbsp;·&nbsp; "
+                f"📅 {str(o.get('target_date',''))[:10]} {o.get('target_time','')} &nbsp;·&nbsp; "
+                f"🌹 {florist}"
+                f"</div>"
+                f"</div>"
+                f"<div style='text-align:right; white-space:nowrap;'>{status_badge_html(o['status'])}{unassigned_tag}</div>"
+                f"</div>"
+                f"</div>"
+            )
+            st.markdown(card_header_html, unsafe_allow_html=True)
+
+            # ── Inline status workflow — always visible on the card, no expander ──
+            st.markdown("<div style='margin-top:10px;'></div>", unsafe_allow_html=True)
+            ac1, ac2, ac3 = st.columns(3)
+
+            with ac1:
+                if o["status"] == "Pending":
+                    florist_assigned = o.get("assigned_florist","")
+                    if CURRENT_ROLE in ("Super Admin", "Branch Manager", "Staff"):
+                        if not florist_assigned:
+                            florist_labels = []
+                            for f in florists:
+                                load = db.get_florist_active_load(f["name"])
+                                max_load = f.get("max_concurrent_orders", 5)
+                                florist_labels.append(f"{f['name']} ({load}/{max_load})")
+                            florist_label_map = {lbl: f["name"] for lbl, f in zip(florist_labels, florists)}
+                            sel_label = st.selectbox("Assign Florist", ["— assign —"] + florist_labels,
+                                key=f"fb_flst_{status_group}_{order_code}", label_visibility="collapsed")
+                            sel_f = florist_label_map.get(sel_label, "")
+                            if sel_f:
+                                chosen_obj = next((f for f in florists if f["name"] == sel_f), None)
+                                if chosen_obj:
+                                    load = db.get_florist_active_load(sel_f)
+                                    if load >= chosen_obj.get("max_concurrent_orders", 5):
+                                        st.error(f"⛔ {sel_f} is at full capacity.")
+                                    elif st.button("✓ Assign Florist", key=f"fb_af_{status_group}_{order_code}", use_container_width=True):
+                                        db.update_order(o["id"], {"assigned_florist": sel_f,
+                                            "florist_assigned_at": datetime.now().isoformat()})
+                                        st.rerun()
+                        else:
+                            if st.button("✅ Confirm Order", key=f"fb_conf_{status_group}_{order_code}", use_container_width=True):
+                                db.update_order_status(o["id"], "Confirmed"); st.rerun()
+                    else:
+                        # Florist/Rider — read only
+                        if florist_assigned:
+                            st.caption(f"🌹 Assigned to: **{florist_assigned}**")
+                        else:
+                            st.caption("⏳ Awaiting florist assignment")
+            with ac2:
+                if o["status"] == "Confirmed":
+                    if st.button("🌹 Start Production", key=f"fstart_{status_group}_{order_code}", use_container_width=True):
+                        db.update_order_status(o["id"],"In Progress"); st.rerun()
+            with ac3:
+                if o["status"] == "In Progress":
+                    finished_pic = st.file_uploader(
+                        "📸 Upload Finished Product Picture",
+                        type=["jpg","jpeg","png"], key=f"finished_{status_group}_{order_code}",
+                    )
+                    if finished_pic:
+                        if st.button("✅ Mark as READY", key=f"fready_{status_group}_{order_code}", use_container_width=True):
+                            ext = finished_pic.name.split(".")[-1].lower()
+                            path = f"orders/{order_code}/finished_product/{uuid.uuid4().hex[:8]}.{ext}"
+                            url = db.upload_file(finished_pic.getvalue(), path, content_type=finished_pic.type or "image/jpeg")
+                            db.update_order(o["id"], {"finished_product_picture": url, "status": "Ready"})
+                            if o.get("order_type") == "Delivery":
+                                st.success(f"✅ Order **{order_code}** marked READY — it will appear on the 🚴 Rider Board!")
+                            else:
+                                st.success(f"✅ Order **{order_code}** marked READY — awaiting pick-up.")
+                            st.rerun()
+                    else:
+                        st.info("📸 Upload a finished product picture before marking ready.")
+
+            with st.expander("📄 Full Production Sheet & Print", key=f"fb_expander_{status_group}_{order_code}"):
+                st.markdown(f"""<div class="print-sheet">
               <h3>🌹 FLORIST PRODUCTION SHEET</h3>
               <p style="color:#888; font-size:12px;">Order #{order_code} · {datetime.now().strftime('%b %d, %Y %I:%M %p')}</p>
               <table>
@@ -1525,239 +1792,178 @@ def page_florist_board():
             </div>
             """, unsafe_allow_html=True)
 
-            # Inspiration pictures (on-screen)
-            inspo_pics = o.get("inspo_pictures", [])
-            if inspo_pics:
-                st.markdown("#### 📸 Inspiration Pictures")
-                cols = st.columns(min(3, len(inspo_pics)))
-                for idx, pic_url in enumerate(inspo_pics):
-                    cols[idx % len(cols)].image(pic_url, caption=f"Reference {idx+1}", use_container_width=True)
+                # Inspiration pictures (on-screen)
+                inspo_pics = o.get("inspo_pictures", [])
+                if inspo_pics:
+                    st.markdown("#### 📸 Inspiration Pictures")
+                    cols = st.columns(min(3, len(inspo_pics)))
+                    for idx, pic_url in enumerate(inspo_pics):
+                        cols[idx % len(cols)].image(pic_url, caption=f"Reference {idx+1}", use_container_width=True)
 
-            # ── Print button ───────────────────────────────────────────────
+                # ── Print button ───────────────────────────────────────────────
 
-            # Flower block for print
-            if fi_list:
-                print_flower_rows = "".join(
-                    "<tr><td><strong>" + fi.get("flower","") + "</strong></td>"
-                    "<td style='text-align:center;'>" + str(fi.get("qty",1)) + "</td>"
-                    "<td>" + ", ".join(fi.get("colors", ["Any"])) + "</td></tr>"
-                    for fi in fi_list
-                )
-                print_flower_block = (
-                    "<table class='flower-table'>"
-                    "<thead><tr><th>Flower</th><th>Qty</th><th>Colors</th></tr></thead>"
-                    "<tbody>" + print_flower_rows + "</tbody>"
-                    "</table>"
-                )
-            else:
-                print_flower_block = (
-                    "<table class='flower-table'><tbody>"
-                    "<tr><td><strong>Arrangement:</strong></td><td>" + o.get("arrangement","") + "</td></tr>"
-                    "<tr><td><strong>Quantity:</strong></td><td>" + str(o.get("quantity",1)) + " pc(s)</td></tr>"
-                    "</tbody></table>"
-                )
-
-            # Message card block for print
-            if has_msg_card:
-                print_msg_block = (
-                    "<div class='section-box'>"
-                    "<div class='section-title'>💌 Message Card</div>"
-                    "<p><strong>To:</strong> " + msg_to_val + "</p>"
-                    "<p style='margin:4px 0;'>" + msg_body_val + "</p>"
-                    "<p><strong>From:</strong> " + msg_from_val + "</p>"
-                    "</div>"
-                )
-            else:
-                print_msg_block = ""
-
-            # Inspiration pictures block for print
-            inspo_pics = o.get("inspo_pictures", [])
-            if inspo_pics:
-                cols_count = 1 if len(inspo_pics) == 1 else (2 if len(inspo_pics) == 2 else 3)
-                pic_tags = "".join(
-                    "<img src='" + url + "' alt='Ref " + str(i+1) + "' />"
-                    for i, url in enumerate(inspo_pics)
-                )
-                print_inspo_block = (
-                    "<div class='section-box'>"
-                    "<div class='section-title'>📸 Inspiration Pictures</div>"
-                    "<div class='inspo-grid' style='grid-template-columns: repeat(" + str(cols_count) + ", 1fr);'>"
-                    + pic_tags +
-                    "</div></div>"
-                )
-            else:
-                print_inspo_block = ""
-
-            # Pre-computed values for print HTML
-            sub_text = ("Substitutions allowed. " + o.get("substitution_notes","")).strip() if o.get("allow_substitution") else "No substitutions."
-            rush_banner = "<div class='rush-banner'>🚀 RUSH ORDER — PRIORITISE IMMEDIATELY</div>" if o.get("priority_rush") else ""
-            order_type_label = "🚴 DELIVERY" if o.get("order_type") == "Delivery" else "🛍 PICK-UP"
-            branch_name = o.get("fulfillment_branch", o.get("branch",""))
-            print_timestamp = datetime.now().strftime("%b %d, %Y %I:%M %p")
-
-            # Full print HTML
-            print_html = (
-                "<!DOCTYPE html><html lang='en'><head>"
-                "<meta charset='UTF-8'/>"
-                "<meta name='viewport' content='width=device-width, initial-scale=1.0'/>"
-                "<title>Order " + order_code + " — Angie's Florist</title>"
-                "<style>"
-                "* { box-sizing: border-box; margin: 0; padding: 0; }"
-                "body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 11px; color: #111; background: #fff; padding: 10px 14px; line-height: 1.3; }"
-                ".shop-name { font-size: 14px; font-weight: 700; color: #C85C8E; display:inline; }"
-                ".sheet-title { font-size: 10px; color: #666; display:inline; margin-left:8px; }"
-                ".divider { border: none; border-top: 1.5px solid #C85C8E; margin: 6px 0 8px; }"
-                ".rush-banner { background: #C85C8E; color: #fff; font-size: 12px; font-weight: 700; text-align: center; padding: 5px; border-radius: 4px; margin-bottom: 6px; }"
-                ".date-hero { background: #FDF0F7; border: 2px solid #C85C8E; border-radius: 6px; padding: 6px 12px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }"
-                ".date-hero .label { font-size: 9px; color: #888; text-transform: uppercase; letter-spacing: 0.4px; }"
-                ".date-hero .value { font-size: 17px; font-weight: 800; color: #C85C8E; }"
-                ".date-hero .order-code { font-size: 14px; font-weight: 700; color: #333; }"
-                ".two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 6px; }"
-                ".info-box { border: 1px solid #e8d0dc; border-radius: 5px; padding: 5px 8px; background: #FFFAFE; }"
-                ".info-box .key { font-size: 9px; font-weight: 700; color: #C85C8E; text-transform: uppercase; letter-spacing: 0.4px; }"
-                ".info-box .val { font-size: 11px; color: #111; margin-top: 1px; }"
-                ".section-box { border: 1px solid #e8d0dc; border-radius: 5px; padding: 5px 8px; margin-bottom: 6px; background: #FFFAFE; }"
-                ".section-title { font-size: 9px; font-weight: 700; color: #C85C8E; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 4px; }"
-                ".flower-table { width: 100%; border-collapse: collapse; font-size: 10px; }"
-                ".flower-table th { background: #FDF0F7; color: #C85C8E; font-weight: 700; padding: 3px 6px; text-align: left; border-bottom: 1.5px solid #C85C8E; }"
-                ".flower-table td { padding: 3px 6px; border-bottom: 1px solid #f0e4ec; }"
-                ".flower-table tr:last-child td { border-bottom: none; }"
-                ".checklist { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 3px; }"
-                ".checklist-item { display: flex; align-items: center; gap: 5px; font-size: 11px; }"
-                ".checklist-item .box { width: 14px; height: 14px; border: 1.5px solid #C85C8E; border-radius: 2px; display: inline-block; flex-shrink: 0; }"
-                ".footer { margin-top: 6px; border-top: 1px solid #e0d0d8; padding-top: 4px; font-size: 9px; color: #aaa; display: flex; justify-content: space-between; }"
-                ".inspo-grid { display: grid; gap: 6px; margin-top: 4px; }"
-                ".inspo-grid img { width: 100%; max-height: 550px; object-fit: contain; border-radius: 4px; border: 1px solid #e8d0dc; display: block; }"
-                "@media print { body { padding: 8px 10px; } @page { margin: 6mm 8mm; size: A4; } }"
-                "</style></head><body>"
-                "<div class='shop-name'>🌹 Angie's Florist</div>"
-                "<span class='sheet-title'>· Florist Production Sheet · Printed " + print_timestamp + "</span>"
-                "<hr class='divider' />"
-                + rush_banner +
-                "<div class='date-hero'>"
-                "<div>"
-                "<div class='label'>Target Date &amp; Time</div>"
-                "<div class='value'>" + str(o.get("target_date",""))[:10] + " &nbsp;at&nbsp; " + o.get("target_time","") + "</div>"
-                "</div>"
-                "<div style='text-align:right;'>"
-                "<div class='label'>Order Code</div>"
-                "<div class='order-code'>" + order_code + "</div>"
-                "<div style='font-size:10px; color:#888; margin-top:2px;'>" + order_type_label + "</div>"
-                "</div></div>"
-                "<div class='two-col'>"
-                "<div class='info-box'><div class='key'>Customer</div><div class='val'>" + o.get("customer_name","") + " · " + o.get("customer_contact","") + "</div></div>"
-                "<div class='info-box'><div class='key'>Assigned Florist</div><div class='val'><strong>" + florist + "</strong></div></div>"
-                "<div class='info-box'><div class='key'>Occasion</div><div class='val'>" + o.get("occasion","—") + "</div></div>"
-                "<div class='info-box'><div class='key'>Substitutions</div><div class='val'>" + sub_text + "</div></div>"
-                "<div class='info-box'><div class='key'>Branch</div><div class='val'>" + branch_name + "</div></div>"
-                "<div class='info-box'><div class='key'>Priority</div><div class='val'>" + ("🚀 RUSH" if o.get("priority_rush") else "Normal") + "</div></div>"
-                "</div>"
-                "<div class='section-box'><div class='section-title'>🌸 Flower Details</div>" + print_flower_block + "</div>"
-                "<div class='section-box'><div class='section-title'>📝 Special Instructions</div>"
-                "<div style='font-size:11px; white-space:pre-wrap;'>" + o.get("notes","None") + "</div></div>"
-                + print_msg_block
-                + print_inspo_block +
-                "<div class='section-box'><div class='section-title'>✅ Production Checklist</div>"
-                "<div class='checklist'>"
-                "<div class='checklist-item'><span class='box'></span> Flowers prepared</div>"
-                "<div class='checklist-item'><span class='box'></span> Arranged</div>"
-                "<div class='checklist-item'><span class='box'></span> Quality checked</div>"
-                "<div class='checklist-item'><span class='box'></span> Ready</div>"
-                "</div></div>"
-                "<div class='footer'>"
-                "<span>Angie's Florist Digital Management System</span>"
-                "<span>Branch: " + branch_name + " · Printed: " + print_timestamp + "</span>"
-                "</div>"
-                "<script>window.addEventListener('load', function() { window.print(); });</script>"
-                "</body></html>"
-            )
-
-            # Print button
-            print_key = f"print_triggered_{order_code}"
-            if st.button("🖨️ Print Order Sheet", key=f"print_btn_{order_code}", use_container_width=False):
-                st.session_state[print_key] = True
-
-            if st.session_state.get(print_key):
-                import base64
-                import streamlit.components.v1 as components
-                b64 = base64.b64encode(print_html.encode("utf-8")).decode("utf-8")
-                trigger_js = (
-                    "<script>"
-                    "(function() {"
-                    "var b64 = '" + b64 + "';"
-                    "var binary = atob(b64);"
-                    "var bytes = new Uint8Array(binary.length);"
-                    "for (var i = 0; i < binary.length; i++) { bytes[i] = binary.charCodeAt(i); }"
-                    "var blob = new Blob([bytes], { type: 'text/html; charset=utf-8' });"
-                    "var url = URL.createObjectURL(blob);"
-                    "var win = window.open(url, '_blank');"
-                    "if (!win) { alert('Pop-up blocked! Please allow pop-ups for this page and try again.'); }"
-                    "})();"
-                    "</script>"
-                )
-                components.html(trigger_js, height=0, scrolling=False)
-                st.session_state[print_key] = False
-
-            # ── Full status workflow ───────────────────────────────────────
-            st.markdown("---")
-            ac1, ac2, ac3 = st.columns(3)
-
-            with ac1:
-                if o["status"] == "Pending":
-                    florist_assigned = o.get("assigned_florist","")
-                    if CURRENT_ROLE in ("Super Admin", "Branch Manager", "Staff"):
-                        if not florist_assigned:
-                            florist_labels = []
-                            for f in florists:
-                                load = db.get_florist_active_load(f["name"])
-                                max_load = f.get("max_concurrent_orders", 5)
-                                florist_labels.append(f"{f['name']} ({load}/{max_load})")
-                            florist_label_map = {lbl: f["name"] for lbl, f in zip(florist_labels, florists)}
-                            sel_label = st.selectbox("Assign Florist", ["— assign —"] + florist_labels,
-                                key=f"fb_flst_{order_code}", label_visibility="collapsed")
-                            sel_f = florist_label_map.get(sel_label, "")
-                            if sel_f:
-                                chosen_obj = next((f for f in florists if f["name"] == sel_f), None)
-                                if chosen_obj:
-                                    load = db.get_florist_active_load(sel_f)
-                                    if load >= chosen_obj.get("max_concurrent_orders", 5):
-                                        st.error(f"⛔ {sel_f} is at full capacity.")
-                                    elif st.button("✓ Assign Florist", key=f"fb_af_{order_code}", use_container_width=True):
-                                        db.update_order(o["id"], {"assigned_florist": sel_f,
-                                            "florist_assigned_at": datetime.now().isoformat()})
-                                        st.rerun()
-                        else:
-                            if st.button("✅ Confirm Order", key=f"fb_conf_{order_code}", use_container_width=True):
-                                db.update_order_status(o["id"], "Confirmed"); st.rerun()
-                    else:
-                        # Florist/Rider — read only
-                        if florist_assigned:
-                            st.caption(f"🌹 Assigned to: **{florist_assigned}**")
-                        else:
-                            st.caption("⏳ Awaiting florist assignment")
-            with ac2:
-                if o["status"] == "Confirmed":
-                    if st.button("🌹 Start Production", key=f"fstart_{order_code}", use_container_width=True):
-                        db.update_order_status(o["id"],"In Progress"); st.rerun()
-            with ac3:
-                if o["status"] == "In Progress":
-                    finished_pic = st.file_uploader(
-                        "📸 Upload Finished Product Picture",
-                        type=["jpg","jpeg","png"], key=f"finished_{order_code}",
+                # Flower block for print
+                if fi_list:
+                    print_flower_rows = "".join(
+                        "<tr><td><strong>" + fi.get("flower","") + "</strong></td>"
+                        "<td style='text-align:center;'>" + str(fi.get("qty",1)) + "</td>"
+                        "<td>" + ", ".join(fi.get("colors", ["Any"])) + "</td></tr>"
+                        for fi in fi_list
                     )
-                    if finished_pic:
-                        if st.button("✅ Mark as READY", key=f"fready_{order_code}", use_container_width=True):
-                            ext = finished_pic.name.split(".")[-1].lower()
-                            path = f"orders/{order_code}/finished_product/{uuid.uuid4().hex[:8]}.{ext}"
-                            url = db.upload_file(finished_pic.getvalue(), path, content_type=finished_pic.type or "image/jpeg")
-                            db.update_order(o["id"], {"finished_product_picture": url, "status": "Ready"})
-                            if o.get("order_type") == "Delivery":
-                                st.success(f"✅ Order **{order_code}** marked READY — it will appear on the 🚴 Rider Board!")
-                            else:
-                                st.success(f"✅ Order **{order_code}** marked READY — awaiting pick-up.")
-                            st.rerun()
-                    else:
-                        st.info("📸 Upload a finished product picture before marking ready.")
+                    print_flower_block = (
+                        "<table class='flower-table'>"
+                        "<thead><tr><th>Flower</th><th>Qty</th><th>Colors</th></tr></thead>"
+                        "<tbody>" + print_flower_rows + "</tbody>"
+                        "</table>"
+                    )
+                else:
+                    print_flower_block = (
+                        "<table class='flower-table'><tbody>"
+                        "<tr><td><strong>Arrangement:</strong></td><td>" + o.get("arrangement","") + "</td></tr>"
+                        "<tr><td><strong>Quantity:</strong></td><td>" + str(o.get("quantity",1)) + " pc(s)</td></tr>"
+                        "</tbody></table>"
+                    )
+
+                # Message card block for print
+                if has_msg_card:
+                    print_msg_block = (
+                        "<div class='section-box'>"
+                        "<div class='section-title'>💌 Message Card</div>"
+                        "<p><strong>To:</strong> " + msg_to_val + "</p>"
+                        "<p style='margin:4px 0;'>" + msg_body_val + "</p>"
+                        "<p><strong>From:</strong> " + msg_from_val + "</p>"
+                        "</div>"
+                    )
+                else:
+                    print_msg_block = ""
+
+                # Inspiration pictures block for print
+                inspo_pics = o.get("inspo_pictures", [])
+                if inspo_pics:
+                    cols_count = 1 if len(inspo_pics) == 1 else (2 if len(inspo_pics) == 2 else 3)
+                    pic_tags = "".join(
+                        "<img src='" + url + "' alt='Ref " + str(i+1) + "' />"
+                        for i, url in enumerate(inspo_pics)
+                    )
+                    print_inspo_block = (
+                        "<div class='section-box'>"
+                        "<div class='section-title'>📸 Inspiration Pictures</div>"
+                        "<div class='inspo-grid' style='grid-template-columns: repeat(" + str(cols_count) + ", 1fr);'>"
+                        + pic_tags +
+                        "</div></div>"
+                    )
+                else:
+                    print_inspo_block = ""
+
+                # Pre-computed values for print HTML
+                sub_text = ("Substitutions allowed. " + o.get("substitution_notes","")).strip() if o.get("allow_substitution") else "No substitutions."
+                rush_banner = "<div class='rush-banner'>🚀 RUSH ORDER — PRIORITISE IMMEDIATELY</div>" if o.get("priority_rush") else ""
+                order_type_label = "🚴 DELIVERY" if o.get("order_type") == "Delivery" else "🛍 PICK-UP"
+                branch_name = o.get("fulfillment_branch", o.get("branch",""))
+                print_timestamp = datetime.now().strftime("%b %d, %Y %I:%M %p")
+
+                # Full print HTML
+                print_html = (
+                    "<!DOCTYPE html><html lang='en'><head>"
+                    "<meta charset='UTF-8'/>"
+                    "<meta name='viewport' content='width=device-width, initial-scale=1.0'/>"
+                    "<title>Order " + order_code + " — Angie's Florist</title>"
+                    "<style>"
+                    "* { box-sizing: border-box; margin: 0; padding: 0; }"
+                    "body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 11px; color: #111; background: #fff; padding: 10px 14px; line-height: 1.3; }"
+                    ".shop-name { font-size: 14px; font-weight: 700; color: #C85C8E; display:inline; }"
+                    ".sheet-title { font-size: 10px; color: #666; display:inline; margin-left:8px; }"
+                    ".divider { border: none; border-top: 1.5px solid #C85C8E; margin: 6px 0 8px; }"
+                    ".rush-banner { background: #C85C8E; color: #fff; font-size: 12px; font-weight: 700; text-align: center; padding: 5px; border-radius: 4px; margin-bottom: 6px; }"
+                    ".date-hero { background: #FDF0F7; border: 2px solid #C85C8E; border-radius: 6px; padding: 6px 12px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }"
+                    ".date-hero .label { font-size: 9px; color: #888; text-transform: uppercase; letter-spacing: 0.4px; }"
+                    ".date-hero .value { font-size: 17px; font-weight: 800; color: #C85C8E; }"
+                    ".date-hero .order-code { font-size: 14px; font-weight: 700; color: #333; }"
+                    ".two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 6px; }"
+                    ".info-box { border: 1px solid #e8d0dc; border-radius: 5px; padding: 5px 8px; background: #FFFAFE; }"
+                    ".info-box .key { font-size: 9px; font-weight: 700; color: #C85C8E; text-transform: uppercase; letter-spacing: 0.4px; }"
+                    ".info-box .val { font-size: 11px; color: #111; margin-top: 1px; }"
+                    ".section-box { border: 1px solid #e8d0dc; border-radius: 5px; padding: 5px 8px; margin-bottom: 6px; background: #FFFAFE; }"
+                    ".section-title { font-size: 9px; font-weight: 700; color: #C85C8E; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 4px; }"
+                    ".flower-table { width: 100%; border-collapse: collapse; font-size: 10px; }"
+                    ".flower-table th { background: #FDF0F7; color: #C85C8E; font-weight: 700; padding: 3px 6px; text-align: left; border-bottom: 1.5px solid #C85C8E; }"
+                    ".flower-table td { padding: 3px 6px; border-bottom: 1px solid #f0e4ec; }"
+                    ".flower-table tr:last-child td { border-bottom: none; }"
+                    ".checklist { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 3px; }"
+                    ".checklist-item { display: flex; align-items: center; gap: 5px; font-size: 11px; }"
+                    ".checklist-item .box { width: 14px; height: 14px; border: 1.5px solid #C85C8E; border-radius: 2px; display: inline-block; flex-shrink: 0; }"
+                    ".footer { margin-top: 6px; border-top: 1px solid #e0d0d8; padding-top: 4px; font-size: 9px; color: #aaa; display: flex; justify-content: space-between; }"
+                    ".inspo-grid { display: grid; gap: 6px; margin-top: 4px; }"
+                    ".inspo-grid img { width: 100%; max-height: 550px; object-fit: contain; border-radius: 4px; border: 1px solid #e8d0dc; display: block; }"
+                    "@media print { body { padding: 8px 10px; } @page { margin: 6mm 8mm; size: A4; } }"
+                    "</style></head><body>"
+                    "<div class='shop-name'>🌹 Angie's Florist</div>"
+                    "<span class='sheet-title'>· Florist Production Sheet · Printed " + print_timestamp + "</span>"
+                    "<hr class='divider' />"
+                    + rush_banner +
+                    "<div class='date-hero'>"
+                    "<div>"
+                    "<div class='label'>Target Date &amp; Time</div>"
+                    "<div class='value'>" + str(o.get("target_date",""))[:10] + " &nbsp;at&nbsp; " + o.get("target_time","") + "</div>"
+                    "</div>"
+                    "<div style='text-align:right;'>"
+                    "<div class='label'>Order Code</div>"
+                    "<div class='order-code'>" + order_code + "</div>"
+                    "<div style='font-size:10px; color:#888; margin-top:2px;'>" + order_type_label + "</div>"
+                    "</div></div>"
+                    "<div class='two-col'>"
+                    "<div class='info-box'><div class='key'>Customer</div><div class='val'>" + o.get("customer_name","") + " · " + o.get("customer_contact","") + "</div></div>"
+                    "<div class='info-box'><div class='key'>Assigned Florist</div><div class='val'><strong>" + florist + "</strong></div></div>"
+                    "<div class='info-box'><div class='key'>Occasion</div><div class='val'>" + o.get("occasion","—") + "</div></div>"
+                    "<div class='info-box'><div class='key'>Substitutions</div><div class='val'>" + sub_text + "</div></div>"
+                    "<div class='info-box'><div class='key'>Branch</div><div class='val'>" + branch_name + "</div></div>"
+                    "<div class='info-box'><div class='key'>Priority</div><div class='val'>" + ("🚀 RUSH" if o.get("priority_rush") else "Normal") + "</div></div>"
+                    "</div>"
+                    "<div class='section-box'><div class='section-title'>🌸 Flower Details</div>" + print_flower_block + "</div>"
+                    "<div class='section-box'><div class='section-title'>📝 Special Instructions</div>"
+                    "<div style='font-size:11px; white-space:pre-wrap;'>" + o.get("notes","None") + "</div></div>"
+                    + print_msg_block
+                    + print_inspo_block +
+                    "<div class='section-box'><div class='section-title'>✅ Production Checklist</div>"
+                    "<div class='checklist'>"
+                    "<div class='checklist-item'><span class='box'></span> Flowers prepared</div>"
+                    "<div class='checklist-item'><span class='box'></span> Arranged</div>"
+                    "<div class='checklist-item'><span class='box'></span> Quality checked</div>"
+                    "<div class='checklist-item'><span class='box'></span> Ready</div>"
+                    "</div></div>"
+                    "<div class='footer'>"
+                    "<span>Angie's Florist Digital Management System</span>"
+                    "<span>Branch: " + branch_name + " · Printed: " + print_timestamp + "</span>"
+                    "</div>"
+                    "<script>window.addEventListener('load', function() { window.print(); });</script>"
+                    "</body></html>"
+                )
+
+                # Print button
+                print_key = f"print_triggered_{order_code}"
+                if st.button("🖨️ Print Order Sheet", key=f"print_btn_{status_group}_{order_code}", use_container_width=False):
+                    st.session_state[print_key] = True
+
+                if st.session_state.get(print_key):
+                    import base64
+                    import streamlit.components.v1 as components
+                    b64 = base64.b64encode(print_html.encode("utf-8")).decode("utf-8")
+                    trigger_js = (
+                        "<script>"
+                        "(function() {"
+                        "var b64 = '" + b64 + "';"
+                        "var binary = atob(b64);"
+                        "var bytes = new Uint8Array(binary.length);"
+                        "for (var i = 0; i < binary.length; i++) { bytes[i] = binary.charCodeAt(i); }"
+                        "var blob = new Blob([bytes], { type: 'text/html; charset=utf-8' });"
+                        "var url = URL.createObjectURL(blob);"
+                        "var win = window.open(url, '_blank');"
+                        "if (!win) { alert('Pop-up blocked! Please allow pop-ups for this page and try again.'); }"
+                        "})();"
+                        "</script>"
+                    )
+                    components.html(trigger_js, height=0, scrolling=False)
+                    st.session_state[print_key] = False
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1776,7 +1982,7 @@ def page_rider_board():
     rc1,rc2,rc3,rc4,rc5 = st.columns(5)
     rb_branch = rc1.selectbox("Branch",["All"]+branch_opts_rb,key="rb_branch")
     rb_status = rc2.selectbox("Status",["All","Ready","Failed Delivery"],key="rb_status")
-    rb_date   = rc3.date_input("Date",value=None,key="rb_date")
+    rb_date   = rc3.date_input("Date",value=date.today(),key="rb_date")
     rb_search = rc4.text_input("🔍 Search",key="rb_search")
     rb_sort   = rc5.selectbox("Sort by",["📅 Date (earliest first)","🕐 Time (earliest first)","🚀 Rush First → Date → Time","💰 COD first"],key="rb_sort")
     rt1,rt2 = st.columns(2)
@@ -1786,7 +1992,12 @@ def page_rider_board():
     filtered_orders = rider_orders.copy()
     if rb_branch!="All": filtered_orders=[o for o in filtered_orders if o.get("branch")==rb_branch or o.get("fulfillment_branch")==rb_branch]
     if rb_status!="All": filtered_orders=[o for o in filtered_orders if o.get("status")==rb_status]
-    if rb_date:          filtered_orders=[o for o in filtered_orders if str(o.get("target_date",""))[:10]==rb_date.isoformat()]
+    if rb_date:
+        # Overdue safety net: `rider_orders` already only ever contains Ready/Failed
+        # Delivery orders, so this OR-clause keeps all of them visible even when their
+        # target_date isn't the selected date — a failed delivery from yesterday still
+        # needs attention and must not silently disappear from the board.
+        filtered_orders=[o for o in filtered_orders if str(o.get("target_date",""))[:10]==rb_date.isoformat() or o.get("status") in ("Ready","Failed Delivery")]
     if rb_search:
         q=rb_search.lower(); filtered_orders=[o for o in filtered_orders if q in o.get("customer_name","").lower() or q in o.get("order_code","").lower() or q in o.get("arrangement","").lower() or q in (o.get("recipient_name","") or "").lower() or q in o.get("delivery_address","").lower() or q in o.get("assigned_rider","").lower()]
     if rb_rider!="All Riders":
@@ -1837,8 +2048,7 @@ def page_rider_board():
                     if st.button("✓ Assign Rider", key=f"arbtn_{order_code}"):
                         db.update_order(o["id"],{"assigned_rider": sel_rider}); st.rerun()
             st.divider()
-            st.markdown(f"""
-            <div class="print-sheet">
+            st.markdown(f"""<div class="print-sheet">
               <h3>🚴 RIDER DELIVERY SHEET</h3>
               <hr style="border:1px solid #C85C8E;"/>
               <p><strong>Order Code:</strong> {order_code} &nbsp;|&nbsp; <strong>Customer (Buyer):</strong> {o['customer_name']}</p>
