@@ -35,6 +35,43 @@ st.set_page_config(
 )
 
 # ─────────────────────────────────────────────────────────────────────────────
+# PUBLIC RIDER DELIVERY PAGE — no login required
+# Must run immediately after st.set_page_config() and before EVERYTHING else
+# (CSS injection, constants, session defaults, session restore, login check).
+# A rider opening the QR/link must land directly on their delivery page, not
+# the staff login screen. Streamlit Cloud (unlike a Supabase Edge Function)
+# has no CSP sandbox and serves this HTML with a real content-type, so the
+# page's JS actually runs.
+# ─────────────────────────────────────────────────────────────────────────────
+_rider_code  = st.query_params.get("rider", "")
+_rider_token = st.query_params.get("token", "")
+if _rider_code:
+    _orders = db.get_orders()
+    _order  = next((o for o in _orders
+                    if o.get("order_code") == _rider_code
+                    and o.get("rider_token") == _rider_token), None)
+    if not _order and _rider_code:
+        # Fallback: orders saved before rider_token generation existed may have
+        # no token at all — match by order_code alone in that case. Less secure
+        # than a full token match, but better than a permanently broken link.
+        _order = next((o for o in _orders
+                       if o.get("order_code") == _rider_code
+                       and not o.get("rider_token")), None)
+    if _order:
+        from waybill_generator import _build_rider_page
+        from waybill_field_adapter import adapt_order_for_waybill
+        import streamlit.components.v1 as _cv1
+        _html = _build_rider_page(adapt_order_for_waybill(_order), _rider_token)
+        _cv1.html(_html, height=1400, scrolling=True)
+        st.stop()
+    else:
+        st.error("❌ Invalid or expired delivery link.")
+        st.stop()
+# ─────────────────────────────────────────────────────────────────────────────
+# END PUBLIC RIDER DELIVERY PAGE
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ─────────────────────────────────────────────────────────────────────────────
 # STYLES
 # ─────────────────────────────────────────────────────────────────────────────
 st.markdown("""

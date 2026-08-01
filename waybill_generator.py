@@ -14,7 +14,7 @@ import secrets
 import urllib.parse
 from datetime import datetime
 
-RIDER_PAGE_BASE_URL = "https://yvbfggxavlaaohzupnqf.supabase.co/functions/v1/rider-delivery"
+RIDER_PAGE_BASE_URL = "https://angiessystem-ci84m83jvc3a7adyqfzcue.streamlit.app"
 
 BRANCH_NAMES = {
     "main":      "Main Branch",
@@ -364,7 +364,7 @@ async function confirmDelivery() {{
 
 def generate_qr_for_order(order: dict, token: str) -> tuple:
     order_code   = order.get("order_code", "")
-    delivery_url = f"{RIDER_PAGE_BASE_URL}?order={order_code}&token={token}"
+    delivery_url = f"{RIDER_PAGE_BASE_URL}/?rider={order_code}&token={token}"
 
     qr = qrcode.QRCode(
         version=1,
