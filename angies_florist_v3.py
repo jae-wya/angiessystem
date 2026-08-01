@@ -1297,11 +1297,12 @@ def page_all_orders():
 
     # Date filter runs first — defaults to today, so on page load the working set is
     # cut down immediately, before branch/status/type/search processing runs on it.
+    # Clearing the date entirely means "show everything" — no 60-day window, no
+    # implicit restriction. "Show 60+ days" only mattered for the old default-window
+    # behavior; with a cleared date already showing all orders, it has no filter to
+    # add — left in place since removing the widget wasn't asked for.
     if f_date:
         filtered = [o for o in orders if str(o.get("target_date",""))[:10] == f_date.isoformat()]
-    elif not show_all and f_status == "All":
-        cutoff = (date.today() - timedelta(days=60)).isoformat()
-        filtered = [o for o in orders if str(o.get("target_date",""))[:10] >= cutoff]
     else:
         filtered = orders.copy()
     if f_branch != "All": filtered = [o for o in filtered if o.get("branch") == f_branch]
@@ -1320,13 +1321,13 @@ def page_all_orders():
     filtered=[]
     for _d in sorted(_date_groups.keys(),reverse=True): filtered.extend(sorted(_date_groups[_d],key=_ao_time))
     if f_date == date.today():
-        _ao_caption = " — Showing today's orders — change date or check 'Show all' to view others"
-    elif not show_all and not f_date and f_status == "All":
-        _ao_caption = " (last 60 days — check *Show all* for older)"
+        _ao_caption = "📅 Today's orders"
+    elif f_date:
+        _ao_caption = "📅 Filtered by date"
     else:
-        _ao_caption = ""
+        _ao_caption = "📋 Showing all orders (no date filter)"
     col_count, col_export = st.columns([3,1])
-    col_count.markdown(f"**{len(filtered)} order(s) found**{_ao_caption}")
+    col_count.markdown(f"**{len(filtered)} order(s) found** — {_ao_caption}")
     if filtered:
         col_export.download_button("⬇️ Export CSV", data=orders_to_csv(filtered),
             file_name=f"angies_orders_{datetime.now().strftime('%Y%m%d_%H%M')}.csv", mime="text/csv", use_container_width=True)
@@ -1528,32 +1529,33 @@ def page_all_orders():
                     st.image(pod, caption="Delivery Proof", width=300)
 
                 # ── Waybill Print (All Orders) ─────────────────────────────
-                if o.get("order_type") == "Delivery":
-                    _ao_wb_key = f"waybill_ao_triggered_{order_code}"
-                    if st.button("🖨️ Print Waybill", key=f"waybill_ao_{order_code}"):
-                        if not o.get("rider_token"):
-                            _new_token = generate_order_token()
-                            db.update_order(o["id"], {"rider_token": _new_token})
-                            o["rider_token"] = _new_token
-                        st.session_state[_ao_wb_key] = True
-                    if st.session_state.get(_ao_wb_key):
-                        import base64
-                        import streamlit.components.v1 as components
-                        _wb_html = generate_waybill_html(adapt_order_for_waybill(o), o.get("rider_token"))
-                        _wb_b64  = base64.b64encode(_wb_html.encode("utf-8")).decode("utf-8")
-                        _wb_js   = (
-                            "<script>(function(){"
-                            "var b=atob('" + _wb_b64 + "');"
-                            "var by=new Uint8Array(b.length);"
-                            "for(var i=0;i<b.length;i++){by[i]=b.charCodeAt(i);}"
-                            "var bl=new Blob([by],{type:'text/html;charset=utf-8'});"
-                            "var u=URL.createObjectURL(bl);"
-                            "var w=window.open(u,'_blank');"
-                            "if(!w){alert('Pop-up blocked! Allow pop-ups and try again.');}"
-                            "})();</script>"
-                        )
-                        components.html(_wb_js, height=0, scrolling=False)
-                        st.session_state[_ao_wb_key] = False
+                # No longer gated by order_type — shows for every order,
+                # including Pick-up (rider/address fields print blank for those).
+                _ao_wb_key = f"waybill_ao_triggered_{order_code}"
+                if st.button("🖨️ Print Waybill", key=f"waybill_ao_{order_code}"):
+                    if not o.get("rider_token"):
+                        _new_token = generate_order_token()
+                        db.update_order(o["id"], {"rider_token": _new_token})
+                        o["rider_token"] = _new_token
+                    st.session_state[_ao_wb_key] = True
+                if st.session_state.get(_ao_wb_key):
+                    import base64
+                    import streamlit.components.v1 as components
+                    _wb_html = generate_waybill_html(adapt_order_for_waybill(o), o.get("rider_token"))
+                    _wb_b64  = base64.b64encode(_wb_html.encode("utf-8")).decode("utf-8")
+                    _wb_js   = (
+                        "<script>(function(){"
+                        "var b=atob('" + _wb_b64 + "');"
+                        "var by=new Uint8Array(b.length);"
+                        "for(var i=0;i<b.length;i++){by[i]=b.charCodeAt(i);}"
+                        "var bl=new Blob([by],{type:'text/html;charset=utf-8'});"
+                        "var u=URL.createObjectURL(bl);"
+                        "var w=window.open(u,'_blank');"
+                        "if(!w){alert('Pop-up blocked! Allow pop-ups and try again.');}"
+                        "})();</script>"
+                    )
+                    components.html(_wb_js, height=0, scrolling=False)
+                    st.session_state[_ao_wb_key] = False
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1606,9 +1608,15 @@ def page_florist_board():
     # the normal kanban view; anything from a previous day that's still active is
     # tucked into a collapsed overdue section so it stays visible without bloating
     # the default, fast-loading view.
-    today_orders   = [o for o in production if str(o.get("target_date",""))[:10] == fb_date.isoformat()]
-    overdue_orders = [o for o in production if str(o.get("target_date",""))[:10] < fb_date.isoformat()
-                       and o.get("status") in ("Pending","Confirmed","In Progress")]
+    # If the date filter is cleared entirely, show everything flat — no overdue
+    # split, no date restriction (today_orders holds the full filtered set here).
+    if fb_date:
+        today_orders   = [o for o in production if str(o.get("target_date",""))[:10] == fb_date.isoformat()]
+        overdue_orders = [o for o in production if str(o.get("target_date",""))[:10] < fb_date.isoformat()
+                           and o.get("status") in ("Pending","Confirmed","In Progress")]
+    else:
+        today_orders   = production
+        overdue_orders = []
 
     if not today_orders and not overdue_orders:
         st.info("No orders match."); return

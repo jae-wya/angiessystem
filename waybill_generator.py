@@ -433,15 +433,27 @@ def generate_waybill_html(order: dict, token: str = None) -> str:
     if not inspo_urls and order.get("inspo_photo_url"):
         inspo_urls = [order["inspo_photo_url"]]
 
+    def _inspo_block(url, idx, multi=False):
+        img_id    = f"inspo-img-{idx}"
+        img_class = "inspo-img inspo-multi" if multi else "inspo-img"
+        item_class = "inspo-item inspo-item-multi" if multi else "inspo-item"
+        return f'''<div class="{item_class}">
+          <img id="{img_id}" src="{url}" class="{img_class}" alt="Inspo {idx+1}">
+          <div class="inspo-crop-controls">
+            <button type="button" class="crop-btn no-print" id="{img_id}-btn" onclick="startCrop('{img_id}')">&#9986;&#65039; Adjust Photo</button>
+            <span class="crop-actions no-print" id="{img_id}-actions" style="display:none;">
+              <button type="button" class="crop-apply-btn no-print" onclick="applyCrop('{img_id}')">&#9989; Apply</button>
+              <button type="button" class="crop-cancel-btn no-print" onclick="cancelCrop('{img_id}')">&#10007; Cancel</button>
+            </span>
+          </div>
+        </div>'''
+
     if inspo_urls:
         # Side by side if multiple, single full-width if one
         if len(inspo_urls) == 1:
-            imgs_html = f'<img src="{inspo_urls[0]}" class="inspo-img" alt="Inspo">'
+            imgs_html = _inspo_block(inspo_urls[0], 0)
         else:
-            cols = "".join(
-                f'<img src="{u}" class="inspo-img inspo-multi" alt="Inspo {i+1}">'
-                for i, u in enumerate(inspo_urls)
-            )
+            cols = "".join(_inspo_block(u, i, multi=True) for i, u in enumerate(inspo_urls))
             imgs_html = f'<div class="inspo-row">{cols}</div>'
         inspo_section = f'<div class="inspo-wrap">{imgs_html}</div>'
     else:
@@ -515,6 +527,8 @@ def generate_waybill_html(order: dict, token: str = None) -> str:
 <head>
 <meta charset="UTF-8">
 <title>Waybill — {order.get('order_code','')}</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=DM+Serif+Display&display=swap');
 
@@ -532,14 +546,19 @@ def generate_waybill_html(order: dict, token: str = None) -> str:
   }}
   .hint{{font-size:11px;color:#888;letter-spacing:.08em;text-transform:uppercase;}}
 
-  /* ── Waybill shell — A5 148×210mm ── */
+  /* ── Waybill shell — A5 148×210mm ──
+     On screen this only sets a MINIMUM height so the page still looks like an
+     A5 sheet by default. It must NOT cap height / hide overflow here — with
+     multiple inspo photos (or more text), content that doesn't fit in exactly
+     210mm was silently clipped, which is what made photos/details disappear
+     depending on how much content a given order had. The hard 210mm cap +
+     overflow:hidden is reintroduced ONLY inside @media print below, where a
+     single fixed A5 page is actually required for printing. */
   .wb{{
     width:148mm;
     min-height:210mm;
-    max-height:210mm;
     background:#fff;
     border-radius:4px;
-    overflow:hidden;
     box-shadow:0 2px 20px rgba(0,0,0,.12);
     display:flex;
     flex-direction:column;
@@ -579,7 +598,6 @@ def generate_waybill_html(order: dict, token: str = None) -> str:
   /* ── Florist body ── */
   .florist-body{{
     flex:1;
-    overflow:hidden;
     display:flex;
     flex-direction:column;
     padding:10px 14px 6px;
@@ -589,15 +607,18 @@ def generate_waybill_html(order: dict, token: str = None) -> str:
   /* ── Inspo ── */
   .inspo-wrap{{flex-shrink:0;}}
   .inspo-row{{display:flex;gap:6px;}}
+  .inspo-item{{position:relative;}}
+  .inspo-item-multi{{flex:1;}}
   .inspo-img{{
     width:100%;
     max-height:78mm;
-    object-fit:cover;
+    object-fit:contain;
     border-radius:5px;
     border:1.5px solid #e0dbd4;
     display:block;
+    background:#f7f4f0;
   }}
-  .inspo-multi{{flex:1;width:auto;max-height:50mm;}}
+  .inspo-multi{{max-height:50mm;}}
   .inspo-empty{{
     background:#f7f4f0;
     border:1.5px dashed #d0cbc3;
@@ -607,6 +628,15 @@ def generate_waybill_html(order: dict, token: str = None) -> str:
     color:#bbb;
     font-size:10px;
   }}
+  .inspo-crop-controls{{margin-top:4px;display:flex;gap:6px;flex-wrap:wrap;}}
+  .crop-btn,.crop-apply-btn,.crop-cancel-btn{{
+    font-size:9px;font-weight:600;padding:3px 9px;border-radius:4px;cursor:pointer;
+    border:1px solid #c8a96e;background:#fff;color:#8a6d3b;
+  }}
+  .crop-apply-btn{{border-color:#2d6a4f;color:#2d6a4f;}}
+  .crop-cancel-btn{{border-color:#c0392b;color:#c0392b;}}
+  /* Cropper.js needs the image visible to size its canvas correctly on this print-oriented layout */
+  .cropper-container{{max-width:100%;}}
 
   /* ── Two-column florist grid ── */
   .fgrid{{display:grid;grid-template-columns:1fr 1fr;gap:6px 14px;}}
@@ -804,6 +834,55 @@ def generate_waybill_html(order: dict, token: str = None) -> str:
   </div>
 
 </div><!-- end wb -->
+
+<script>
+(function() {{
+  var cropperInstances = {{}};
+  var originalSrcs = {{}};
+
+  window.startCrop = function(id) {{
+    var img = document.getElementById(id);
+    if (!img) return;
+    if (!originalSrcs[id]) originalSrcs[id] = img.src;
+    document.getElementById(id + '-actions').style.display = 'inline-flex';
+    document.getElementById(id + '-btn').style.display = 'none';
+    cropperInstances[id] = new Cropper(img, {{
+      viewMode: 1,
+      dragMode: 'move',
+      zoomable: true,
+      rotatable: true,
+      scalable: true,
+      autoCropArea: 1,
+    }});
+  }};
+
+  window.applyCrop = function(id) {{
+    var cropper = cropperInstances[id];
+    if (!cropper) return;
+    var canvas = cropper.getCroppedCanvas();
+    var img = document.getElementById(id);
+    if (canvas) {{
+      img.src = canvas.toDataURL('image/jpeg', 0.92);
+    }}
+    cropper.destroy();
+    delete cropperInstances[id];
+    document.getElementById(id + '-actions').style.display = 'none';
+    document.getElementById(id + '-btn').style.display = 'inline-block';
+  }};
+
+  window.cancelCrop = function(id) {{
+    var cropper = cropperInstances[id];
+    if (cropper) {{
+      cropper.destroy();
+      delete cropperInstances[id];
+    }}
+    var img = document.getElementById(id);
+    if (originalSrcs[id]) img.src = originalSrcs[id];
+    document.getElementById(id + '-actions').style.display = 'none';
+    document.getElementById(id + '-btn').style.display = 'inline-block';
+  }};
+}})();
+</script>
 
 </body>
 </html>"""
