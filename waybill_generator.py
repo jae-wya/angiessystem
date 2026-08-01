@@ -39,15 +39,30 @@ def generate_qr_base64(order_code: str, token: str) -> str:
     return base64.b64encode(buf.getvalue()).decode("utf-8")
 
 
-def _build_rider_page(order: dict, token: str) -> str:
+def _build_rider_page(order: dict, token: str, anon_key: str = "") -> str:
     """
     Returns a self-contained HTML delivery page for riders.
     Embedded into the QR as a data:text/html URL and linked via the test link.
     Riders can: call recipient, open maps, take photo, confirm delivery.
     Confirm uploads photo to Supabase Storage and patches order status to Delivered.
+
+    anon_key: the live Supabase anon key, passed in by the caller (read from
+    st.secrets there) rather than hardcoded here, so a rotated/updated key
+    doesn't require an edit to this file.
+
+    NOTE — Supabase Storage RLS: the anon key used below can only upload to
+    `angies-florist-uploads` if a policy allowing anon INSERT exists. If POD
+    uploads start failing with 403 "sign verification failed" / RLS errors,
+    run this once in the Supabase SQL editor:
+
+        CREATE POLICY "anon_upload" ON storage.objects
+        FOR INSERT TO anon
+        WITH CHECK (bucket_id = 'angies-florist-uploads');
     """
+    import re
+
     SUPABASE_URL     = "https://yvbfggxavlaaohzupnqf.supabase.co"
-    SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl2YmZnZ3hhdmxhYW9oenVwbnFmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDMwNzI3NTIsImV4cCI6MjA1ODY0ODc1Mn0.MBLn7JRHbLCGwFYlwFR-5YBFbvqaZRvP2z0o5x2J1Oo"
+    SUPABASE_ANON_KEY = anon_key
     STORAGE_BUCKET   = "angies-florist-uploads"
 
     order_code   = order.get("order_code", "")
@@ -56,6 +71,14 @@ def _build_rider_page(order: dict, token: str) -> str:
     recip_fmt    = recip_phone
     if len(recip_phone) == 11:
         recip_fmt = f"{recip_phone[:4]} {recip_phone[4:7]} {recip_phone[7:]}"
+
+    # tel: links need digits-only (plus a leading +) to reliably trigger the
+    # dialer on iOS — spaces alone (the old .replace(" ", "")) weren't enough.
+    recip_phone_clean = re.sub(r'[^\d+]', '', recip_phone)
+    if recip_phone_clean.startswith('09') and len(recip_phone_clean) == 11:
+        recip_phone_e164 = '+63' + recip_phone_clean[1:]
+    else:
+        recip_phone_e164 = recip_phone_clean
     address      = order.get("delivery_address", "")
     zone         = order.get("delivery_zone", "—")
     landmark     = order.get("landmark", "")
@@ -191,7 +214,7 @@ def _build_rider_page(order: dict, token: str) -> str:
     <div class="card-body">
       <div class="recipient-name">{recip_name}</div>
       <div class="recipient-number">{recip_fmt}</div>
-      <a href="tel:{recip_phone}" class="call-btn"><span class="call-icon">&#128222;</span> Call recipient</a>
+      <a href="tel:{recip_phone_e164}" class="call-btn"><span class="call-icon">&#128222;</span> Call recipient</a>
     </div>
   </div>
 
@@ -300,6 +323,7 @@ async function confirmDelivery() {{
       method: 'POST',
       headers: {{
         'Authorization': `Bearer ${{SUPA_KEY}}`,
+        'apikey': SUPA_KEY,
         'Content-Type': photoFile.type || 'image/jpeg',
         'x-upsert': 'true',
       }},

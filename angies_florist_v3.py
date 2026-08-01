@@ -61,7 +61,12 @@ if _rider_code:
         from waybill_generator import _build_rider_page
         from waybill_field_adapter import adapt_order_for_waybill
         import streamlit.components.v1 as _cv1
-        _html = _build_rider_page(adapt_order_for_waybill(_order), _rider_token)
+        _anon_key = st.secrets["supabase"]["key"]
+        _html = _build_rider_page(
+            adapt_order_for_waybill(_order),
+            _rider_token,
+            anon_key=_anon_key,
+        )
         _cv1.html(_html, height=1400, scrolling=True)
         st.stop()
     else:
@@ -1560,10 +1565,12 @@ def page_all_orders():
                     for i, url in enumerate(inspo):
                         cols[i % len(cols)].image(url, caption=f"Ref {i+1}", use_container_width=True)
 
-                pod = o.get("proof_of_delivery")
-                if pod:
-                    st.markdown("**📷 Proof of Delivery:**")
-                    st.image(pod, caption="Delivery Proof", width=300)
+                pod_url = o.get("proof_of_delivery", "")
+                if pod_url:
+                    st.markdown("##### 📸 Proof of Delivery")
+                    st.image(pod_url, width=300)
+                    st.code(pod_url, language=None)
+                    st.caption("Copy the URL above and send to customer via Messenger/WhatsApp.")
 
                 # ── Waybill Print (All Orders) ─────────────────────────────
                 # No longer gated by order_type — shows for every order,
@@ -2022,7 +2029,14 @@ def page_rider_board():
     riders  = scope_by_branch(db.get_riders())
     rider_names    = [r["name"] for r in riders]
     rider_contacts = {r["name"]: r.get("contact","") for r in riders}
-    rider_orders = [o for o in orders if o.get("order_type")=="Delivery" and o["status"] in ["Ready","Failed Delivery"]]
+    rider_orders = [o for o in orders if o.get("order_type")=="Delivery" and o["status"] in ["Ready","Failed Delivery","Delivered"]]
+    # Delivered orders are shown separately at the bottom (collapsed, today only)
+    # so they don't mix into the active Ready/Failed queue above — the filter,
+    # sort, and rider-assignment pipeline below runs on active_orders only,
+    # exactly as it did before "Delivered" was added to rider_orders.
+    active_orders  = [o for o in rider_orders if o["status"] in ("Ready","Failed Delivery")]
+    delivered_today = [o for o in rider_orders if o["status"] == "Delivered"
+                        and str(o.get("delivered_at",""))[:10] == date.today().isoformat()]
     branch_opts_rb = BRANCHES if (CURRENT_ROLE=="Super Admin" or CURRENT_BRANCH=="All") else [CURRENT_BRANCH]
     rc1,rc2,rc3,rc4,rc5 = st.columns(5)
     rb_branch = rc1.selectbox("Branch",["All"]+branch_opts_rb,key="rb_branch")
@@ -2034,11 +2048,11 @@ def page_rider_board():
     rb_time_from = rt1.time_input("Time from",value=None,key="rb_time_from")
     rb_time_to   = rt2.time_input("Time to",value=None,key="rb_time_to")
     rb_rider = st.selectbox("Filter by Rider",["All Riders","Unassigned"]+rider_names,key="rb_rider") if riders else "All Riders"
-    filtered_orders = rider_orders.copy()
+    filtered_orders = active_orders.copy()
     if rb_branch!="All": filtered_orders=[o for o in filtered_orders if o.get("branch")==rb_branch or o.get("fulfillment_branch")==rb_branch]
     if rb_status!="All": filtered_orders=[o for o in filtered_orders if o.get("status")==rb_status]
     if rb_date:
-        # Overdue safety net: `rider_orders` already only ever contains Ready/Failed
+        # Overdue safety net: `active_orders` only ever contains Ready/Failed
         # Delivery orders, so this OR-clause keeps all of them visible even when their
         # target_date isn't the selected date — a failed delivery from yesterday still
         # needs attention and must not silently disappear from the board.
@@ -2067,9 +2081,13 @@ def page_rider_board():
     filtered_orders=sorted(filtered_orders,key=rb_sort_key)
     cod_total=sum(float(o.get("total_balance",0)) for o in filtered_orders if o.get("balance_payment_method")=="COD" and o.get("total_balance",0)>0)
     st.metric("💰 COD to Collect",f"₱{cod_total:,.2f}")
-    if not filtered_orders: st.info("No delivery orders match." if rider_orders else "No delivery orders ready yet."); return
-    st.success(f"🚴 {len(filtered_orders)} delivery order(s) ready")
-    st.divider()
+    if not filtered_orders:
+        # No `return` here (unlike before) — Delivered orders are rendered in their
+        # own collapsed section below regardless of whether any active orders exist.
+        st.info("No delivery orders match." if rider_orders else "No delivery orders ready yet.")
+    else:
+        st.success(f"🚴 {len(filtered_orders)} delivery order(s) ready")
+        st.divider()
 
     for idx, o in enumerate(filtered_orders):
         order_code    = o.get("order_code", o.get("id","N/A"))
@@ -2188,6 +2206,22 @@ def page_rider_board():
                     db.update_order(o["id"],{"status":"Failed Delivery","delivery_attempts":o.get("delivery_attempts",0)+1,"delivery_fail_reason":fail_reason})
                     st.session_state.pop(f"reporting_fail_{order_code}", None)
                     st.warning(f"⚠️ Order {order_code} marked as Failed Delivery."); st.rerun()
+
+    # ── Recently Delivered (today) — collapsed, POD reference only ─────────
+    if delivered_today:
+        st.divider()
+        with st.expander(f"✅ Recently Delivered — {len(delivered_today)} order(s) today", expanded=False):
+            for o in sorted(delivered_today, key=lambda o: str(o.get("delivered_at",""))):
+                _dd_code = o.get("order_code", o.get("id","N/A"))
+                _dd_recip = o.get("recipient_name") or o.get("customer_name","")
+                _dd_pod = o.get("proof_of_delivery", "")
+                st.markdown(f"**`{_dd_code}`** — {_dd_recip}")
+                if _dd_pod:
+                    st.image(_dd_pod, width=200)
+                    st.caption("✅ Delivery confirmed")
+                else:
+                    st.caption("No POD photo on file.")
+                st.divider()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
