@@ -13,8 +13,6 @@ import matplotlib.pyplot as plt
 import uuid
 import os
 from datetime import datetime, timedelta, date
-import warnings
-warnings.filterwarnings("ignore")
 
 import db  # Supabase data layer
 import secrets as _secrets
@@ -1510,6 +1508,22 @@ Paste the customer's filled order form from Messenger or Instagram DM.</div>
     flower_items = render_flower_builder("new")
     st.divider()
 
+    # ── SLOT AVAILABILITY CHECK ──────────────────────────────
+    if is_vday_mode_on():
+        _sv_date  = st.session_state.get("_so_date_preview", date.today())
+        _sv_time  = st.session_state.get("_so_time_preview", "10:00 AM")
+        _sv_branch = st.session_state.get("_so_branch_preview",
+                                           CURRENT_BRANCH if CURRENT_BRANCH != "All"
+                                           else "Main Branch")
+        if _sv_date and _sv_time:
+            from peak_features import render_slot_availability
+            render_slot_availability(_sv_date, _sv_time, _sv_branch)
+
+        _vday_warn = check_vday_cutoff_warning(_sv_date)
+        if _vday_warn:
+            st.warning(_vday_warn)
+    # ── END SLOT AVAILABILITY CHECK ──────────────────────────
+
     with st.form("new_order_form", clear_on_submit=True):
         st.markdown("##### 👤 Customer Information")
         c1,c2 = st.columns(2)
@@ -1608,14 +1622,9 @@ font-weight:700; color:#1C1B22; margin-bottom:0.5rem;">💰 Pricing</div>
         chat_branch = c3.selectbox("Chat Branch *", no_branch_options, index=default_branch_idx)
         fulfillment_branch = st.selectbox("Fulfillment Branch *", no_branch_options, index=no_branch_options.index(chat_branch) if chat_branch in no_branch_options else 0)
 
-        # Slot availability check
-        _time_label = target_time.strftime("%I:%M %p")
-        render_slot_availability(target_date, _time_label, fulfillment_branch)
-
-        # V-Day cutoff warning
-        _vday_warn = check_vday_cutoff_warning(target_date)
-        if _vday_warn:
-            st.warning(_vday_warn)
+        st.session_state["_so_date_preview"]   = target_date
+        st.session_state["_so_time_preview"]   = target_time.strftime("%I:%M %p")
+        st.session_state["_so_branch_preview"] = fulfillment_branch
 
         st.markdown("##### 🚚 Delivery or Pick-up?")
         order_type       = st.radio("Order Type *", ["Delivery","Pick-up"], horizontal=True)
