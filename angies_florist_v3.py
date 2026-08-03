@@ -81,116 +81,378 @@ if _rider_code:
 # ─────────────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Inter:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@600;700&family=JetBrains+Mono:wght@500&display=swap');
 
-html, body, [class*="css"] { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
-h1, h2, h3 { font-family: 'Playfair Display', serif !important; color: #2D1B2E; }
-h4, h5 { font-family: 'Inter', sans-serif !important; font-weight: 700 !important; color: #4A3540 !important; }
-
-.main { background-color: #FAF7F5; }
-.stApp { background: linear-gradient(135deg, #FAF7F5 0%, #FFF5F8 100%); }
-
-/* Tighten default Streamlit chrome so cards feel like an app, not a report */
-.block-container { padding-top: 1.5rem; padding-bottom: 2rem; max-width: 1400px; }
-
-/* ── Metric widgets ──────────────────────────────────────────────────── */
-[data-testid="metric-container"] {
-  background: white; border: 1px solid #F0D9E0; border-radius: 12px;
-  padding: 16px 18px; box-shadow: 0 1px 3px rgba(45,27,46,0.06);
+:root {
+  --rose: #C85C8E;
+  --rose-deep: #A84875;
+  --rose-light: #FCEEF5;
+  --blush: #FDF6F0;
+  --card: #FFFFFF;
+  --bark: #1C1B22;
+  --sage: #2D7A4F;
+  --sage-light: #EAFAF1;
+  --sage-dark: #166534;
+  --sage-dark-light: #DCFCE7;
+  --amber: #D97706;
+  --amber-light: #FEF9E7;
+  --crimson: #DC2626;
+  --crimson-light: #FDEDEC;
+  --lavender: #7C3AED;
+  --lavender-light: #F4ECF7;
+  --teal: #0E7490;
+  --teal-light: #E0F7FA;
+  --border: #E8E3DC;
+  --muted: #6B7280;
+  --text: #1C1B22;
+  --gradient-floral: linear-gradient(135deg, #C85C8E 0%, #8B5CF6 50%, #0E7490 100%);
+  --gradient-rose:   linear-gradient(135deg, #C85C8E 0%, #A84875 100%);
+  --glow-rose:       0 0 20px rgba(200,92,142,0.25);
+  --glow-crimson:    0 0 20px rgba(220,38,38,0.3);
+  --shadow-card:     0 4px 24px rgba(200,92,142,0.08), 0 1px 4px rgba(0,0,0,0.04);
+  --shadow-hover:    0 8px 32px rgba(200,92,142,0.16), 0 2px 8px rgba(0,0,0,0.08);
+  --transition:      all 0.22s cubic-bezier(0.4, 0, 0.2, 1);
 }
-[data-testid="stMetricValue"] { font-size: 28px; font-weight: 800; color: #2D1B2E; }
-[data-testid="stMetricLabel"] { font-size: 12px; font-weight: 600; color: #A0728A; text-transform: uppercase; letter-spacing: 0.5px; }
 
-[data-testid="stSidebar"] { background: linear-gradient(180deg, #2D1B2E 0%, #1A0F1E 100%); }
-[data-testid="stSidebar"] * { color: #F5D5E0 !important; }
-
-/* ── Buttons ─────────────────────────────────────────────────────────── */
-.stButton > button {
-  background: linear-gradient(135deg, #C85C8E, #A0355F); color: white !important;
-  border: none; border-radius: 8px; font-weight: 600; font-size: 14px;
-  transition: all 0.15s ease; box-shadow: 0 1px 4px rgba(200,92,142,0.25);
+/* ── Keyframe animations ─────────────────────────────────────────────── */
+@keyframes fadeSlideUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
-.stButton > button:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(200,92,142,0.35); }
-.stButton > button:active { transform: translateY(0); }
-.stDownloadButton > button { border-radius: 8px; font-weight: 600; }
+@keyframes gradientFlow {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+@keyframes rushPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(220,38,38,0.4), 0 2px 8px rgba(0,0,0,0.08); }
+  50%       { box-shadow: 0 0 0 6px rgba(220,38,38,0), 0 4px 20px rgba(220,38,38,0.2); }
+}
+@keyframes badgePop {
+  0%   { transform: scale(0.8); opacity: 0; }
+  70%  { transform: scale(1.05); }
+  100% { transform: scale(1); opacity: 1; }
+}
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+@keyframes gradientText {
+  0%, 100% { background-position: 0% 50%; }
+  50%       { background-position: 100% 50%; }
+}
+@keyframes heartbeat {
+  0%, 100% { transform: scale(1); }
+  14%       { transform: scale(1.05); }
+  28%       { transform: scale(1); }
+  42%       { transform: scale(1.05); }
+  70%       { transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
 
-/* ── Section headers ─────────────────────────────────────────────────── */
+/* ── 1. Page structure ──────────────────────────────────────────────── */
+html, body, [class*="css"] { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+.main, .stApp { background: var(--blush); }
+header[data-testid="stHeader"] { background: transparent; }
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: var(--blush); }
+::-webkit-scrollbar-thumb { background: var(--rose); border-radius: 8px; border: 2px solid var(--blush); }
+::-webkit-scrollbar-thumb:hover { background: var(--rose-deep); }
+* { scrollbar-width: thin; scrollbar-color: var(--rose) var(--blush); }
+
+/* Page load — global entrance */
+.main .block-container {
+  animation: fadeSlideUp 0.35s ease both;
+  max-width: 1400px !important;
+  padding-top: 1.5rem !important;
+  padding-bottom: 3rem !important;
+}
+.main .block-container > div > div:nth-child(1) { animation: fadeSlideUp 0.3s 0.0s ease both; }
+.main .block-container > div > div:nth-child(2) { animation: fadeSlideUp 0.3s 0.06s ease both; }
+.main .block-container > div > div:nth-child(3) { animation: fadeSlideUp 0.3s 0.12s ease both; }
+.main .block-container > div > div:nth-child(4) { animation: fadeSlideUp 0.3s 0.18s ease both; }
+.main .block-container > div > div:nth-child(5) { animation: fadeSlideUp 0.3s 0.24s ease both; }
+
+/* ── 2. Typography ──────────────────────────────────────────────────── */
+h1, h2, h3 { font-family: 'Playfair Display', Georgia, serif !important; color: var(--text); }
+h4, h5, h6 { font-family: 'Inter', sans-serif !important; font-weight: 700 !important; color: var(--text) !important; }
+body, p, label, .stMarkdown { font-family: 'Inter', system-ui, sans-serif; color: var(--text); }
+
 .section-header {
-  font-family: 'Playfair Display', serif; font-size: 22px; font-weight: 700; color: #2D1B2E;
-  border-left: 4px solid #C85C8E; padding: 2px 0 2px 14px; margin-bottom: 18px;
+  font-family: 'Playfair Display', Georgia, serif !important;
+  font-size: 1.5rem !important;
+  font-weight: 700 !important;
+  background: var(--gradient-floral) !important;
+  background-size: 200% 200% !important;
+  -webkit-background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
+  background-clip: text !important;
+  animation: gradientText 6s ease infinite !important;
+  border-left: 4px solid var(--rose) !important;
+  padding-left: 12px !important;
+  margin-bottom: 1rem !important;
+  display: block !important;
 }
 .subsection-header {
-  font-size: 13px; font-weight: 700; color: #6B4A5C; text-transform: uppercase;
+  font-size: 13px; font-weight: 700; color: var(--muted); text-transform: uppercase;
   letter-spacing: 0.5px; margin: 4px 0 10px; padding-left: 2px;
 }
 
-/* ── Print sheet (unchanged look) ───────────────────────────────────── */
+/* ── Metric widgets (native Streamlit) ─────────────────────────────── */
+[data-testid="metric-container"] {
+  background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+  padding: 16px 18px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); border-top: 4px solid var(--rose);
+}
+[data-testid="stMetricValue"] { font-family: 'Playfair Display', serif; font-size: 28px; font-weight: 700; color: var(--text); }
+[data-testid="stMetricLabel"] { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+
+/* ── 5. Metric cards (custom HTML) — animated gradient border ───────── */
+.metric-card {
+  background: white; border-radius: 14px; padding: 1.4rem 1.6rem;
+  border: 1px solid var(--border); box-shadow: var(--shadow-card);
+  transition: var(--transition); position: relative; overflow: hidden;
+  animation: fadeSlideUp 0.5s ease both; min-height: 110px;
+}
+.metric-card::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 4px;
+  background: var(--gradient-floral); background-size: 200% 200%;
+  animation: gradientFlow 4s ease infinite;
+}
+.metric-card::after {
+  content: ''; position: absolute; inset: 0;
+  background: linear-gradient(105deg, transparent 40%, rgba(200,92,142,0.04) 50%, transparent 60%);
+  background-size: 200% 100%; opacity: 0; transition: opacity 0.3s;
+}
+.metric-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-hover); }
+.metric-card:hover::after { opacity: 1; animation: shimmer 1.2s ease; }
+.metric-card.accent-sage::before { background: var(--sage); animation: none; }
+.metric-card.accent-amber::before { background: var(--amber); animation: none; }
+.metric-card.accent-crimson::before { background: var(--crimson); animation: none; }
+.metric-card.accent-lavender::before { background: var(--lavender); animation: none; }
+.metric-card.accent-teal::before { background: var(--teal); animation: none; }
+.metric-value {
+  font-family: 'Playfair Display', Georgia, serif; font-size: 2.8rem; font-weight: 800;
+  color: var(--text); line-height: 1; margin: 8px 0 4px; letter-spacing: -0.02em;
+}
+.metric-label {
+  font-size: 0.68rem; font-weight: 700; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--muted);
+}
+.metric-delta { font-size: 0.78rem; font-weight: 500; color: var(--sage); margin-top: 4px; }
+.metric-card:nth-child(1) { animation-delay: 0.0s; }
+.metric-card:nth-child(2) { animation-delay: 0.08s; }
+.metric-card:nth-child(3) { animation-delay: 0.16s; }
+.metric-card:nth-child(4) { animation-delay: 0.24s; }
+.metric-card:nth-child(5) { animation-delay: 0.32s; }
+.metric-card:nth-child(6) { animation-delay: 0.40s; }
+
+/* ── Sidebar — polished animated nav (dark bg untouched) ─────────────── */
+[data-testid="stSidebar"] { background: var(--bark); }
+[data-testid="stSidebar"] * { color: #F0E8ED !important; }
+[data-testid="stSidebar"] hr { border-color: rgba(255,255,255,0.12); margin: 0.75rem 0; }
+[data-testid="stSidebar"] .stButton > button,
+.stButton > button[kind="primary"] {
+  background: var(--gradient-rose) !important; color: white !important;
+  border: none !important; border-radius: 10px !important; font-weight: 600 !important;
+  font-family: 'Inter', sans-serif !important; transition: var(--transition) !important;
+  letter-spacing: 0.02em !important;
+}
+[data-testid="stSidebar"] .stButton > button[kind="primary"] {
+  background: linear-gradient(135deg, #C85C8E 0%, #A84875 100%) !important;
+  box-shadow: 0 4px 12px rgba(200,92,142,0.4) !important;
+  transform: translateX(2px) !important;
+}
+[data-testid="stSidebar"] .stButton > button[kind="secondary"] {
+  background: rgba(255,255,255,0.08) !important;
+  color: rgba(255,255,255,0.85) !important;
+  border: 1px solid rgba(255,255,255,0.1) !important;
+  border-radius: 10px !important;
+  text-align: left; box-shadow: none;
+  transition: var(--transition) !important;
+}
+[data-testid="stSidebar"] .stButton > button[kind="secondary"]:hover {
+  background: rgba(200,92,142,0.25) !important;
+  color: white !important;
+  border-color: rgba(200,92,142,0.4) !important;
+  transform: translateX(3px) !important;
+}
+
+/* ── 7. Buttons — smooth animated states ─────────────────────────────── */
+.stButton > button {
+  background: var(--rose); color: white !important;
+  border: none; border-radius: 10px; font-weight: 600; font-size: 14px; padding: 0.5rem 1.2rem;
+  transition: var(--transition); box-shadow: 0 1px 4px rgba(200,92,142,0.25);
+}
+.stButton > button[kind="primary"]:hover {
+  transform: translateY(-1px) scale(1.01) !important;
+  box-shadow: var(--glow-rose) !important;
+  filter: brightness(1.06) !important;
+}
+.stButton > button[kind="primary"]:active { transform: translateY(0) scale(0.99) !important; }
+.stButton > button[kind="secondary"] {
+  background: white !important; color: var(--text) !important;
+  border: 1.5px solid var(--border) !important; border-radius: 10px !important;
+  font-weight: 500 !important; box-shadow: none; transition: var(--transition) !important;
+}
+.stButton > button[kind="secondary"]:hover {
+  border-color: var(--rose) !important; color: var(--rose) !important;
+  transform: translateY(-1px) !important; box-shadow: 0 4px 12px rgba(200,92,142,0.12) !important;
+}
+.stDownloadButton > button { border-radius: 10px; font-weight: 600; transition: var(--transition); }
+
+/* ── 8. Input fields — polished focus states ─────────────────────────── */
+.stTextInput input, .stTextArea textarea, .stNumberInput input,
+.stDateInput input, .stTimeInput input, .stSelectbox > div > div,
+[data-testid="stTextInput"] input, [data-testid="stTextArea"] textarea {
+  border-radius: 9px !important; border: 1.5px solid var(--border) !important;
+  font-family: 'Inter', sans-serif; background: white !important; transition: var(--transition) !important;
+}
+.stTextInput input:focus, .stTextArea textarea:focus, .stNumberInput input:focus,
+.stDateInput input:focus, .stTimeInput input:focus,
+[data-testid="stTextInput"] input:focus, [data-testid="stTextArea"] textarea:focus {
+  border-color: var(--rose) !important; box-shadow: 0 0 0 3px rgba(200,92,142,0.12) !important; outline: none !important;
+}
+
+/* ── 14/15. Expanders — animated hover ───────────────────────────────── */
+.streamlit-expanderHeader, [data-testid="stExpander"] summary {
+  border-radius: 8px; font-weight: 600; transition: var(--transition);
+}
+[data-testid="stExpander"] { border: 1px solid var(--border) !important; border-radius: 10px !important; overflow: hidden !important; transition: var(--transition) !important; }
+[data-testid="stExpander"]:hover { border-color: rgba(200,92,142,0.3) !important; box-shadow: 0 2px 12px rgba(200,92,142,0.08) !important; }
+[data-testid="stExpander"] summary:hover { background: rgba(200,92,142,0.03) !important; }
+[data-testid="stExpander"] summary svg { color: var(--rose); }
+
+/* ── 15. Dataframes / tables ───────────────────────────────────────── */
+[data-testid="stDataFrame"] thead tr th { background: var(--bark) !important; color: white !important; font-weight: 600; }
+[data-testid="stDataFrame"] tbody tr:nth-child(even) { background: var(--blush); }
+[data-testid="stDataFrame"] { border: 1px solid var(--border); border-radius: 8px; }
+
+/* ── Print sheet (unchanged look, retokenized) ─────────────────────── */
 .print-sheet {
-  background: white; border: 2px solid #C85C8E; border-radius: 12px;
+  background: white; border: 2px solid var(--rose); border-radius: 12px;
   padding: 24px; font-family: 'Inter', sans-serif;
 }
-.print-sheet h2, .print-sheet h3 { font-family: 'Playfair Display', serif; color: #2D1B2E; }
+.print-sheet h2, .print-sheet h3 { font-family: 'Playfair Display', serif; color: var(--text); }
 .print-sheet table { width: 100%; border-collapse: collapse; }
-.print-sheet td, .print-sheet th { border: 1px solid #F0D9E0; padding: 8px 12px; text-align: left; }
-.print-sheet th { background: #FDF6F0; font-weight: 600; }
+.print-sheet td, .print-sheet th { border: 1px solid var(--border); padding: 8px 12px; text-align: left; }
+.print-sheet th { background: var(--blush); font-weight: 600; }
 
 .balance-box {
-  background: #FFF0F5; border: 1.5px solid #C85C8E; border-radius: 10px;
+  background: var(--rose-light); border: 1.5px solid var(--rose); border-radius: 10px;
   padding: 12px 18px; margin-top: 6px; font-family: 'Inter', sans-serif;
 }
-.balance-box .label { font-size: 11px; color: #A0728A; text-transform: uppercase; letter-spacing: 0.6px; font-weight: 600; }
-.balance-box .amount { font-size: 24px; font-weight: 800; color: #C85C8E; }
+.balance-box .label { font-size: 11px; color: var(--rose-deep); text-transform: uppercase; letter-spacing: 0.6px; font-weight: 600; }
+.balance-box .amount { font-family: 'Playfair Display', serif; font-size: 24px; font-weight: 700; color: var(--rose); }
 
 .city-rank-bar {
-  background: #FFF0F5; border-radius: 8px; padding: 10px 14px;
-  margin-bottom: 6px; border-left: 4px solid #C85C8E;
+  background: var(--rose-light); border-radius: 8px; padding: 10px 14px;
+  margin-bottom: 6px; border-left: 4px solid var(--rose);
 }
 
-/* ── Order cards ─────────────────────────────────────────────────────── */
-.af-card {
-  background: white; border-radius: 8px; padding: 14px 18px;
-  margin-bottom: 10px; box-shadow: 0 1px 4px rgba(45,27,46,0.08);
-  border: 1px solid #F0E4EA; border-left-width: 5px; border-left-style: solid;
+/* ── 6. Order cards — entrance + hover lift ──────────────────────────── */
+.af-card, div[data-testid="stVerticalBlock"] > div > div[data-testid="stVerticalBlockBorderWrapper"] {
+  background: white !important; border-radius: 12px !important;
+  border: 1px solid var(--border) !important; box-shadow: var(--shadow-card) !important;
+  transition: var(--transition) !important; animation: fadeSlideUp 0.4s ease both;
 }
+.af-card { padding: 14px 18px; margin-bottom: 0.75rem; border-left-width: 4px !important; border-left-style: solid !important; overflow: hidden; }
+.af-card:hover {
+  transform: translateY(-2px); box-shadow: var(--shadow-hover) !important; border-color: rgba(200,92,142,0.3) !important;
+}
+.af-card:nth-child(1) { animation-delay: 0.05s; }
+.af-card:nth-child(2) { animation-delay: 0.10s; }
+.af-card:nth-child(3) { animation-delay: 0.15s; }
+.af-card:nth-child(4) { animation-delay: 0.20s; }
+.af-card:nth-child(5) { animation-delay: 0.25s; }
+
 .order-code {
-  font-family: 'SFMono-Regular', Consolas, 'Courier New', monospace; font-size: 13px;
-  font-weight: 700; color: #2D1B2E; background: #FDF6F0; padding: 2px 8px; border-radius: 5px;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 0.82rem;
+  font-weight: 600; color: var(--rose); background: var(--rose-light);
+  padding: 3px 8px; border-radius: 5px; letter-spacing: 0.04em;
+  transition: var(--transition); display: inline-block; position: relative;
 }
-.card-title { font-size: 17px; font-weight: 700; color: #2D1B2E; line-height: 1.3; }
-.card-meta { font-size: 12.5px; color: #7A6570; margin-top: 3px; line-height: 1.7; }
+.order-code::after {
+  content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 2px;
+  background: var(--gradient-floral); background-size: 200%;
+  transform: scaleX(0); transform-origin: left; transition: transform 0.3s ease;
+}
+.order-code:hover::after { transform: scaleX(1); animation: gradientFlow 2s ease infinite; }
 
-/* ── Status / rush badges ────────────────────────────────────────────── */
+.card-title { font-size: 17px; font-weight: 700; color: var(--text); line-height: 1.3; }
+.card-meta { font-size: 12.5px; color: var(--muted); margin-top: 3px; line-height: 1.7; }
+
+/* ── 4. Status / rush / cod / unassigned badges — animated pop-in ───── */
 .status-badge {
-  display: inline-block; padding: 3px 11px; border-radius: 999px;
-  font-size: 11px; font-weight: 700; letter-spacing: 0.3px; white-space: nowrap;
+  display: inline-flex; align-items: center; padding: 4px 12px; border-radius: 20px;
+  font-size: 0.68rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap;
+  animation: badgePop 0.3s ease both; transition: var(--transition);
 }
+.status-badge:hover { filter: brightness(1.08); transform: scale(1.04); }
+.status-pending      { background: #FEF9E7; color: #92400E; border: 1.5px solid #D97706; }
+.status-confirmed    { background: #E0F7FA; color: #0E7490; border: 1.5px solid #0E7490; }
+.status-in-progress  { background: #F4ECF7; color: #6D28D9; border: 1.5px solid #7C3AED; }
+.status-ready        { background: #EAFAF1; color: #166534; border: 1.5px solid #2D7A4F; }
+.status-delivered    { background: #DCFCE7; color: #166534; border: 1.5px solid #166534; }
+.status-picked-up    { background: #DCFCE7; color: #166534; border: 1.5px solid #166534; }
+.status-cancelled    { background: #FDEDEC; color: #991B1B; border: 1.5px solid #DC2626; }
+.status-failed-delivery { background: #FDEDEC; color: #991B1B; border: 1.5px solid #DC2626; }
+
 .rush-badge {
   display: inline-block; padding: 3px 10px; border-radius: 999px;
   font-size: 11px; font-weight: 800; letter-spacing: 0.3px;
-  background: #DC3545; color: white !important; margin-right: 6px;
+  background: var(--crimson); color: white !important; margin-right: 6px;
 }
 .rush-banner-card {
-  background: #DC3545; color: white; font-size: 12.5px; font-weight: 700;
-  padding: 6px 12px; border-radius: 6px; margin-bottom: 10px; text-align: center;
-  letter-spacing: 0.3px;
+  background: linear-gradient(90deg, var(--crimson), #EF4444); color: white; font-size: 12.5px; font-weight: 700;
+  padding: 6px 12px; border-radius: 6px; margin-bottom: 10px; text-align: center; letter-spacing: 0.3px;
 }
-.unassigned-tag {
-  display: inline-block; padding: 3px 10px; border-radius: 999px;
-  font-size: 11px; font-weight: 700; background: #FFF3CD; color: #7A5A00; margin-left: 6px;
+.rush-banner {
+  background: linear-gradient(90deg, #991B1B, #DC2626, #EF4444, #DC2626, #991B1B);
+  background-size: 300% 100%; color: white; padding: 8px 16px;
+  font-weight: 800; font-size: 0.75rem; letter-spacing: 0.12em; text-transform: uppercase;
+  border-radius: 6px; display: inline-flex; align-items: center; gap: 6px;
+  animation: rushPulse 2s ease-in-out infinite, gradientFlow 3s ease infinite;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.2);
 }
-.overdue-banner {
-  background: linear-gradient(135deg, #FF6B35, #DC3545); color: white; font-size: 13px;
-  font-weight: 800; letter-spacing: 0.3px; padding: 8px 14px; border-radius: 8px 8px 0 0;
-  margin-bottom: -1px;
+.rush-card-border { border-left: 4px solid #DC2626 !important; animation: rushPulse 2.5s ease-in-out infinite; }
+
+.cod-badge {
+  background: #FEF9E7; border: 1.5px solid #D97706; color: #92400E;
+  font-weight: 700; font-size: 0.78rem; padding: 4px 10px; border-radius: 6px;
+  font-family: 'JetBrains Mono', monospace; animation: heartbeat 2s ease-in-out infinite; display: inline-block;
 }
 
-/* ── Kanban columns (Florist Board) ─────────────────────────────────── */
-.kanban-header {
-  display: flex; align-items: center; gap: 8px; margin: 18px 0 10px;
-  font-size: 13.5px; font-weight: 800; color: #2D1B2E; text-transform: uppercase; letter-spacing: 0.4px;
+.unassigned-tag, .unassigned-badge {
+  display: inline-block; padding: 2px 8px; border-radius: 20px;
+  font-size: 0.72rem; font-weight: 600; background: var(--amber-light); color: #92400E;
+  border: 1.5px solid var(--amber); margin-left: 6px;
 }
+.overdue-banner {
+  background: linear-gradient(90deg, #7F1D1D, #991B1B, #DC2626);
+  background-size: 200% 100%; animation: gradientFlow 3s ease infinite;
+  color: white; border-radius: 8px; padding: 10px 16px; font-weight: 700;
+  font-size: 0.82rem; letter-spacing: 0.06em; display: flex; align-items: center; gap: 8px;
+  box-shadow: 0 4px 16px rgba(220,38,38,0.3);
+}
+
+/* ── 16. Kanban columns (Florist / Rider Board) — polished ───────────── */
+.kanban-header {
+  display: flex; align-items: center; gap: 8px; margin: 1.2rem 0 0.6rem 0;
+  padding: 10px 16px; border-radius: 0 10px 10px 0;
+  font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em;
+  animation: fadeSlideUp 0.3s ease both; transition: var(--transition);
+}
+.kanban-header:hover { filter: brightness(0.97); transform: translateX(2px); }
 .kanban-count {
-  background: #2D1B2E; color: white; border-radius: 999px; padding: 1px 9px; font-size: 12px; font-weight: 700;
+  background: rgba(0,0,0,0.15); color: inherit; border-radius: 20px; padding: 2px 8px;
+  font-size: 0.72rem; font-weight: 800; margin-left: auto; animation: badgePop 0.4s ease both;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -238,20 +500,59 @@ BRANCH_CONFIG = {
     "Sta. Rosa Branch": {"order_cutoff_time":"13:00","free_delivery_min_order":3000.0,"florist_max_concurrent":3},
 }
 STATUS_COLOR = {
-    "Pending":"#FFC107","Confirmed":"#17A2B8","In Progress":"#6F42C1",
-    "Ready":"#28A745","Delivered":"#20C997","Picked Up":"#20C997",
-    "Cancelled":"#DC3545","Failed Delivery":"#FF6B35",
+    "Pending":"#D97706","Confirmed":"#0E7490","In Progress":"#7C3AED",
+    "Ready":"#2D7A4F","Delivered":"#166534","Picked Up":"#166534",
+    "Cancelled":"#DC2626","Failed Delivery":"#DC2626",
 }
 
 
 def status_badge_html(status: str) -> str:
     """Pill-shaped colored badge for an order status — presentation only."""
-    color = STATUS_COLOR.get(status, "#888")
-    return f"<span class='status-badge' style='background:{color}1A; color:{color}; border:1px solid {color}55;'>{status}</span>"
+    slug = status.lower().replace(" ", "-").replace("/", "-")
+    return f"<span class='status-badge status-{slug}'>{status}</span>"
 
 
 def rush_badge_html() -> str:
     return "<span class='rush-badge'>🚀 RUSH</span>"
+
+
+def metric_card_html(label: str, value: str, accent: str, delta: str = "") -> str:
+    """Styled stat card for dashboard metrics — presentation only.
+
+    Animation + gradient border are inlined directly on the card markup
+    (rather than via .metric-card CSS) because Streamlit wraps st.markdown()
+    output in extra divs that the class-based ::before selector can't
+    reliably reach.
+    """
+    delta_html = (
+        f'<div style="font-size:0.78rem;color:#2D7A4F;margin-top:4px;">{delta}</div>'
+        if delta else ""
+    )
+    return f"""
+<div style="
+  background: white;
+  border-radius: 14px;
+  padding: 1.4rem 1.6rem;
+  border: 1px solid #E8E3DC;
+  box-shadow: 0 4px 24px rgba(200,92,142,0.08), 0 1px 4px rgba(0,0,0,0.04);
+  position: relative;
+  overflow: hidden;
+  animation: fadeSlideUp 0.5s ease both;
+  min-height: 110px;
+  transition: all 0.22s cubic-bezier(0.4,0,0.2,1);
+">
+  <div style="
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 4px;
+    background: linear-gradient(135deg, #C85C8E 0%, #8B5CF6 50%, #0E7490 100%);
+    background-size: 200% 200%;
+    animation: gradientFlow 4s ease infinite;
+  "></div>
+  <div style="font-size:0.68rem;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#6B7280;margin-bottom:8px;margin-top:4px;">{label}</div>
+  <div style="font-family:'Playfair Display',Georgia,serif;font-size:2.8rem;font-weight:800;color:#1C1B22;line-height:1;letter-spacing:-0.02em;">{value}</div>
+  {delta_html}
+</div>"""
 
 # ─────────────────────────────────────────────────────────────────────────────
 # ROLE-BASED PAGE ACCESS
@@ -298,11 +599,201 @@ if st.session_state.auth_user is None:
 # LOGIN SCREEN
 # ─────────────────────────────────────────────────────────────────────────────
 def page_login():
-    st.markdown("""<div style='text-align:center; padding: 60px 0 20px;'>
-      <div style='font-size:60px;'>🌸</div>
-      <div style='font-family: Playfair Display, serif; font-size:28px; font-weight:700; color:#2D1B2E;'>Angie's Florist</div>
-      <div style='font-size:12px; color:#C9A0B0; letter-spacing:2px; margin-top:4px;'>STAFF LOGIN</div>
-    </div>""", unsafe_allow_html=True)
+    # Scoped to this function — only injected while auth_user is None (see AUTH
+    # GATE below), so the gradient background never leaks into the logged-in app.
+    st.markdown("""
+<style>
+/* Full page login background */
+[data-testid="stAppViewContainer"] {
+  background: linear-gradient(
+    -45deg,
+    #1a0a1e,
+    #4a1535,
+    #7c2d5e,
+    #c85c8e,
+    #8b5cf6,
+    #4a1535,
+    #1a0a1e
+  ) !important;
+  background-size: 400% 400% !important;
+  animation: bgFlow 15s ease infinite !important;
+  background-attachment: fixed !important;
+}
+
+@keyframes bgFlow {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* Hide default streamlit elements on login */
+[data-testid="stHeader"] { background: transparent !important; }
+footer { display: none !important; }
+
+/* Floating particles effect using pseudo elements */
+[data-testid="stAppViewContainer"]::before {
+  content: '🌸 🌺 🌷 🌹 🌸 🌺';
+  position: fixed;
+  top: -20px;
+  left: 0; right: 0;
+  font-size: 2rem;
+  letter-spacing: 3rem;
+  opacity: 0.15;
+  animation: floatPetals 20s linear infinite;
+  pointer-events: none;
+  z-index: 0;
+}
+
+@keyframes floatPetals {
+  from { transform: translateY(-100px) rotate(0deg); }
+  to   { transform: translateY(110vh) rotate(360deg); }
+}
+
+/* Floating petal particles — multiple layers */
+@keyframes floatPetal1 {
+  0%   { transform: translateY(100vh) rotate(0deg) scale(1); opacity: 0; }
+  10%  { opacity: 0.6; }
+  90%  { opacity: 0.6; }
+  100% { transform: translateY(-100px) rotate(720deg) scale(0.5); opacity: 0; }
+}
+@keyframes floatPetal2 {
+  0%   { transform: translateY(100vh) rotate(0deg) translateX(0); opacity: 0; }
+  10%  { opacity: 0.4; }
+  50%  { transform: translateY(50vh) rotate(360deg) translateX(30px); }
+  100% { transform: translateY(-100px) rotate(720deg) translateX(-20px); opacity: 0; }
+}
+
+/* Login card — glassmorphism */
+.login-card {
+  background: rgba(255,255,255,0.92);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-radius: 24px 24px 0 0;
+  border: 1px solid rgba(255,255,255,0.6);
+  border-bottom: none;
+  box-shadow:
+    0 8px 32px rgba(45,10,30,0.3),
+    0 2px 8px rgba(200,92,142,0.2),
+    inset 0 1px 0 rgba(255,255,255,0.8);
+  padding: 3rem 2.5rem 1.5rem;
+  animation: loginEntrance 0.6s cubic-bezier(0.34,1.56,0.64,1) both;
+  max-width: 420px;
+  margin: 0 auto;
+}
+
+/* Form container — visually fused to the card above it */
+div[data-testid="stForm"] {
+  background: rgba(255,255,255,0.85) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+  border-radius: 0 0 24px 24px !important;
+  border: 1px solid rgba(255,255,255,0.6) !important;
+  border-top: none !important;
+  padding: 1.5rem !important;
+  box-shadow: 0 8px 32px rgba(45,10,30,0.2) !important;
+  max-width: 420px !important;
+  margin: 0 auto !important;
+}
+
+@keyframes loginEntrance {
+  from {
+    opacity: 0;
+    transform: translateY(30px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Logo pulse */
+.login-logo {
+  font-size: 4rem;
+  display: block;
+  text-align: center;
+  margin-bottom: 0.5rem;
+  animation: logoPulse 3s ease-in-out infinite;
+  filter: drop-shadow(0 4px 12px rgba(200,92,142,0.4));
+}
+
+@keyframes logoPulse {
+  0%, 100% { transform: scale(1); filter: drop-shadow(0 4px 12px rgba(200,92,142,0.4)); }
+  50%       { transform: scale(1.06); filter: drop-shadow(0 6px 20px rgba(200,92,142,0.7)); }
+}
+
+/* Brand name gradient */
+.login-brand {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: 2.2rem;
+  font-weight: 700;
+  text-align: center;
+  background: linear-gradient(135deg, #2D0A1E 0%, #C85C8E 50%, #4A1535 100%);
+  background-size: 200%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: gradientText 4s ease infinite;
+  margin-bottom: 4px;
+  line-height: 1.1;
+}
+
+/* Subtitle — typing animation */
+.login-subtitle {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: #C85C8E;
+  text-align: center;
+  margin: 0 auto 2rem;
+  opacity: 0.8;
+  overflow: hidden;
+  white-space: nowrap;
+  display: table;
+  border-right: 2px solid #C85C8E;
+  width: 0;
+  animation: typing 1.5s steps(25) 0.8s both,
+             blink 0.8s step-end 2.3s 3;
+}
+@keyframes typing {
+  from { width: 0; }
+  to   { width: 100%; }
+}
+@keyframes blink {
+  50% { border-color: transparent; }
+}
+
+/* Animated divider */
+.login-divider {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #C85C8E, transparent);
+  margin: 1.5rem 0;
+  animation: shimmer 2s ease infinite;
+  background-size: 200% 100%;
+}
+</style>
+""", unsafe_allow_html=True)
+
+    st.markdown("""
+<div style="position:fixed; bottom:-50px; left:10%; font-size:1.5rem;
+animation: floatPetal1 8s ease-in-out infinite; pointer-events:none; z-index:0;">🌸</div>
+<div style="position:fixed; bottom:-50px; left:25%; font-size:1rem;
+animation: floatPetal2 11s ease-in-out 2s infinite; pointer-events:none; z-index:0;">🌺</div>
+<div style="position:fixed; bottom:-50px; left:45%; font-size:2rem;
+animation: floatPetal1 9s ease-in-out 4s infinite; pointer-events:none; z-index:0;">🌷</div>
+<div style="position:fixed; bottom:-50px; left:65%; font-size:1.2rem;
+animation: floatPetal2 13s ease-in-out 1s infinite; pointer-events:none; z-index:0;">🌸</div>
+<div style="position:fixed; bottom:-50px; left:80%; font-size:1.8rem;
+animation: floatPetal1 10s ease-in-out 3s infinite; pointer-events:none; z-index:0;">🌹</div>
+<div style="position:fixed; bottom:-50px; left:90%; font-size:1rem;
+animation: floatPetal2 7s ease-in-out 5s infinite; pointer-events:none; z-index:0;">🌺</div>
+<div class="login-card">
+  <span class="login-logo">🌸</span>
+  <div class="login-brand">Angie's Florist</div>
+  <div class="login-subtitle">Staff Portal · Secure Login</div>
+  <div class="login-divider"></div>
+</div>
+""", unsafe_allow_html=True)
 
     _, mid, _ = st.columns([1, 1.2, 1])
     with mid:
@@ -332,6 +823,18 @@ def page_login():
 if st.session_state.auth_user is None:
     page_login()
     st.stop()
+
+# Reset the login page's gradient background so it never bleeds into the
+# logged-in app (page_login() only injects it while auth_user is None, but
+# this guarantees the blush background is restored regardless).
+st.markdown("""
+<style>
+[data-testid="stAppViewContainer"] {
+  background: #FDF6F0 !important;
+  background-attachment: initial !important;
+}
+</style>
+""", unsafe_allow_html=True)
 
 CURRENT_USER   = st.session_state.auth_user
 CURRENT_ROLE   = CURRENT_USER.get("role", "Staff")
@@ -620,22 +1123,27 @@ def page_dashboard():
     cod_balance     = sum(float(o.get("total_balance",0)) for o in orders if o.get("balance_payment_method")=="COD" and o.get("total_balance",0)>0 and o["status"] in ["Ready","Delivered"])
 
     c1,c2,c3,c4,c5,c6 = st.columns(6)
-    c1.metric("📦 Today's Orders",  len(today_orders))
-    c2.metric("✅ Delivered Today", len(delivered_today), f"₱{revenue_today:,.0f}")
-    c3.metric("🎉 Ready",           ready_count)
-    c4.metric("🚀 Rush Orders",     rush_orders)
-    c5.metric("⏳ Need Florist",    pending_florist)
-    c6.metric("⚠️ COD Balance",    f"₱{cod_balance:,.0f}")
+    c1.markdown(metric_card_html("📦 Today's Orders",  str(len(today_orders)), "#17A2B8"), unsafe_allow_html=True)
+    c2.markdown(metric_card_html("✅ Delivered Today", str(len(delivered_today)), "#2D7A4F", f"₱{revenue_today:,.0f}"), unsafe_allow_html=True)
+    c3.markdown(metric_card_html("🎉 Ready",           str(ready_count), "#7C3AED"), unsafe_allow_html=True)
+    c4.markdown(metric_card_html("🚀 Rush Orders",     str(rush_orders), "#DC2626"), unsafe_allow_html=True)
+    c5.markdown(metric_card_html("⏳ Need Florist",    str(pending_florist), "#D97706"), unsafe_allow_html=True)
+    c6.markdown(metric_card_html("⚠️ COD Balance",    f"₱{cod_balance:,.0f}", "#C85C8E"), unsafe_allow_html=True)
     st.divider()
 
-    CHART_FACE = "#FFFFFF"
+    CHART_FACE = "#FDF6F0"
     plt.rcParams["font.family"] = "sans-serif"
+    # 'auto' savefig facecolor can resolve to white depending on backend/theme state;
+    # pin it explicitly so st.pyplot()'s exported PNG matches the figure we styled.
+    plt.rcParams["savefig.facecolor"] = CHART_FACE
+    plt.rcParams["figure.facecolor"] = CHART_FACE
 
     def _style_axes(ax):
-        for spine in ("top","right","left"):
-            ax.spines[spine].set_visible(False)
-        ax.spines["bottom"].set_color("#E5D5DC")
-        ax.tick_params(colors="#7A6570", labelsize=9)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        ax.spines["left"].set_alpha(0.3)
+        ax.spines["bottom"].set_alpha(0.3)
+        ax.tick_params(colors="#6B7280", labelsize=9)
         ax.set_facecolor(CHART_FACE)
 
     col1, col2, col3 = st.columns(3)
@@ -645,8 +1153,9 @@ def page_dashboard():
             status_counts = pd.Series([o["status"] for o in orders]).value_counts()
             bar_colors = [STATUS_COLOR.get(s, "#C85C8E") for s in status_counts.index]
             fig, ax = plt.subplots(figsize=(8,5), facecolor=CHART_FACE)
+            fig.patch.set_facecolor(CHART_FACE)
             ax.bar(status_counts.index, status_counts.values, color=bar_colors, width=0.6)
-            _style_axes(ax); ax.grid(True, axis="y", alpha=0.2, color="#E5D5DC")
+            _style_axes(ax); ax.grid(True, axis="y", alpha=0.15, color="#C8A9BE")
             plt.xticks(rotation=40, ha="right"); plt.tight_layout()
             st.pyplot(fig); plt.close(fig)
 
@@ -657,10 +1166,11 @@ def page_dashboard():
         high = len([i for i in inventory if i.get("quantity",0) > i.get("reorder_point",10)*2])
         if low+med+high > 0:
             fig, ax = plt.subplots(figsize=(8,5), facecolor=CHART_FACE)
+            fig.patch.set_facecolor(CHART_FACE)
             wedges, texts, autotexts = ax.pie(
                 [low,med,high], labels=["Low Stock","Medium","Optimal"],
-                colors=["#DC3545","#FFC107","#28A745"], autopct="%1.0f%%",
-                textprops={"color":"#4A3540","fontsize":9}, wedgeprops={"edgecolor":CHART_FACE,"linewidth":2},
+                colors=["#DC2626","#D97706","#2D7A4F"], autopct="%1.0f%%",
+                textprops={"color":"#1C1B22","fontsize":9}, wedgeprops={"edgecolor":CHART_FACE,"linewidth":2},
             )
             for at in autotexts: at.set_color("white"); at.set_fontweight("bold")
             plt.tight_layout(); st.pyplot(fig); plt.close(fig)
@@ -669,8 +1179,9 @@ def page_dashboard():
         st.markdown("<div class='subsection-header'>💳 Revenue vs Waste</div>", unsafe_allow_html=True)
         if revenue_all > 0:
             fig, ax = plt.subplots(figsize=(8,5), facecolor=CHART_FACE)
-            ax.bar(["Revenue","Waste"], [revenue_all, waste_cost], color=["#C85C8E","#4A3540"], width=0.5)
-            _style_axes(ax); ax.grid(True, axis="y", alpha=0.2, color="#E5D5DC")
+            fig.patch.set_facecolor(CHART_FACE)
+            ax.bar(["Revenue","Waste"], [revenue_all, waste_cost], color=["#C85C8E","#F1948A"], width=0.5)
+            _style_axes(ax); ax.grid(True, axis="y", alpha=0.15, color="#C8A9BE")
             plt.tight_layout(); st.pyplot(fig); plt.close(fig)
 
     st.divider()
@@ -889,7 +1400,7 @@ def page_new_order():
     pb1,pb2,pb3 = st.columns(3)
     pb1.markdown(f"""<div class="balance-box"><div class="label">Total Price</div><div class="amount">₱{live_total:,.2f}</div></div>""", unsafe_allow_html=True)
     pb2.markdown(f"""<div class="balance-box"><div class="label">Down Payment</div><div class="amount">₱{st.session_state.form_down_payment:,.2f}</div></div>""", unsafe_allow_html=True)
-    pb3.markdown(f"""<div class="balance-box"><div class="label">Balance Due</div><div class="amount" style="color:{'#28A745' if live_balance==0 else '#C85C8E'};">{'✅ FULLY PAID' if live_balance==0 else f'₱{live_balance:,.2f}'}</div></div>""", unsafe_allow_html=True)
+    pb3.markdown(f"""<div class="balance-box"><div class="label">Balance Due</div><div class="amount" style="color:{'#2D7A4F' if live_balance==0 else '#C85C8E'};">{'✅ FULLY PAID' if live_balance==0 else f'₱{live_balance:,.2f}'}</div></div>""", unsafe_allow_html=True)
     st.info("ℹ️ Adjust the three fields above to see a live balance preview, then fill the full form below.")
     st.divider()
 
@@ -1160,7 +1671,7 @@ def page_edit_order():
     pb1,pb2,pb3 = st.columns(3)
     pb1.markdown(f"""<div class="balance-box"><div class="label">Total Price</div><div class="amount">₱{live_total:,.2f}</div></div>""", unsafe_allow_html=True)
     pb2.markdown(f"""<div class="balance-box"><div class="label">Down Payment</div><div class="amount">₱{st.session_state.form_down_payment:,.2f}</div></div>""", unsafe_allow_html=True)
-    pb3.markdown(f"""<div class="balance-box"><div class="label">Balance Due</div><div class="amount" style="color:{'#28A745' if live_balance==0 else '#C85C8E'};">{'✅ FULLY PAID' if live_balance==0 else f'₱{live_balance:,.2f}'}</div></div>""", unsafe_allow_html=True)
+    pb3.markdown(f"""<div class="balance-box"><div class="label">Balance Due</div><div class="amount" style="color:{'#2D7A4F' if live_balance==0 else '#C85C8E'};">{'✅ FULLY PAID' if live_balance==0 else f'₱{live_balance:,.2f}'}</div></div>""", unsafe_allow_html=True)
     st.divider()
 
     existing_flower_items = order.get("flower_items") or []
@@ -1396,11 +1907,18 @@ def page_all_orders():
 
         card = st.container(border=True)
         with card:
-            balance_color = "#DC3545" if balance > 0 else "#28A745"
+            balance_color = "#DC2626" if balance > 0 else "#2D7A4F"
             balance_line  = f"₱{balance:,.0f} due" if balance > 0 else "Paid in full"
             rush_html     = rush_badge_html() if is_rush else ""
             card_header_html = (
-                f"<div style='border-left: 4px solid {status_color}; padding: 2px 0 2px 14px; margin: -0.25rem 0 0.75rem 0;'>"
+                f"<div style='"
+                f"background: white; border-radius: 12px; border: 1px solid #E8E3DC; "
+                f"border-left: 4px solid {status_color}; "
+                f"box-shadow: 0 4px 24px rgba(200,92,142,0.08), 0 1px 4px rgba(0,0,0,0.04); "
+                f"margin-bottom: 12px; padding: 16px 18px 14px; "
+                f"animation: fadeSlideUp 0.4s ease both; "
+                f"transition: all 0.22s cubic-bezier(0.4,0,0.2,1);"
+                f"'>"
                 f"<div style='display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:10px;'>"
                 f"<div>"
                 f"<span class='order-code'>{order_code}</span> {rush_html}"
@@ -1414,7 +1932,7 @@ def page_all_orders():
                 f"</div>"
                 f"<div style='text-align:right; white-space:nowrap;'>"
                 f"{status_badge_html(status)}"
-                f"<div style='margin-top:6px; font-size:13px; font-weight:700; color:#2D1B2E;'>💳 ₱{float(o.get('total_price',0)):,.0f}</div>"
+                f"<div style='margin-top:6px; font-size:13px; font-weight:700; color:#1C1B22;'>💳 ₱{float(o.get('total_price',0)):,.0f}</div>"
                 f"<div style='font-size:11.5px; font-weight:600; color:{balance_color};'>💰 {balance_line}</div>"
                 f"</div>"
                 f"</div>"
@@ -1697,13 +2215,20 @@ def page_florist_board():
         st.info("No orders scheduled for today.")
     else:
         KANBAN_SECTIONS = [("Pending","🟡"), ("Confirmed","🔵"), ("In Progress","🟣"), ("Ready","🟢")]
+        KANBAN_HEADER_STYLE = {
+            "Pending":      {"bg": "#FEF9E7", "border": "#D97706", "text": "#92400E"},
+            "Confirmed":    {"bg": "#E0F7FA", "border": "#0E7490", "text": "#0E7490"},
+            "In Progress":  {"bg": "#F4ECF7", "border": "#7C3AED", "text": "#7C3AED"},
+            "Ready":        {"bg": "#EAFAF1", "border": "#2D7A4F", "text": "#166534"},
+        }
         for _section_status, _section_icon in KANBAN_SECTIONS:
             section_orders = [o for o in today_orders if o["status"] == _section_status]
             if not section_orders:
                 continue
-            _section_color = STATUS_COLOR.get(_section_status, "#888")
+            _sc = KANBAN_HEADER_STYLE.get(_section_status, {"bg": "#F5F5F5", "border": "#888", "text": "#333"})
             st.markdown(
-                f"<div class='kanban-header' style='border-left:4px solid {_section_color}; padding-left:10px;'>"
+                f"<div class='kanban-header' style='background:{_sc['bg']}; "
+                f"border-left:4px solid {_sc['border']}; color:{_sc['text']}; padding-left:10px;'>"
                 f"{_section_icon} {_section_status} "
                 f"<span class='kanban-count'>{len(section_orders)}</span></div>",
                 unsafe_allow_html=True,
@@ -1735,13 +2260,13 @@ def _render_florist_board_cards(section_orders: list, florists: list):
         arrangement_label = o.get("arrangement","") or flower_items_to_arrangement_str(fi_list) or "—"
 
         with st.container(border=True):
-            accent_color = "#DC3545" if is_rush else ("#FFC107" if is_unassigned else STATUS_COLOR.get(o["status"], "#ddd"))
+            accent_color = "#DC2626" if is_rush else ("#D97706" if is_unassigned else STATUS_COLOR.get(o["status"], "#ddd"))
 
             # Rush banner is rendered first and full-width — always visible, never hidden inside an expander.
             if is_rush:
-                st.markdown("<div class='rush-banner-card'>🚀 RUSH ORDER — PRIORITISE IMMEDIATELY</div>", unsafe_allow_html=True)
+                st.markdown("<div class='rush-banner'>🚀 RUSH ORDER — PRIORITISE IMMEDIATELY</div>", unsafe_allow_html=True)
 
-            unassigned_tag = "<span class='unassigned-tag'>⏳ UNASSIGNED</span>" if is_unassigned else ""
+            unassigned_tag = "<span class='unassigned-badge'>⏳ UNASSIGNED</span>" if is_unassigned else ""
             card_header_html = (
                 f"<div style='border-left: 4px solid {accent_color}; padding: 2px 0 2px 14px; margin: -0.25rem 0 0.75rem 0;'>"
                 f"<div style='display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:10px;'>"
@@ -1826,7 +2351,7 @@ def _render_florist_board_cards(section_orders: list, florists: list):
               <h3>🌹 FLORIST PRODUCTION SHEET</h3>
               <p style="color:#888; font-size:12px;">Order #{order_code} · {datetime.now().strftime('%b %d, %Y %I:%M %p')}</p>
               <table>
-                <tr><th>Order Code</th><td colspan='2'><strong>{order_code}</strong></td></tr>
+                <tr><th>Order Code</th><td colspan='2'><span class="order-code">{order_code}</span></td></tr>
                 <tr><th>Customer</th><td colspan='2'>{o['customer_name']} | {o['customer_contact']}</td></tr>
                 <tr><th>Target Date & Time</th><td colspan='2'><strong>{str(o.get('target_date',''))[:10]} at {o.get('target_time','')}</strong></td></tr>
                 {arrangement_block}
@@ -2098,8 +2623,8 @@ def page_rider_board():
         recip_name    = o.get("recipient_name") or o["customer_name"]
         recip_contact = o.get("recipient_contact") or o["customer_contact"]
         surprise_note = "🤫 **SURPRISE — do NOT mention sender**" if o.get("is_surprise") else ""
-        banner_color  = "#DC3545" if balance>0 and balance_method=="COD" else "#FFC107" if balance>0 else "#28A745"
-        payment_banner= f"⚠️ **COLLECT ₱{balance:,.2f} via COD**" if balance>0 and balance_method=="COD" else f"⚠️ **BALANCE ₱{balance:,.2f} via {balance_method}**" if balance>0 else "✅ **FULLY PAID — Nothing to collect**"
+        banner_color  = "#DC2626" if balance>0 and balance_method=="COD" else "#D97706" if balance>0 else "#2D7A4F"
+        payment_banner= f"⚠️ COLLECT <span class='cod-badge' style=\"animation: heartbeat 2s ease-in-out infinite;\">₱{balance:,.2f} COD</span>" if balance>0 and balance_method=="COD" else f"⚠️ **BALANCE ₱{balance:,.2f} via {balance_method}**" if balance>0 else "✅ **FULLY PAID — Nothing to collect**"
 
         with st.expander(f"📦 {order_code} — {o['customer_name']} | Rider: {rider_name or '⏳ Unassigned'}"):
             if not rider_name:
@@ -2114,7 +2639,7 @@ def page_rider_board():
             st.markdown(f"""<div class="print-sheet">
               <h3>🚴 RIDER DELIVERY SHEET</h3>
               <hr style="border:1px solid #C85C8E;"/>
-              <p><strong>Order Code:</strong> {order_code} &nbsp;|&nbsp; <strong>Customer (Buyer):</strong> {o['customer_name']}</p>
+              <p><strong>Order Code:</strong> <span class="order-code">{order_code}</span> &nbsp;|&nbsp; <strong>Customer (Buyer):</strong> {o['customer_name']}</p>
               <p><strong>Rider:</strong> {rider_name or '—'} &nbsp;|&nbsp; <strong>Rider Contact:</strong> {rider_contacts.get(rider_name,'—')}</p>
               <hr style="border:1px solid #C85C8E;"/>
               <p><strong>📍 Deliver TO (Recipient):</strong> <span style="font-size:17px;"><strong>{recip_name}</strong></span></p>
@@ -2988,15 +3513,21 @@ def page_reports():
             with fc1:
                 st.markdown("**Revenue by Branch**")
                 fig,ax = plt.subplots(figsize=(6,4), facecolor="#FDF6F0")
+                fig.patch.set_facecolor("#FDF6F0")
                 ax.bar(branch_rev.keys(), branch_rev.values(), color="#C85C8E", alpha=0.85)
-                ax.set_facecolor("#FDF6F0"); ax.grid(axis="y",alpha=0.3)
+                ax.set_facecolor("#FDF6F0")
+                ax.spines["top"].set_visible(False); ax.spines["right"].set_visible(False)
+                ax.spines["left"].set_color("#E8E3DC"); ax.spines["bottom"].set_color("#E8E3DC")
+                ax.grid(True, axis="y", alpha=0.15, color="#C8A9BE")
+                ax.tick_params(colors="#6B7280", labelsize=9)
                 plt.xticks(rotation=15, ha="right", fontsize=9); plt.tight_layout()
                 st.pyplot(fig); plt.close(fig)
             with fc2:
                 st.markdown("**Orders by Status**")
                 status_counts = pd.Series([o["status"] for o in orders]).value_counts()
-                colors = ["#C85C8E","#28A745","#FFC107","#17A2B8","#6C757D","#DC3545","#007BFF","#FF6B35"]
+                colors = [STATUS_COLOR.get(s, "#C85C8E") for s in status_counts.index]
                 fig,ax = plt.subplots(figsize=(6,4), facecolor="#FDF6F0")
+                fig.patch.set_facecolor("#FDF6F0")
                 ax.pie(status_counts.values, labels=status_counts.index, colors=colors[:len(status_counts)], autopct="%1.0f%%", startangle=140)
                 plt.tight_layout(); st.pyplot(fig); plt.close(fig)
 
@@ -3077,8 +3608,14 @@ def page_reports():
             st.divider()
             if top_n:
                 fig,ax = plt.subplots(figsize=(9,5), facecolor="#FDF6F0")
+                fig.patch.set_facecolor("#FDF6F0")
                 bars = ax.barh([a[0] for a in reversed(top_n)],[a[1] for a in reversed(top_n)], color="#C85C8E", alpha=0.85)
-                ax.set_facecolor("#FDF6F0"); ax.grid(axis="x",alpha=0.3); ax.set_xlabel("Units Sold")
+                ax.set_facecolor("#FDF6F0")
+                ax.spines["top"].set_visible(False); ax.spines["right"].set_visible(False)
+                ax.spines["left"].set_color("#E8E3DC"); ax.spines["bottom"].set_color("#E8E3DC")
+                ax.grid(True, axis="x", alpha=0.15, color="#C8A9BE")
+                ax.tick_params(colors="#6B7280", labelsize=9)
+                ax.set_xlabel("Units Sold")
                 for bar,val in zip(bars,[a[1] for a in reversed(top_n)]):
                     ax.text(bar.get_width()+0.1, bar.get_y()+bar.get_height()/2, str(val), va="center", fontsize=9)
                 plt.tight_layout(); st.pyplot(fig); plt.close(fig)
@@ -3191,8 +3728,14 @@ def page_reports():
             if period_data:
                 sk=sorted(period_data.keys())
                 fig,ax=plt.subplots(figsize=(10,4),facecolor="#FDF6F0")
+                fig.patch.set_facecolor("#FDF6F0")
                 ax.bar(sk,[period_data[k]["revenue"] for k in sk],color="#C85C8E",alpha=0.85)
-                ax.set_facecolor("#FDF6F0"); ax.grid(axis="y",alpha=0.3); plt.xticks(rotation=30,ha="right",fontsize=9); ax.set_ylabel("Revenue (₱)")
+                ax.set_facecolor("#FDF6F0")
+                ax.spines["top"].set_visible(False); ax.spines["right"].set_visible(False)
+                ax.spines["left"].set_color("#E8E3DC"); ax.spines["bottom"].set_color("#E8E3DC")
+                ax.grid(True, axis="y", alpha=0.15, color="#C8A9BE")
+                ax.tick_params(colors="#6B7280", labelsize=9)
+                plt.xticks(rotation=30,ha="right",fontsize=9); ax.set_ylabel("Revenue (₱)")
                 plt.tight_layout(); st.pyplot(fig); plt.close(fig); st.divider()
                 st.dataframe(pd.DataFrame([{"Period":k,"Orders":period_data[k]["orders"],"Revenue (₱)":f"₱{period_data[k]['revenue']:,.2f}"} for k in sk]),use_container_width=True,hide_index=True); st.divider()
             arr_cnt={}; arr_rev={}
@@ -3298,8 +3841,13 @@ def page_reports():
 
             # Bar chart
             fig, ax = plt.subplots(figsize=(10, 4), facecolor="#FDF6F0")
+            fig.patch.set_facecolor("#FDF6F0")
             ax.bar(df_daily["Date"], df_daily["Revenue (₱)"], color="#C85C8E", alpha=0.85)
-            ax.set_facecolor("#FDF6F0"); ax.grid(axis="y", alpha=0.3)
+            ax.set_facecolor("#FDF6F0")
+            ax.spines["top"].set_visible(False); ax.spines["right"].set_visible(False)
+            ax.spines["left"].set_color("#E8E3DC"); ax.spines["bottom"].set_color("#E8E3DC")
+            ax.grid(True, axis="y", alpha=0.15, color="#C8A9BE")
+            ax.tick_params(colors="#6B7280", labelsize=9)
             plt.xticks(rotation=30, ha="right", fontsize=9); ax.set_ylabel("Revenue (₱)")
             plt.tight_layout(); st.pyplot(fig); plt.close(fig)
             st.divider()
@@ -3490,14 +4038,24 @@ def page_reports():
             fc1,fc2 = st.columns(2)
             with fc1:
                 fig,ax = plt.subplots(figsize=(6,4), facecolor="#FDF6F0")
+                fig.patch.set_facecolor("#FDF6F0")
                 ax.bar(df_bc["Branch"], df_bc["Revenue (₱)"], color="#C85C8E", alpha=0.85)
-                ax.set_facecolor("#FDF6F0"); ax.grid(axis="y",alpha=0.3)
+                ax.set_facecolor("#FDF6F0")
+                ax.spines["top"].set_visible(False); ax.spines["right"].set_visible(False)
+                ax.spines["left"].set_color("#E8E3DC"); ax.spines["bottom"].set_color("#E8E3DC")
+                ax.grid(True, axis="y", alpha=0.15, color="#C8A9BE")
+                ax.tick_params(colors="#6B7280", labelsize=9)
                 plt.xticks(rotation=15, ha="right", fontsize=9); plt.tight_layout()
                 st.pyplot(fig); plt.close(fig)
             with fc2:
                 fig,ax = plt.subplots(figsize=(6,4), facecolor="#FDF6F0")
-                ax.bar(df_bc["Branch"], df_bc["Total Orders"], color="#17A2B8", alpha=0.85)
-                ax.set_facecolor("#FDF6F0"); ax.grid(axis="y",alpha=0.3)
+                fig.patch.set_facecolor("#FDF6F0")
+                ax.bar(df_bc["Branch"], df_bc["Total Orders"], color="#F1948A", alpha=0.85)
+                ax.set_facecolor("#FDF6F0")
+                ax.spines["top"].set_visible(False); ax.spines["right"].set_visible(False)
+                ax.spines["left"].set_color("#E8E3DC"); ax.spines["bottom"].set_color("#E8E3DC")
+                ax.grid(True, axis="y", alpha=0.15, color="#C8A9BE")
+                ax.tick_params(colors="#6B7280", labelsize=9)
                 plt.xticks(rotation=15, ha="right", fontsize=9); plt.tight_layout()
                 st.pyplot(fig); plt.close(fig)
             st.download_button("⬇️ Export Branch Comparison CSV",
@@ -3680,6 +4238,7 @@ def page_management_kpi():
     tc1, tc2 = st.columns(2)
     with tc1:
         fig, ax = plt.subplots(figsize=(7, 3.5), facecolor="#FDF6F0")
+        fig.patch.set_facecolor("#FDF6F0")
         labels   = [t["label"]   for t in trend_data]
         rev_vals = [t["revenue"] for t in trend_data]
         bars = ax.bar(labels, rev_vals, color="#C85C8E", alpha=0.82)
@@ -3690,27 +4249,34 @@ def page_management_kpi():
                     bar.get_x() + bar.get_width() / 2,
                     bar.get_height() + peak * 0.01,
                     f"₱{val/1000:.1f}k" if val >= 1000 else f"₱{val:.0f}",
-                    ha="center", va="bottom", fontsize=8, color="#2D1B2E",
+                    ha="center", va="bottom", fontsize=8, color="#1C1B22",
                 )
         ax.set_facecolor("#FDF6F0")
-        ax.grid(True, axis="y", alpha=0.25)
-        ax.set_title("Daily Revenue", fontsize=11, color="#2D1B2E")
+        ax.spines["top"].set_visible(False); ax.spines["right"].set_visible(False)
+        ax.spines["left"].set_color("#E8E3DC"); ax.spines["bottom"].set_color("#E8E3DC")
+        ax.grid(True, axis="y", alpha=0.15, color="#C8A9BE")
+        ax.tick_params(colors="#6B7280", labelsize=9)
+        ax.set_title("Daily Revenue", fontsize=11, color="#1C1B22")
         plt.tight_layout()
         st.pyplot(fig)
         plt.close(fig)
 
     with tc2:
         fig, ax = plt.subplots(figsize=(7, 3.5), facecolor="#FDF6F0")
+        fig.patch.set_facecolor("#FDF6F0")
         ord_vals  = [t["orders"]    for t in trend_data]
         comp_vals = [t["completed"] for t in trend_data]
         ax.plot(labels, ord_vals,  marker="o", color="#C85C8E", linewidth=2,
                 label="Total Orders", markersize=6)
-        ax.plot(labels, comp_vals, marker="s", color="#28A745", linewidth=2,
+        ax.plot(labels, comp_vals, marker="s", color="#2D7A4F", linewidth=2,
                 label="Completed", markersize=6, linestyle="--")
         ax.set_facecolor("#FDF6F0")
-        ax.grid(True, alpha=0.25)
+        ax.spines["top"].set_visible(False); ax.spines["right"].set_visible(False)
+        ax.spines["left"].set_color("#E8E3DC"); ax.spines["bottom"].set_color("#E8E3DC")
+        ax.grid(True, alpha=0.15, color="#C8A9BE")
+        ax.tick_params(colors="#6B7280", labelsize=9)
         ax.legend(fontsize=9)
-        ax.set_title("Orders vs Completed", fontsize=11, color="#2D1B2E")
+        ax.set_title("Orders vs Completed", fontsize=11, color="#1C1B22")
         plt.tight_layout()
         st.pyplot(fig)
         plt.close(fig)
@@ -3938,8 +4504,8 @@ def page_route_planner():
             batch_rush  = sum(1 for o in batch if o.get("priority_rush"))
 
             # Card header
-            header_color = "#FFF3CD" if is_unassigned else "#F0FFF4"
-            border_color = "#FFC107" if is_unassigned else "#28A745"
+            header_color = "var(--amber-light)" if is_unassigned else "var(--sage-light)"
+            border_color = "var(--amber)" if is_unassigned else "var(--sage)"
             rider_label  = f"⏳ Unassigned ({len(batch)} order{'s' if len(batch)>1 else ''})" if is_unassigned else f"🚴 {rider_key} — {len(batch)} order{'s' if len(batch)>1 else ''}"
 
             st.markdown(
@@ -3947,8 +4513,8 @@ def page_route_planner():
                 f"border-radius:8px; padding:12px 16px; margin-bottom:8px;'>"
                 f"<strong style='font-size:16px;'>{rider_label}</strong>"
                 f"{'&nbsp;&nbsp;🚀 ' + str(batch_rush) + ' rush' if batch_rush else ''}"
-                f"{'&nbsp;&nbsp;💰 COD: ₱' + f'{batch_cod:,.2f}' if batch_cod > 0 else ''}"
-                f"<br><span style='font-size:12px; color:#555;'>Zones: {', '.join(batch_zones)}</span>"
+                f"{'&nbsp;&nbsp;<span class=\"cod-badge\" style=\"animation: heartbeat 2s ease-in-out infinite;\">💰 COD ₱' + f'{batch_cod:,.2f}' + '</span>' if batch_cod > 0 else ''}"
+                f"<br><span style='font-size:12px; color:var(--muted);'>Zones: {', '.join(batch_zones)}</span>"
                 f"</div>",
                 unsafe_allow_html=True,
             )
@@ -4065,8 +4631,8 @@ def page_route_planner():
 
             # Zone header
             has_unassigned = len(z_unassigned) > 0
-            card_color  = "#FFF3CD" if has_unassigned else "#E8F5E9"
-            border_col  = "#FFC107" if has_unassigned else "#28A745"
+            card_color  = "var(--amber-light)" if has_unassigned else "var(--sage-light)"
+            border_col  = "var(--amber)" if has_unassigned else "var(--sage)"
             assigned_riders = list(set(o.get("assigned_rider","") for o in z_assigned if o.get("assigned_rider","")))
 
             st.markdown(
@@ -4075,10 +4641,10 @@ def page_route_planner():
                 f"<strong style='font-size:15px;'>📍 {zone_name}</strong> "
                 f"&nbsp;—&nbsp; {len(z_orders)} order{'s' if len(z_orders)>1 else ''}"
                 f"{'&nbsp;&nbsp;🚀 ' + str(z_rush) + ' rush' if z_rush else ''}"
-                f"{'&nbsp;&nbsp;💰 COD ₱' + f'{z_cod:,.0f}' if z_cod > 0 else ''}"
-                f"<br><span style='font-size:12px; color:#555;'>"
+                f"{'&nbsp;&nbsp;<span class=\"cod-badge\" style=\"animation: heartbeat 2s ease-in-out infinite;\">💰 COD ₱' + f'{z_cod:,.0f}' + '</span>' if z_cod > 0 else ''}"
+                f"<br><span style='font-size:12px; color:var(--muted);'>"
                 f"Assigned to: {', '.join(assigned_riders) if assigned_riders else '— none'}"
-                f"{' &nbsp;·&nbsp; ' + str(len(z_unassigned)) + ' unassigned' if z_unassigned else ''}"
+                f"{' &nbsp;·&nbsp; <span class=\"unassigned-badge\">' + str(len(z_unassigned)) + ' UNASSIGNED</span>' if z_unassigned else ''}"
                 f"</span></div>",
                 unsafe_allow_html=True,
             )
