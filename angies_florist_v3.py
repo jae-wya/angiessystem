@@ -385,7 +385,7 @@ body, p, label, .stMarkdown { font-family: 'Inter', system-ui, sans-serif; color
 }
 .order-code:hover::after { transform: scaleX(1); animation: gradientFlow 2s ease infinite; }
 
-.card-title { font-size: 17px; font-weight: 700; color: var(--text); line-height: 1.3; }
+.card-title { font-size: 1.25rem; font-weight: 700; color: var(--text); line-height: 1.3; margin-bottom: 2px; }
 .card-meta { font-size: 12.5px; color: var(--muted); margin-top: 3px; line-height: 1.7; }
 
 /* ── 4. Status / rush / cod / unassigned badges — animated pop-in ───── */
@@ -453,6 +453,65 @@ body, p, label, .stMarkdown { font-family: 'Inter', system-ui, sans-serif; color
 .kanban-count {
   background: rgba(0,0,0,0.15); color: inherit; border-radius: 20px; padding: 2px 8px;
   font-size: 0.72rem; font-weight: 800; margin-left: auto; animation: badgePop 0.4s ease both;
+}
+
+/* ── 17. All Orders — edit/delete action buttons ──────────────────────── */
+.action-btn-wrap .stButton > button {
+  background: #FCEEF5 !important;
+  border: 1.5px solid #C85C8E !important;
+  color: #C85C8E !important;
+  border-radius: 8px !important;
+  min-width: 44px !important;
+}
+.action-btn-wrap-delete .stButton > button {
+  background: #FDEDEC !important;
+  border: 1.5px solid #DC2626 !important;
+  color: #DC2626 !important;
+}
+
+/* Edit buttons — rose styling (direct data-testid targeting, key: edit_{order_code}) */
+[data-testid*="edit_"] button,
+[data-testid*="-edit_"] {
+  background: #FCEEF5 !important;
+  border: 1.5px solid #C85C8E !important;
+  color: #C85C8E !important;
+  border-radius: 8px !important;
+}
+
+/* Delete buttons — crimson styling (direct data-testid targeting, key: del_{order_code}) */
+[data-testid*="del_"] button,
+[data-testid*="-del_"] {
+  background: #FDEDEC !important;
+  border: 1.5px solid #DC2626 !important;
+  color: #DC2626 !important;
+  border-radius: 8px !important;
+}
+
+/* ── 18. New Order — Auto-fill from Paste button ──────────────────────── */
+.auto-fill-btn-wrap .stButton > button,
+.auto-fill-btn-wrap button {
+  background: linear-gradient(135deg, #C85C8E 0%, #8B5CF6 100%) !important;
+  color: white !important;
+  border: none !important;
+  font-weight: 700 !important;
+  font-size: 1rem !important;
+  padding: 0.75rem !important;
+  box-shadow: 0 4px 16px rgba(200,92,142,0.35) !important;
+  border-radius: 10px !important;
+  letter-spacing: 0.03em !important;
+}
+
+/* Auto-fill button — direct data-testid targeting (key: parse_paste_btn) */
+[data-testid*="parse_paste_btn"] {
+  background: linear-gradient(135deg, #C85C8E 0%, #8B5CF6 100%) !important;
+  color: white !important;
+  border: none !important;
+  font-weight: 700 !important;
+  font-size: 1rem !important;
+  padding: 0.75rem !important;
+  box-shadow: 0 4px 16px rgba(200,92,142,0.35) !important;
+  border-radius: 10px !important;
+  letter-spacing: 0.03em !important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -1137,14 +1196,21 @@ def page_dashboard():
     # pin it explicitly so st.pyplot()'s exported PNG matches the figure we styled.
     plt.rcParams["savefig.facecolor"] = CHART_FACE
     plt.rcParams["figure.facecolor"] = CHART_FACE
+    plt.rcParams["axes.facecolor"] = CHART_FACE
 
-    def _style_axes(ax):
+    def _style_axes(ax, title=""):
+        fig = ax.get_figure()
+        fig.patch.set_facecolor(CHART_FACE)
+        ax.set_facecolor(CHART_FACE)
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
-        ax.spines["left"].set_alpha(0.3)
-        ax.spines["bottom"].set_alpha(0.3)
+        ax.spines["left"].set_alpha(0.2)
+        ax.spines["bottom"].set_alpha(0.2)
+        ax.grid(True, axis="y", alpha=0.12, color="#C8A9BE", linestyle="--")
         ax.tick_params(colors="#6B7280", labelsize=9)
-        ax.set_facecolor(CHART_FACE)
+        if title:
+            ax.set_title(title, fontsize=11, color="#1C1B22",
+                          fontfamily="sans-serif", fontweight="600", pad=12)
 
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -1153,11 +1219,11 @@ def page_dashboard():
             status_counts = pd.Series([o["status"] for o in orders]).value_counts()
             bar_colors = [STATUS_COLOR.get(s, "#C85C8E") for s in status_counts.index]
             fig, ax = plt.subplots(figsize=(8,5), facecolor=CHART_FACE)
-            fig.patch.set_facecolor(CHART_FACE)
             ax.bar(status_counts.index, status_counts.values, color=bar_colors, width=0.6)
-            _style_axes(ax); ax.grid(True, axis="y", alpha=0.15, color="#C8A9BE")
+            _style_axes(ax)
             plt.xticks(rotation=40, ha="right"); plt.tight_layout()
-            st.pyplot(fig); plt.close(fig)
+            st.pyplot(fig, transparent=False, bbox_inches="tight", facecolor=CHART_FACE)
+            plt.close(fig)
 
     with col2:
         st.markdown("<div class='subsection-header'>🌹 Inventory Status</div>", unsafe_allow_html=True)
@@ -1167,22 +1233,26 @@ def page_dashboard():
         if low+med+high > 0:
             fig, ax = plt.subplots(figsize=(8,5), facecolor=CHART_FACE)
             fig.patch.set_facecolor(CHART_FACE)
+            ax.set_facecolor(CHART_FACE)
             wedges, texts, autotexts = ax.pie(
                 [low,med,high], labels=["Low Stock","Medium","Optimal"],
                 colors=["#DC2626","#D97706","#2D7A4F"], autopct="%1.0f%%",
                 textprops={"color":"#1C1B22","fontsize":9}, wedgeprops={"edgecolor":CHART_FACE,"linewidth":2},
             )
             for at in autotexts: at.set_color("white"); at.set_fontweight("bold")
-            plt.tight_layout(); st.pyplot(fig); plt.close(fig)
+            plt.tight_layout()
+            st.pyplot(fig, transparent=False, bbox_inches="tight", facecolor=CHART_FACE)
+            plt.close(fig)
 
     with col3:
         st.markdown("<div class='subsection-header'>💳 Revenue vs Waste</div>", unsafe_allow_html=True)
         if revenue_all > 0:
             fig, ax = plt.subplots(figsize=(8,5), facecolor=CHART_FACE)
-            fig.patch.set_facecolor(CHART_FACE)
             ax.bar(["Revenue","Waste"], [revenue_all, waste_cost], color=["#C85C8E","#F1948A"], width=0.5)
-            _style_axes(ax); ax.grid(True, axis="y", alpha=0.15, color="#C8A9BE")
-            plt.tight_layout(); st.pyplot(fig); plt.close(fig)
+            _style_axes(ax)
+            plt.tight_layout()
+            st.pyplot(fig, transparent=False, bbox_inches="tight", facecolor=CHART_FACE)
+            plt.close(fig)
 
     st.divider()
     st.markdown("<div class='subsection-header'>📈 Summary</div>", unsafe_allow_html=True)
@@ -1270,8 +1340,15 @@ def page_new_order():
     pcol_left, pcol_right = st.columns([1, 1])
 
     with pcol_left:
-        st.markdown("##### 📋 Paste from Meta")
-        st.caption("Paste the customer's filled order form from Messenger or Instagram DM.")
+        st.markdown("""
+<div style="background:white; border-radius:14px; border:1px solid #E8E3DC;
+box-shadow:0 4px 24px rgba(200,92,142,0.08); padding:1.5rem; margin-bottom:1rem;">
+<div style="font-family:'Playfair Display',Georgia,serif; font-size:1.1rem;
+font-weight:700; color:#1C1B22; margin-bottom:0.5rem;">📋 Paste from Meta</div>
+<div style="font-size:0.82rem; color:#6B7280; margin-bottom:1rem;">
+Paste the customer's filled order form from Messenger or Instagram DM.</div>
+</div>
+""", unsafe_allow_html=True)
         raw_paste = st.text_area(
             "Paste order form here",
             placeholder="Paste the full order form + order details here...",
@@ -1279,7 +1356,10 @@ def page_new_order():
             key="meta_paste_input",
             label_visibility="collapsed",
         )
-        if st.button("⚡ Auto-fill from Paste", key="parse_paste_btn", use_container_width=True):
+        st.markdown('<div class="auto-fill-btn-wrap">', unsafe_allow_html=True)
+        _parse_clicked = st.button("⚡ Auto-fill from Paste", key="parse_paste_btn", type="primary", use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+        if _parse_clicked:
             if raw_paste and raw_paste.strip():
                 result = parse_order_paste(raw_paste)
                 field_map = {
@@ -1440,7 +1520,14 @@ def page_new_order():
             msg_from = mc2.text_input("From:", value=_pv("card_from"), placeholder="e.g., Juan")
             msg_body = st.text_area("Message:", value=_pv("card_body"), placeholder="Happy Birthday!...")
 
-        st.markdown("##### 💐 Pricing & Payments")
+        st.markdown("""
+<div style="background:linear-gradient(135deg,#FCEEF5,#F8F0FF);
+border-radius:14px; border:1px solid rgba(200,92,142,0.2);
+box-shadow:0 4px 24px rgba(200,92,142,0.08); padding:1.5rem; margin-bottom:1rem;">
+<div style="font-family:'Playfair Display',Georgia,serif; font-size:1.1rem;
+font-weight:700; color:#1C1B22; margin-bottom:0.5rem;">💰 Pricing</div>
+</div>
+""", unsafe_allow_html=True)
         c1,c2 = st.columns(2)
         price   = c1.number_input("Flower Price (₱) *", min_value=0.0, step=50.0, value=st.session_state.get("form_price",0.0))
         raw_fee = c2.number_input("Delivery Fee (₱)",   min_value=0.0, step=25.0, value=st.session_state.get("form_delivery_fee",0.0))
@@ -1511,7 +1598,7 @@ def page_new_order():
 
         priority_rush = st.checkbox("🚀 Priority/Rush Order")
         notes = st.text_area("Special Instructions / Notes", value=_pv("notes"), placeholder="e.g., Add red ribbon")
-        submitted = st.form_submit_button("🌸 Log Order", use_container_width=True)
+        submitted = st.form_submit_button("🌸 Log Order", type="primary", use_container_width=True)
 
     if submitted:
         flower_items = st.session_state.get("new_flower_items",[])
@@ -1910,11 +1997,19 @@ def page_all_orders():
             balance_color = "#DC2626" if balance > 0 else "#2D7A4F"
             balance_line  = f"₱{balance:,.0f} due" if balance > 0 else "Paid in full"
             rush_html     = rush_badge_html() if is_rush else ""
+            card_bg = {
+                "Pending":     "rgba(254,249,231,0.4)",
+                "In Progress": "rgba(244,236,247,0.4)",
+                "Ready":       "rgba(234,250,241,0.4)",
+                "Delivered":   "rgba(220,252,231,0.3)",
+                "Cancelled":   "rgba(253,237,236,0.3)",
+            }.get(status, "white")
             card_header_html = (
                 f"<div style='"
-                f"background: white; border-radius: 12px; border: 1px solid #E8E3DC; "
+                f"background: {card_bg}; border-radius: 12px; border: 1px solid #E8E3DC; "
                 f"border-left: 4px solid {status_color}; "
-                f"box-shadow: 0 4px 24px rgba(200,92,142,0.08), 0 1px 4px rgba(0,0,0,0.04); "
+                f"box-shadow: 0 4px 24px rgba(200,92,142,0.10), 0 1px 4px rgba(0,0,0,0.06), "
+                f"inset 0 0 0 0.5px rgba(200,92,142,0.08); "
                 f"margin-bottom: 12px; padding: 16px 18px 14px; "
                 f"animation: fadeSlideUp 0.4s ease both; "
                 f"transition: all 0.22s cubic-bezier(0.4,0,0.2,1);"
@@ -1962,6 +2057,7 @@ def page_all_orders():
 
         with hc4:
             if status not in ("Delivered","Picked Up","Cancelled"):
+                st.markdown('<div class="action-btn-wrap">', unsafe_allow_html=True)
                 if st.button("✏️", key=f"edit_{order_code}", use_container_width=True):
                     st.session_state.edit_order_id    = o["id"]
                     st.session_state.form_price        = float(o.get("price",0))
@@ -1969,10 +2065,13 @@ def page_all_orders():
                     st.session_state.form_down_payment = float(o.get("down_payment_amount",0))
                     st.session_state.active_page       = "Edit Order"
                     st.rerun()
+                st.markdown('</div>', unsafe_allow_html=True)
 
         with hc5:
+            st.markdown('<div class="action-btn-wrap action-btn-wrap-delete">', unsafe_allow_html=True)
             if st.button("🗑", key=f"del_{order_code}", use_container_width=True):
                 db.delete_order(o["id"]); st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
 
         with card:
             # Expandable detail — assign-florist and cancel-order controls live here too,
