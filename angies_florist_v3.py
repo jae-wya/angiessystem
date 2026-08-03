@@ -23,6 +23,13 @@ import secrets as _secrets
 from order_parser import parse_order_paste, detect_order_type
 from waybill_generator import generate_waybill_html, generate_order_token
 from waybill_field_adapter import adapt_order_for_waybill
+from peak_features import (
+    render_slot_availability,
+    render_vday_banner,
+    check_vday_cutoff_warning,
+    page_vday_settings,
+    is_vday_mode_on,
+)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # PAGE CONFIG
@@ -617,7 +624,7 @@ def metric_card_html(label: str, value: str, accent: str, delta: str = "") -> st
 # ROLE-BASED PAGE ACCESS
 # ─────────────────────────────────────────────────────────────────────────────
 PAGE_ACCESS = {
-    "Super Admin":    {"Dashboard","New Order","All Orders","Edit Order","Florist Board","Rider Board","Schedule","Inventory","Waste Tracker","Staff Management","Reports","Customers","HR","Management KPI","Route Planner","Cash Count"},
+    "Super Admin":    {"Dashboard","New Order","All Orders","Edit Order","Florist Board","Rider Board","Schedule","Inventory","Waste Tracker","Staff Management","Reports","Customers","HR","Management KPI","Route Planner","Cash Count","V-Day Settings"},
     "Branch Manager": {"Dashboard","New Order","All Orders","Edit Order","Florist Board","Rider Board","Schedule","Inventory","Waste Tracker","Staff Management","Reports","Customers","Management KPI","Route Planner","Cash Count"},
     "Staff":          {"Dashboard","New Order","All Orders","Edit Order","Florist Board","Rider Board","Schedule","Inventory","Waste Tracker","Reports","Customers","Route Planner","Cash Count"},
     "Florist":        {"Dashboard","New Order","All Orders","Edit Order","Florist Board","Schedule"},
@@ -1120,6 +1127,8 @@ with st.sidebar:
         "📈 Reports":        "Reports",
         "👔 HR Module":      "HR",
     }
+    if CURRENT_ROLE == "Super Admin":
+        pages_all["🌹 V-Day Settings"] = "V-Day Settings"
     allowed = PAGE_ACCESS.get(CURRENT_ROLE, set())
     pages = {label: key for label, key in pages_all.items() if key in allowed}
 
@@ -1163,6 +1172,7 @@ with st.sidebar:
 # PAGE: DASHBOARD
 # ─────────────────────────────────────────────────────────────────────────────
 def page_dashboard():
+    render_vday_banner()
     st.markdown("<div class='section-header'>📊 Dashboard</div>", unsafe_allow_html=True)
     orders    = scope_by_branch(db.get_orders())
     inventory = scope_by_branch(db.get_inventory())
@@ -1584,6 +1594,15 @@ font-weight:700; color:#1C1B22; margin-bottom:0.5rem;">💰 Pricing</div>
         default_branch_idx = no_branch_options.index(CURRENT_BRANCH) if CURRENT_BRANCH in no_branch_options else 0
         chat_branch = c3.selectbox("Chat Branch *", no_branch_options, index=default_branch_idx)
         fulfillment_branch = st.selectbox("Fulfillment Branch *", no_branch_options, index=no_branch_options.index(chat_branch) if chat_branch in no_branch_options else 0)
+
+        # Slot availability check
+        _time_label = target_time.strftime("%I:%M %p")
+        render_slot_availability(target_date, _time_label, fulfillment_branch)
+
+        # V-Day cutoff warning
+        _vday_warn = check_vday_cutoff_warning(target_date)
+        if _vday_warn:
+            st.warning(_vday_warn)
 
         st.markdown("##### 🚚 Delivery or Pick-up?")
         order_type       = st.radio("Order Type *", ["Delivery","Pick-up"], horizontal=True)
@@ -4960,6 +4979,7 @@ elif page == "Waste Tracker":    page_waste_tracker()
 elif page == "Staff Management": page_staff_management()
 elif page == "Reports":          page_reports()
 elif page == "HR":               page_hr()
+elif page == "V-Day Settings":    page_vday_settings()
 
 st.divider()
 st.markdown("<div style='text-align:center; color:#C9A0B0; font-size:11px;'>🌸 Angie's Florist System v3.0 · Supabase Edition</div>", unsafe_allow_html=True)

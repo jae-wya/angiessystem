@@ -732,3 +732,41 @@ def adjust_inventory_manual(item_id: str, item_name: str, branch: str,
     log_inventory_change(item_name, branch, delta, qty_before, qty_after, reason, "", logged_by)
     direction = "Added" if delta > 0 else "Removed"
     return f"✅ {direction} {abs(delta)} pcs of **{item_name}** at {branch}. Stock: {qty_before} → {qty_after}"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SLOT CONFIGS (Valentine's Day peak-season capacity management)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _invalidate_slot_configs():
+    get_slot_configs.clear()
+
+
+@st.cache_data(ttl=CACHE_TTL)
+def get_slot_configs() -> list:
+    return _select("slot_configs")
+
+
+def save_slot_config(config: dict) -> dict:
+    result = _upsert("slot_configs", config)
+    _invalidate_slot_configs()
+    return result
+
+
+def delete_slot_config(config_id: str) -> bool:
+    _delete("slot_configs", config_id)
+    _invalidate_slot_configs()
+    return True
+
+
+def get_slot_usage(target_date: str, slot_label: str,
+                   branch: str = "All") -> int:
+    orders = get_orders()
+    return len([
+        o for o in orders
+        if str(o.get("target_date",""))[:10] == target_date
+        and o.get("target_time","") == slot_label
+        and o.get("status") not in ("Cancelled",)
+        and (branch == "All" or
+             o.get("fulfillment_branch", o.get("branch","")) == branch)
+    ])
