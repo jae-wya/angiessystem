@@ -1589,12 +1589,19 @@ font-weight:700; color:#1C1B22; margin-bottom:0.5rem;">💰 Pricing</div>
         order_type       = st.radio("Order Type *", ["Delivery","Pick-up"], horizontal=True)
         delivery_address = ""
         delivery_zone    = ""
+        landmark         = ""
         if order_type == "Delivery":
             delivery_address = st.text_input(_label("delivery_address", "Delivery Address *"), value=_pv("delivery_address"), placeholder="Full address")
             # Auto-select zone from parser result
             _parsed_zone = st.session_state.get("parsed_delivery_zone", "")
             _zone_idx = DELIVERY_ZONES.index(_parsed_zone) if _parsed_zone in DELIVERY_ZONES else 0
             delivery_zone = st.selectbox("Delivery Zone", DELIVERY_ZONES, index=_zone_idx)
+            landmark = st.text_input(
+                "Landmark (Optional)",
+                value=_pv("landmark"),
+                placeholder="e.g. Near SM City, beside Jollibee",
+                key="new_landmark"
+            )
 
         priority_rush = st.checkbox("🚀 Priority/Rush Order")
         notes = st.text_area("Special Instructions / Notes", value=_pv("notes"), placeholder="e.g., Add red ribbon")
@@ -1666,6 +1673,7 @@ font-weight:700; color:#1C1B22; margin-bottom:0.5rem;">💰 Pricing</div>
             "target_time": target_time.strftime("%I:%M %p"),
             "chat_branch": chat_branch, "fulfillment_branch": fulfillment_branch, "branch": fulfillment_branch,
             "order_type": order_type, "delivery_address": delivery_address, "delivery_zone": delivery_zone,
+            "landmark": landmark,
             "priority_rush": priority_rush,
             "assigned_florist": "", "assigned_rider": "",
             "payment_status": "Fully Paid" if total_balance == 0 else "Partially Paid",
@@ -1829,10 +1837,16 @@ def page_edit_order():
         order_type = st.radio("Order Type *", ["Delivery","Pick-up"], horizontal=True, index=ot_idx)
         delivery_address = ""
         delivery_zone    = order.get("delivery_zone","")
+        landmark         = ""
         if order_type == "Delivery":
             delivery_address = st.text_input("Delivery Address *", value=order.get("delivery_address",""))
             dz_idx = DELIVERY_ZONES.index(delivery_zone) if delivery_zone in DELIVERY_ZONES else 0
             delivery_zone = st.selectbox("Delivery Zone", DELIVERY_ZONES, index=dz_idx)
+            landmark = st.text_input(
+                "Landmark (Optional)",
+                value=order.get("landmark", ""),
+                key="edit_landmark"
+            )
 
         priority_rush = st.checkbox("🚀 Priority/Rush Order", value=bool(order.get("priority_rush",False)))
         notes = st.text_area("Special Instructions / Notes", value=order.get("notes",""))
@@ -1887,6 +1901,7 @@ def page_edit_order():
             "target_date": target_date.isoformat(), "target_time": target_time.strftime("%I:%M %p"),
             "chat_branch": chat_branch, "fulfillment_branch": fulfillment_branch, "branch": fulfillment_branch,
             "order_type": order_type, "delivery_address": delivery_address, "delivery_zone": delivery_zone,
+            "landmark": landmark,
             "priority_rush": priority_rush,
             "payment_status": "Fully Paid" if total_balance == 0 else "Partially Paid",
             "updated_at": datetime.now().isoformat(),
@@ -1920,6 +1935,111 @@ def page_all_orders():
     st.markdown("<div class='section-header'>📋 All Orders</div>", unsafe_allow_html=True)
     orders   = scope_by_branch(db.get_orders())
     florists = scope_by_branch(db.get_florists())
+
+    global_search = st.text_input(
+        "🔍 Quick Search (order code, name, or contact)",
+        placeholder="Search by order code, customer name, or 09XX number...",
+        key="ao_global_search"
+    )
+    if global_search:
+        q = global_search.strip().lower()
+        all_o = db.get_orders()
+        results = [o for o in all_o if
+            q in o.get("order_code","").lower() or
+            q in o.get("customer_name","").lower() or
+            q in (o.get("recipient_name","") or "").lower() or
+            q in o.get("customer_contact","").lower()
+        ]
+        if not results:
+            st.info(f"No orders found matching '{global_search}'")
+            return
+        st.success(f"Found {len(results)} order(s) matching '{global_search}'")
+        for o in results:
+            _render_all_orders_card(o, florists)
+        return
+
+    if CURRENT_ROLE == "Super Admin":
+        with st.expander("🛠️ Bulk Status Update (Super Admin)", expanded=False):
+
+            st.warning("⚠️ This will bulk-update order statuses. "
+                       "Only use for orders confirmed complete in real life.")
+
+            bc1, bc2, bc3 = st.columns(3)
+            bulk_date_from = bc1.date_input(
+                "From Date",
+                value=date.today() - timedelta(days=90),
+                key="bulk_from"
+            )
+            bulk_date_to = bc2.date_input(
+                "To Date",
+                value=date.today() - timedelta(days=1),
+                key="bulk_to"
+            )
+            bulk_statuses = bc3.multiselect(
+                "Current Status (to update FROM)",
+                ["Pending", "Confirmed", "In Progress", "Ready"],
+                default=["Pending", "Confirmed", "In Progress", "Ready"],
+                key="bulk_statuses"
+            )
+
+            # Preview affected orders
+            all_orders_bulk = db.get_orders()
+            affected = [
+                o for o in all_orders_bulk
+                if bulk_date_from.isoformat() <= str(o.get("target_date",""))[:10] <= bulk_date_to.isoformat()
+                and o.get("status") in (bulk_statuses or [])
+                and str(o.get("target_date",""))[:10] < date.today().isoformat()
+            ]
+
+            # Split by order type for auto-status assignment
+            deliveries = [o for o in affected if o.get("order_type") == "Delivery"]
+            pickups    = [o for o in affected if o.get("order_type") == "Pick-up"]
+
+            st.markdown(
+                f"**Preview:** {len(affected)} order(s) will be updated — "
+                f"{len(deliveries)} Deliveries → **Delivered**, "
+                f"{len(pickups)} Pick-ups → **Picked Up**"
+            )
+
+            if affected:
+                # Show first 10 as preview
+                preview_rows = [{
+                    "Order Code": o.get("order_code",""),
+                    "Customer": o.get("customer_name",""),
+                    "Date": str(o.get("target_date",""))[:10],
+                    "Type": o.get("order_type",""),
+                    "Current Status": o.get("status",""),
+                    "→ New Status": "Delivered" if o.get("order_type") == "Delivery" else "Picked Up"
+                } for o in affected[:10]]
+                st.dataframe(pd.DataFrame(preview_rows), use_container_width=True, hide_index=True)
+                if len(affected) > 10:
+                    st.caption(f"... and {len(affected) - 10} more orders.")
+
+                # Confirm checkbox + button
+                bulk_confirm = st.checkbox(
+                    f"✅ I confirm — mark all {len(affected)} order(s) as complete",
+                    key="bulk_confirm_check"
+                )
+                if st.button("🚀 Execute Bulk Update",
+                             key="bulk_execute",
+                             disabled=not bulk_confirm,
+                             use_container_width=True):
+                    now = datetime.now().isoformat()
+                    success = 0
+                    for o in affected:
+                        new_status = "Delivered" if o.get("order_type") == "Delivery" else "Picked Up"
+                        try:
+                            db.update_order(o["id"], {
+                                "status": new_status,
+                                "updated_at": now,
+                                "delivered_at": now if new_status == "Delivered" else None,
+                            })
+                            success += 1
+                        except Exception:
+                            pass
+                    db._invalidate_orders()
+                    st.success(f"✅ {success} order(s) marked as complete.")
+                    st.rerun()
 
     if not orders:
         st.info("No orders yet. Head to **➕ New Order** to get started.")
@@ -1984,6 +2104,10 @@ def page_all_orders():
     page_orders = filtered[start_idx:start_idx + PAGE_SIZE]
 
     for o in page_orders:
+        _render_all_orders_card(o, florists)
+
+
+def _render_all_orders_card(o, florists):
         status       = o["status"]
         order_type   = o["order_type"]
         order_code   = o.get("order_code", o.get("id","N/A"))
