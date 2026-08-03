@@ -770,3 +770,33 @@ def get_slot_usage(target_date: str, slot_label: str,
         and (branch == "All" or
              o.get("fulfillment_branch", o.get("branch","")) == branch)
     ])
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# INTER-BRANCH TRANSFERS
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _invalidate_transfers():
+    get_transfers.clear()
+
+
+@st.cache_data(ttl=CACHE_TTL)
+def get_transfers() -> list:
+    return _select("branch_transfers")
+
+
+def save_transfer(transfer: dict) -> dict:
+    result = _insert("branch_transfers", transfer)
+    _invalidate_transfers()
+    _invalidate_inventory()
+    return result
+
+
+def confirm_transfer(transfer_id: str, confirmed_by: str) -> bool:
+    _update("branch_transfers", transfer_id, {
+        "status": "Received",
+        "confirmed_by": confirmed_by,
+        "confirmed_at": datetime.now().isoformat(),
+    })
+    _invalidate_transfers()
+    return True

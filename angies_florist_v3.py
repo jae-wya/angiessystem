@@ -1168,6 +1168,16 @@ with st.sidebar:
     st.markdown(f"<div style='font-size:11px; color:#C9A0B0; text-align:center; margin-top:8px;'>{datetime.now().strftime('%A, %B %d %Y')}</div>", unsafe_allow_html=True)
 
 
+def mark_cod_collected(order_id: str, order_code: str):
+    db.update_order(order_id, {
+        "total_balance": 0,
+        "payment_status": "Fully Paid",
+        "updated_at": datetime.now().isoformat(),
+    })
+    st.success(f"✅ COD collected for {order_code}")
+    st.rerun()
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # PAGE: DASHBOARD
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1482,6 +1492,9 @@ Paste the customer's filled order form from Messenger or Instagram DM.</div>
 
     st.markdown("##### 💰 Price Inputs (live balance preview)")
     lp1,lp2,lp3 = st.columns(3)
+    lp1.caption("💐 Flower Price (₱)")
+    lp2.caption("🚚 Delivery Fee (₱)")
+    lp3.caption("💳 Down Payment (₱)")
     st.session_state.form_price        = lp1.number_input("Flower Price preview",   min_value=0.0, step=50.0,  value=st.session_state.get("form_price",0.0),        key="new_price_preview",   label_visibility="collapsed")
     st.session_state.form_delivery_fee = lp2.number_input("Delivery Fee preview",   min_value=0.0, step=25.0,  value=st.session_state.get("form_delivery_fee",0.0),  key="new_fee_preview",     label_visibility="collapsed")
     st.session_state.form_down_payment = lp3.number_input("Down Payment preview",   min_value=0.0, step=50.0,  value=st.session_state.get("form_down_payment",0.0),  key="new_dp_preview",      label_visibility="collapsed")
@@ -1491,7 +1504,7 @@ Paste the customer's filled order form from Messenger or Instagram DM.</div>
     pb1.markdown(f"""<div class="balance-box"><div class="label">Total Price</div><div class="amount">₱{live_total:,.2f}</div></div>""", unsafe_allow_html=True)
     pb2.markdown(f"""<div class="balance-box"><div class="label">Down Payment</div><div class="amount">₱{st.session_state.form_down_payment:,.2f}</div></div>""", unsafe_allow_html=True)
     pb3.markdown(f"""<div class="balance-box"><div class="label">Balance Due</div><div class="amount" style="color:{'#2D7A4F' if live_balance==0 else '#C85C8E'};">{'✅ FULLY PAID' if live_balance==0 else f'₱{live_balance:,.2f}'}</div></div>""", unsafe_allow_html=True)
-    st.info("ℹ️ Adjust the three fields above to see a live balance preview, then fill the full form below.")
+    st.info("💡 Fill Flower Price + Delivery Fee + Down Payment above to preview the balance before filling the order form below.")
     st.divider()
 
     flower_items = render_flower_builder("new")
@@ -2314,6 +2327,24 @@ def _render_all_orders_card(o, florists):
 **Logged by:** {o.get('encoded_by','—') or '—'} · {o.get('encoded_at','—') or '—'}
                 """)
 
+                if (o.get("status") in ("Delivered", "Picked Up")
+                    and o.get("balance_payment_method") == "COD"
+                    and float(o.get("total_balance", 0)) > 0):
+
+                    st.markdown(
+                        f"<div style='background:#FEF9E7; border:1.5px solid #D97706; "
+                        f"border-radius:8px; padding:10px 14px; margin:8px 0;'>"
+                        f"💰 <strong>COD Outstanding: ₱{float(o.get('total_balance',0)):,.2f}</strong> "
+                        f"— mark as collected when rider hands over cash.</div>",
+                        unsafe_allow_html=True,
+                    )
+                    if st.button(
+                        f"✅ Mark COD Collected — ₱{float(o.get('total_balance',0)):,.2f}",
+                        key=f"cod_collect_ao_{o.get('order_code', o.get('id',''))}",
+                        use_container_width=True,
+                    ):
+                        mark_cod_collected(o["id"], o.get("order_code",""))
+
                 if any([o.get("message_card_to"), o.get("message_card_body"), o.get("message_card_from")]):
                     st.markdown("**💌 Message Card:**")
                     st.info(f"**To:** {o.get('message_card_to','')}\n\n{o.get('message_card_body','')}\n\n**From:** {o.get('message_card_from','')}")
@@ -2988,6 +3019,25 @@ def page_rider_board():
                     st.caption("✅ Delivery confirmed")
                 else:
                     st.caption("No POD photo on file.")
+
+                if (o.get("balance_payment_method") == "COD"
+                    and float(o.get("total_balance", 0)) > 0):
+
+                    col_cod1, col_cod2 = st.columns([2, 1])
+                    col_cod1.markdown(
+                        f"<span style='background:#FEF9E7; border:1.5px solid #D97706; "
+                        f"color:#92400E; font-weight:700; padding:4px 10px; "
+                        f"border-radius:6px; font-size:0.85rem;'>"
+                        f"💰 COD: ₱{float(o.get('total_balance',0)):,.2f} outstanding</span>",
+                        unsafe_allow_html=True,
+                    )
+                    if col_cod2.button(
+                        "✅ Collected",
+                        key=f"cod_collect_rb_{o.get('order_code', o.get('id',''))}",
+                        use_container_width=True,
+                    ):
+                        mark_cod_collected(o["id"], o.get("order_code",""))
+
                 st.divider()
 
 
@@ -3172,16 +3222,81 @@ def _inventory_add_modal():
             st.success(f"✅ **{name}** added to {branch}!"); st.rerun()
 
 
+def generate_count_sheet_html(branch: str, shift: str,
+                               count_date, items: list) -> str:
+    rows = ""
+    for cat in INVENTORY_CATEGORIES:
+        cat_items = [i for i in items if i.get("category") == cat]
+        if not cat_items:
+            continue
+        rows += f"<tr><td colspan='3' style='background:#F0D9E0; font-weight:700; padding:8px;'>{cat}</td></tr>"
+        for item in sorted(cat_items, key=lambda x: x.get("name","")):
+            rows += f"""<tr>
+                <td style='padding:8px 12px;'>{item['name']}</td>
+                <td style='padding:8px 12px; color:#888;'>{item.get('unit','pcs')}</td>
+                <td style='padding:8px 12px; border:1.5px solid #C85C8E; min-width:80px;'>&nbsp;</td>
+            </tr>"""
+
+    return f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Stock Count Sheet — {branch}</title>
+<style>
+  body {{ font-family: Arial, sans-serif; padding: 24px; color: #1a1a1a; }}
+  h1 {{ font-size: 20px; color: #C85C8E; margin-bottom: 4px; }}
+  .meta {{ font-size: 13px; color: #666; margin-bottom: 20px; }}
+  table {{ width: 100%; border-collapse: collapse; }}
+  td {{ border-bottom: 1px solid #eee; }}
+  .count-col {{ text-align: center; font-size: 12px; color: #aaa; }}
+  .footer {{ margin-top: 30px; font-size: 12px; color: #aaa;
+             border-top: 1px solid #eee; padding-top: 12px; }}
+  @media print {{
+    @page {{ size: A4; margin: 15mm; }}
+    body {{ padding: 0; }}
+  }}
+</style>
+</head>
+<body>
+<h1>🌸 Angie's Florist — Stock Count Sheet</h1>
+<div class="meta">
+  <strong>Branch:</strong> {branch} &nbsp;|&nbsp;
+  <strong>Shift:</strong> {shift} &nbsp;|&nbsp;
+  <strong>Date:</strong> {count_date} &nbsp;|&nbsp;
+  <strong>Counted by:</strong> ________________
+</div>
+<table>
+  <thead>
+    <tr style='background:#FDF6F0;'>
+      <th style='text-align:left; padding:8px 12px;'>Item</th>
+      <th style='text-align:left; padding:8px 12px;'>Unit</th>
+      <th style='text-align:center; padding:8px 12px; min-width:100px;'>Count</th>
+    </tr>
+  </thead>
+  <tbody>
+    {rows}
+  </tbody>
+</table>
+<div class="footer">
+  Encoded by: ________________ &nbsp;|&nbsp;
+  Time: ________________ &nbsp;|&nbsp;
+  Notes: ________________________________
+</div>
+</body>
+</html>"""
+
+
 def page_inventory():
     st.markdown("<div class='section-header'>📦 Inventory Management</div>", unsafe_allow_html=True)
     inventory = scope_by_branch(db.get_inventory())
 
-    tab_inv, tab_adjust, tab_count, tab_log, tab_backfill = st.tabs([
+    tab_inv, tab_adjust, tab_count, tab_log, tab_backfill, tab_transfer = st.tabs([
         "📦 Stock List",
         "🔧 Manual Adjustment",
         "📋 Stock Count Entry",
         "📜 Audit Log",
         "🔁 Backfill",
+        "🔄 Inter-Branch Transfer",
     ])
 
     # ── TAB 1: STOCK LIST ─────────────────────────────────────────────────
@@ -3241,13 +3356,16 @@ def page_inventory():
                     ic2.write(item.get("unit", ""))
                     ic3.write(str(qty))
                     ic4.write(status)
+                    ic5.markdown(f"<div style='text-align:center; font-weight:700; "
+                                 f"font-size:1.1rem; color:#1C1B22;'>{qty}</div>",
+                                 unsafe_allow_html=True)
                     with ic5:
-                        new_qty = st.number_input(
-                            "qty", value=qty, min_value=min(0, qty),
-                            label_visibility="collapsed", key=f"iq_{item['id']}"
-                        )
-                        if new_qty != qty:
-                            db.update_inventory_item(item["id"], {"quantity": new_qty})
+                        if st.button("✏️", key=f"iq_{item['id']}",
+                                     help="Adjust stock via Manual Adjustment tab",
+                                     use_container_width=True):
+                            st.session_state["adj_prefill_item"] = item["name"]
+                            st.session_state["adj_prefill_branch"] = item.get("branch","")
+                            st.session_state["active_inv_tab"] = 1
                             st.rerun()
                     with ic6:
                         if st.button("🗑", key=f"di_{item['id']}", use_container_width=True):
@@ -3330,6 +3448,23 @@ def page_inventory():
         sc_date   = sc3.date_input("Date *", value=date.today(), key="sc_date")
 
         branch_inv = [i for i in inventory_for_count if i.get("branch") == sc_branch]
+
+        import streamlit.components.v1 as components
+        if st.button("🖨️ Print Blank Count Sheet", key="print_count_sheet"):
+            html = generate_count_sheet_html(sc_branch, sc_shift, sc_date, branch_inv)
+            import base64 as b64lib
+            b64 = b64lib.b64encode(html.encode("utf-8")).decode("utf-8")
+            js = ("<script>(function(){"
+                  "var b=atob('" + b64 + "');"
+                  "var by=new Uint8Array(b.length);"
+                  "for(var i=0;i<b.length;i++){by[i]=b.charCodeAt(i);}"
+                  "var bl=new Blob([by],{type:'text/html;charset=utf-8'});"
+                  "var u=URL.createObjectURL(bl);"
+                  "var w=window.open(u,'_blank');"
+                  "if(!w){alert('Pop-up blocked — allow pop-ups for this site.');}"
+                  "})();</script>")
+            components.html(js, height=0, scrolling=False)
+
         if not branch_inv:
             st.warning(f"No inventory items found for {sc_branch}. Add items first.")
         else:
@@ -3382,8 +3517,35 @@ def page_inventory():
                         f"{sc_shift} stock count — counted: {counted}, variance: {variance:+d}",
                         "", CURRENT_USER.get("name", "")
                     )
+
+                    # Apply correction to inventory if variance != 0
+                    if variance != 0:
+                        db.update_inventory_item(item_id, {"quantity": counted})
+                        db.log_inventory_change(
+                            item["name"], sc_branch,
+                            variance, sys_qty, counted,
+                            f"{sc_shift} stock count correction (counted: {counted}, "
+                            f"system was: {sys_qty}, variance: {variance:+d})",
+                            "", CURRENT_USER.get("name", "")
+                        )
                     saved += 1
                 st.success(f"✅ {sc_shift} count saved for {saved} items at {sc_branch}.")
+
+                variances = [(data["item"]["name"], data["counted"] - int(data["item"].get("quantity",0)))
+                             for data in count_data.values()
+                             if data["counted"] != int(data["item"].get("quantity",0))]
+                if variances:
+                    st.markdown("**📊 Corrections Applied:**")
+                    for name, var in variances:
+                        color = "#DC2626" if var < 0 else "#2D7A4F"
+                        st.markdown(
+                            f"<span style='color:{color}; font-weight:600;'>"
+                            f"{name}: {var:+d} pcs</span>",
+                            unsafe_allow_html=True,
+                        )
+                else:
+                    st.info("✅ No variances — system quantities matched physical count.")
+
                 st.rerun()
 
             # Show recent counts
@@ -3532,6 +3694,230 @@ def page_inventory():
                                     for w in total_warnings: st.warning(w)
                                 st.session_state["bf_preview_ready"] = False
                                 st.rerun()
+
+    # ── TAB 6: INTER-BRANCH TRANSFER ──────────────────────────────────────
+    with tab_transfer:
+        st.markdown("#### 🔄 Inter-Branch Transfer")
+        st.caption("Transfer stock between branches. Sending branch is deducted immediately. "
+                   "Receiving branch is credited when they confirm receipt.")
+
+        try:
+            _transfer_probe = db.get_transfers()
+            _transfer_table_ok = True
+        except Exception as _te:
+            _transfer_table_ok = False
+            st.error(
+                "⚠️ The **branch_transfers** table doesn't exist in Supabase yet. "
+                "Ask a Super Admin to create it before using Inter-Branch Transfer.\n\n"
+                f"Details: {_te}"
+            )
+
+        if _transfer_table_ok:
+            ttab_send, ttab_pending, ttab_history = st.tabs(
+                ["📤 Send Transfer", "📬 Pending Transfers", "📋 History"]
+            )
+
+            with ttab_send:
+                transfer_branch_opts = BRANCHES[:3]  # Physical branches only
+
+                with st.form("transfer_form", clear_on_submit=True):
+                    tf1, tf2 = st.columns(2)
+                    from_branch = tf1.selectbox(
+                        "From Branch *", transfer_branch_opts, key="tf_from"
+                    )
+                    to_branch = tf2.selectbox(
+                        "To Branch *",
+                        [b for b in transfer_branch_opts if b != from_branch],
+                        key="tf_to"
+                    )
+
+                    from_items = [i for i in db.get_inventory()
+                                 if i.get("branch") == from_branch
+                                 and int(i.get("quantity", 0)) > 0]
+
+                    selected_item = None
+                    avail = 0
+                    if not from_items:
+                        st.warning(f"No stock available at {from_branch}.")
+                        st.form_submit_button("Send Transfer", disabled=True)
+                    else:
+                        item_names = [i["name"] for i in from_items]
+                        tf3, tf4 = st.columns(2)
+                        transfer_item = tf3.selectbox("Item *", item_names, key="tf_item")
+                        transfer_qty  = tf4.number_input(
+                            "Quantity *", min_value=1, value=1, key="tf_qty"
+                        )
+
+                        selected_item = next(
+                            (i for i in from_items if i["name"] == transfer_item), None
+                        )
+                        if selected_item:
+                            avail = int(selected_item.get("quantity", 0))
+                            if transfer_qty > avail:
+                                st.warning(f"⚠️ Only {avail} {selected_item.get('unit','pcs')} available.")
+
+                        transfer_notes = st.text_input(
+                            "Notes (optional)",
+                            placeholder="e.g. Rider: Kuya Mark, Vehicle: Motorcycle"
+                        )
+                        transfer_rider = st.text_input(
+                            "Rider/Carrier (optional)",
+                            placeholder="Who is carrying the transfer?"
+                        )
+
+                        submit_transfer = st.form_submit_button(
+                            "📤 Send Transfer", use_container_width=True, type="primary"
+                        )
+
+                if from_items and selected_item and submit_transfer:
+                    if from_branch == to_branch:
+                        st.error("❌ From and To branch cannot be the same.")
+                    elif transfer_qty > avail:
+                        st.error(f"❌ Insufficient stock. Only {avail} available.")
+                    else:
+                        transfer_id = str(uuid.uuid4())[:8]
+
+                        # Deduct from sending branch immediately
+                        new_qty = avail - transfer_qty
+                        db.update_inventory_item(selected_item["id"], {"quantity": new_qty})
+                        db.log_inventory_change(
+                            transfer_item, from_branch,
+                            -transfer_qty, avail, new_qty,
+                            f"Transfer to {to_branch} (Transfer #{transfer_id})",
+                            "", CURRENT_USER.get("name","")
+                        )
+
+                        # Save transfer record as In Transit
+                        db.save_transfer({
+                            "id": transfer_id,
+                            "item_name": transfer_item,
+                            "from_branch": from_branch,
+                            "to_branch": to_branch,
+                            "quantity": transfer_qty,
+                            "unit": selected_item.get("unit", "pcs"),
+                            "status": "In Transit",
+                            "rider": transfer_rider,
+                            "notes": transfer_notes,
+                            "sent_by": CURRENT_USER.get("name",""),
+                            "sent_at": datetime.now().isoformat(),
+                            "confirmed_by": "",
+                            "confirmed_at": "",
+                            "created_at": datetime.now().isoformat(),
+                        })
+
+                        st.success(
+                            f"✅ Transfer #{transfer_id} sent — "
+                            f"{transfer_qty} {selected_item.get('unit','pcs')} of "
+                            f"**{transfer_item}** from **{from_branch}** to **{to_branch}**. "
+                            f"Status: 🚚 In Transit"
+                        )
+                        st.rerun()
+
+            with ttab_pending:
+                st.markdown("##### 📬 Transfers Awaiting Confirmation")
+                st.caption("When stock arrives, click Confirm Receipt to credit the receiving branch.")
+
+                transfers = db.get_transfers()
+                pending = [t for t in transfers
+                          if t.get("status") == "In Transit"
+                          and (CURRENT_ROLE == "Super Admin"
+                               or t.get("to_branch") == CURRENT_BRANCH)]
+
+                if not pending:
+                    st.info("No pending transfers.")
+                else:
+                    for t in sorted(pending, key=lambda x: x.get("sent_at",""), reverse=True):
+                        p1, p2 = st.columns([3, 1])
+                        with p1:
+                            st.markdown(
+                                f"**Transfer #{t['id']}** — "
+                                f"{t.get('quantity',0)} {t.get('unit','pcs')} of "
+                                f"**{t.get('item_name','')}**  \n"
+                                f"📤 From: **{t.get('from_branch','')}** → "
+                                f"📥 To: **{t.get('to_branch','')}**  \n"
+                                f"🚚 Rider: {t.get('rider','—')} · "
+                                f"Sent by: {t.get('sent_by','—')} · "
+                                f"At: {str(t.get('sent_at',''))[:16]}"
+                            )
+                        with p2:
+                            if st.button(
+                                "✅ Confirm Receipt",
+                                key=f"confirm_transfer_{t['id']}",
+                                use_container_width=True,
+                                type="primary",
+                            ):
+                                # Credit receiving branch
+                                recv_items = db.get_inventory()
+                                recv_match = next(
+                                    (i for i in recv_items
+                                     if i.get("name","").strip().lower() == t.get("item_name","").strip().lower()
+                                     and i.get("branch") == t.get("to_branch")),
+                                    None
+                                )
+                                qty_received = int(t.get("quantity", 0))
+
+                                if recv_match:
+                                    old_qty = int(recv_match.get("quantity", 0))
+                                    new_qty = old_qty + qty_received
+                                    db.update_inventory_item(recv_match["id"], {"quantity": new_qty})
+                                    db.log_inventory_change(
+                                        t.get("item_name",""), t.get("to_branch",""),
+                                        qty_received, old_qty, new_qty,
+                                        f"Transfer received from {t.get('from_branch','')} "
+                                        f"(Transfer #{t['id']})",
+                                        "", CURRENT_USER.get("name","")
+                                    )
+                                else:
+                                    # Auto-create item at receiving branch
+                                    db.save_inventory_item({
+                                        "id": str(uuid.uuid4())[:8],
+                                        "name": t.get("item_name",""),
+                                        "category": "🌹 Flowers",
+                                        "branch": t.get("to_branch",""),
+                                        "quantity": qty_received,
+                                        "unit": t.get("unit","pcs"),
+                                        "unit_cost": 0.0,
+                                        "reorder_point": 10,
+                                        "notes": f"Auto-created from transfer #{t['id']}",
+                                        "created_at": datetime.now().isoformat(),
+                                    })
+                                    db.log_inventory_change(
+                                        t.get("item_name",""), t.get("to_branch",""),
+                                        qty_received, 0, qty_received,
+                                        f"Transfer received from {t.get('from_branch','')} "
+                                        f"(Transfer #{t['id']}, auto-created)",
+                                        "", CURRENT_USER.get("name","")
+                                    )
+
+                                db.confirm_transfer(t["id"], CURRENT_USER.get("name",""))
+                                st.success(
+                                    f"✅ Receipt confirmed — {qty_received} {t.get('unit','pcs')} "
+                                    f"of **{t.get('item_name','')}** added to **{t.get('to_branch','')}**."
+                                )
+                                st.rerun()
+                        st.divider()
+
+            with ttab_history:
+                st.markdown("##### 📋 Transfer History")
+                transfers = db.get_transfers()
+                if not transfers:
+                    st.info("No transfers yet.")
+                else:
+                    rows = [{
+                        "ID": t.get("id",""),
+                        "Item": t.get("item_name",""),
+                        "Qty": f"{t.get('quantity',0)} {t.get('unit','pcs')}",
+                        "From": t.get("from_branch",""),
+                        "To": t.get("to_branch",""),
+                        "Status": t.get("status",""),
+                        "Rider": t.get("rider","—"),
+                        "Sent By": t.get("sent_by",""),
+                        "Sent At": str(t.get("sent_at",""))[:16],
+                        "Confirmed By": t.get("confirmed_by","—"),
+                    } for t in sorted(transfers,
+                                     key=lambda x: x.get("sent_at",""),
+                                     reverse=True)]
+                    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
