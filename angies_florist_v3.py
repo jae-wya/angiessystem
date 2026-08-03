@@ -2169,6 +2169,16 @@ def _render_all_orders_card(o, florists):
                 "Delivered":   "rgba(220,252,231,0.3)",
                 "Cancelled":   "rgba(253,237,236,0.3)",
             }.get(status, "white")
+            failure_note = ""
+            if o.get("status") == "Failed Delivery":
+                _fd_attempts = int(o.get("delivery_attempts", 0))
+                failure_note = (
+                    f"<div style='background:#FDEDEC; border-left:3px solid #DC2626; "
+                    f"padding:4px 10px; margin-top:4px; border-radius:4px; "
+                    f"font-size:0.78rem; color:#991B1B;'>"
+                    f"❌ Failed delivery — {_fd_attempts} attempt(s) · "
+                    f"Expand to schedule redelivery</div>"
+                )
             card_header_html = (
                 f"<div style='"
                 f"background: {card_bg}; border-radius: 12px; border: 1px solid #E8E3DC; "
@@ -2189,6 +2199,7 @@ def _render_all_orders_card(o, florists):
                 f"📅 {str(o.get('target_date',''))[:10]} {o.get('target_time','')} &nbsp;·&nbsp; "
                 f"🏪 {o.get('fulfillment_branch',o.get('branch',''))}"
                 f"</div>"
+                f"{failure_note}"
                 f"</div>"
                 f"<div style='text-align:right; white-space:nowrap;'>"
                 f"{status_badge_html(status)}"
@@ -2400,6 +2411,88 @@ def _render_all_orders_card(o, florists):
                     )
                     components.html(_wb_js, height=0, scrolling=False)
                     st.session_state[_ao_wb_key] = False
+
+                if o.get("status") == "Failed Delivery":
+                    st.divider()
+                    st.markdown("##### 🔄 Schedule Redelivery")
+
+                    rd1, rd2 = st.columns(2)
+                    new_date = rd1.date_input(
+                        "New Delivery Date *",
+                        value=date.today(),
+                        min_value=date.today(),
+                        key=f"rd_date_{order_code}",
+                    )
+                    new_time = rd2.time_input(
+                        "New Delivery Time *",
+                        value=datetime.strptime("10:00", "%H:%M").time(),
+                        key=f"rd_time_{order_code}",
+                    )
+
+                    rd3, rd4 = st.columns(2)
+                    redeliv_fee = rd3.number_input(
+                        "Additional Redelivery Fee (₱)",
+                        min_value=0.0, step=25.0, value=0.0,
+                        key=f"rd_fee_{order_code}",
+                    )
+                    redeliv_rider = rd4.selectbox(
+                        "Assign Rider",
+                        ["— keep current —"] + [r["name"] for r in db.get_riders()],
+                        key=f"rd_rider_{order_code}",
+                    )
+
+                    redeliv_notes = st.text_input(
+                        "Redelivery Notes",
+                        placeholder="e.g. Customer confirmed 2PM slot, will be home",
+                        key=f"rd_notes_{order_code}",
+                    )
+
+                    if st.button(
+                        "🚀 Schedule Redelivery → Mark Ready",
+                        key=f"rd_submit_{order_code}",
+                        type="primary",
+                        use_container_width=True,
+                    ):
+                        # Build update dict
+                        attempts = int(o.get("delivery_attempts", 0)) + 1
+                        old_notes = o.get("notes", "") or ""
+                        fail_reason = o.get("cancellation_reason", "") or o.get("delivery_failure_reason", "")
+
+                        new_notes = old_notes
+                        new_notes += (f"\n[Attempt {attempts} failed — {datetime.now().strftime('%b %d %Y')}]"
+                                     f"{' Reason: ' + fail_reason if fail_reason else ''}")
+                        if redeliv_notes:
+                            new_notes += f"\n[Redelivery scheduled: {redeliv_notes}]"
+
+                        updates = {
+                            "status": "Ready",
+                            "target_date": new_date.isoformat(),
+                            "target_time": new_time.strftime("%I:%M %p"),
+                            "delivery_attempts": attempts,
+                            "notes": new_notes.strip(),
+                            "updated_at": datetime.now().isoformat(),
+                        }
+
+                        # Add redelivery fee to total if specified
+                        if redeliv_fee > 0:
+                            old_total = float(o.get("total_price", 0))
+                            old_balance = float(o.get("total_balance", 0))
+                            updates["total_price"]   = old_total + redeliv_fee
+                            updates["total_balance"] = old_balance + redeliv_fee
+                            updates["delivery_fee"]  = float(o.get("delivery_fee", 0)) + redeliv_fee
+
+                        # Update rider if specified
+                        if redeliv_rider != "— keep current —":
+                            updates["assigned_rider"] = redeliv_rider
+
+                        db.update_order(o["id"], updates)
+                        st.success(
+                            f"✅ Redelivery scheduled for **{new_date}** at "
+                            f"**{new_time.strftime('%I:%M %p')}**. "
+                            f"Order is now **Ready** for rider pickup."
+                            + (f" Redelivery fee of ₱{redeliv_fee:,.2f} added." if redeliv_fee > 0 else "")
+                        )
+                        st.rerun()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2907,6 +3000,16 @@ def page_rider_board():
         surprise_note = "🤫 **SURPRISE — do NOT mention sender**" if o.get("is_surprise") else ""
         banner_color  = "#DC2626" if balance>0 and balance_method=="COD" else "#D97706" if balance>0 else "#2D7A4F"
         payment_banner= f"⚠️ COLLECT <span class='cod-badge' style=\"animation: heartbeat 2s ease-in-out infinite;\">₱{balance:,.2f} COD</span>" if balance>0 and balance_method=="COD" else f"⚠️ **BALANCE ₱{balance:,.2f} via {balance_method}**" if balance>0 else "✅ **FULLY PAID — Nothing to collect**"
+
+        if o.get("status") == "Failed Delivery":
+            st.markdown(
+                "<div style='background:#FDEDEC; border-left:4px solid #DC2626; "
+                "border-radius:6px; padding:6px 12px; margin-bottom:6px; "
+                "font-size:0.82rem; color:#991B1B; font-weight:600;'>"
+                f"❌ Failed Delivery — Attempt #{int(o.get('delivery_attempts',0))} · "
+                "Schedule redelivery in All Orders</div>",
+                unsafe_allow_html=True,
+            )
 
         with st.expander(f"📦 {order_code} — {o['customer_name']} | Rider: {rider_name or '⏳ Unassigned'}"):
             if not rider_name:
