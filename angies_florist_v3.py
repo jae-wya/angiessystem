@@ -918,6 +918,65 @@ def scope_by_branch(items: list, field: str = "branch") -> list:
 # HELPERS
 # ─────────────────────────────────────────────────────────────────────────────
 
+def check_inventory_for_order(flower_items: list,
+                               branch: str) -> list:
+    if not flower_items or not branch:
+        return []
+    inventory = db.get_inventory()
+    warnings_list = []
+
+    for fi in flower_items:
+        flower_name = fi.get("flower","").strip()
+        qty_needed  = int(fi.get("qty", 1))
+        colors      = [c for c in fi.get("colors",[])
+                       if c and c.lower() != "any"]
+        if not flower_name:
+            continue
+
+        names_to_check = []
+        if colors:
+            for c in colors:
+                names_to_check.append(f"{c.upper()} {flower_name.upper()}")
+        else:
+            names_to_check.append(flower_name.upper())
+
+        for item_name in names_to_check:
+            match = next((i for i in inventory
+                if i.get("name","").strip().upper() == item_name
+                and i.get("branch","") == branch), None)
+
+            if match is None:
+                # Try base name
+                match = next((i for i in inventory
+                    if i.get("name","").strip().upper() == flower_name.upper()
+                    and i.get("branch","") == branch), None)
+
+            if match is None:
+                warnings_list.append({
+                    "level": "info",
+                    "msg": f"ℹ️ **{item_name}** not in inventory at {branch} — will be auto-created on save."
+                })
+            else:
+                available = int(match.get("quantity", 0))
+                if available <= 0:
+                    warnings_list.append({
+                        "level": "error",
+                        "msg": f"🔴 **{item_name}** is OUT OF STOCK at {branch} (0 available, need {qty_needed})."
+                    })
+                elif available < qty_needed:
+                    warnings_list.append({
+                        "level": "error",
+                        "msg": f"🔴 **{item_name}** — only {available} available at {branch}, need {qty_needed}."
+                    })
+                elif available <= int(match.get("reorder_point", 10)):
+                    warnings_list.append({
+                        "level": "warning",
+                        "msg": f"🟡 **{item_name}** is LOW at {branch} ({available} available, need {qty_needed})."
+                    })
+
+    return warnings_list
+
+
 def gen_order_code(branch: str) -> str:
     import time as _time
     date_str = datetime.now().strftime("%Y-%m-%d")
@@ -1524,6 +1583,24 @@ Paste the customer's filled order form from Messenger or Instagram DM.</div>
             st.warning(_vday_warn)
     # ── END SLOT AVAILABILITY CHECK ──────────────────────────
 
+    # ── INVENTORY PRE-CHECK ─────────────────────────────────
+    if flower_items and st.session_state.get("_so_branch_preview"):
+        _branch_for_check = st.session_state.get(
+            "_so_branch_preview",
+            CURRENT_BRANCH if CURRENT_BRANCH != "All" else ""
+        )
+        if _branch_for_check and _branch_for_check not in ("All", "TikTok", "WhatsApp"):
+            _inv_warnings = check_inventory_for_order(flower_items, _branch_for_check)
+            if _inv_warnings:
+                for w in _inv_warnings:
+                    if w["level"] == "error":
+                        st.error(w["msg"])
+                    elif w["level"] == "warning":
+                        st.warning(w["msg"])
+                    else:
+                        st.info(w["msg"])
+    # ── END INVENTORY PRE-CHECK ─────────────────────────────
+
     with st.form("new_order_form", clear_on_submit=True):
         st.markdown("##### 👤 Customer Information")
         c1,c2 = st.columns(2)
@@ -1668,6 +1745,7 @@ font-weight:700; color:#1C1B22; margin-bottom:0.5rem;">💰 Pricing</div>
             st.info(f"🎉 Free delivery applied! Order meets the ₱{BRANCH_CONFIG[fulfillment_branch]['free_delivery_min_order']:,.0f} threshold.")
 
         order_code      = gen_order_code(fulfillment_branch)
+        order_id        = str(uuid.uuid4())
         total_price     = price + delivery_fee
         effective_down  = down_payment + split_amount
         total_balance   = max(total_price - effective_down, 0)
@@ -1693,7 +1771,7 @@ font-weight:700; color:#1C1B22; margin-bottom:0.5rem;">💰 Pricing</div>
             proof_url = db.upload_file(proof_of_payment.getvalue(), path, content_type=proof_of_payment.type or "application/octet-stream")
 
         order = {
-            "order_code": order_code, "id": order_code,
+            "order_code": order_code, "id": order_id,
             "customer_name": customer_name, "customer_contact": customer_contact,
             "recipient_name": recipient_name, "recipient_contact": recipient_contact,
             "is_surprise": is_surprise,
@@ -1799,6 +1877,9 @@ def page_edit_order():
         st.session_state.form_down_payment = float(order.get("down_payment_amount",0))
 
     lp1,lp2,lp3 = st.columns(3)
+    lp1.caption("💐 Flower Price (₱)")
+    lp2.caption("🚚 Delivery Fee (₱)")
+    lp3.caption("💳 Down Payment (₱)")
     st.session_state.form_price        = lp1.number_input("Flower Price preview",  min_value=0.0, step=50.0, value=st.session_state.form_price,        key="edit_price_prev",  label_visibility="collapsed")
     st.session_state.form_delivery_fee = lp2.number_input("Delivery Fee preview",  min_value=0.0, step=25.0, value=st.session_state.form_delivery_fee,  key="edit_fee_prev",    label_visibility="collapsed")
     st.session_state.form_down_payment = lp3.number_input("Down Payment preview",  min_value=0.0, step=50.0, value=st.session_state.form_down_payment,  key="edit_dp_prev",     label_visibility="collapsed")
@@ -2096,13 +2177,21 @@ def page_all_orders():
     search   = c5.text_input("🔍 Search", key="ao_search")
     show_all = c6.checkbox("Show 60+ days", key="ao_show_all", help="Include orders older than 60 days — may be slower")
 
+    show_future = st.checkbox(
+        "📅 Show future/advance orders only (beyond today)",
+        value=False,
+        key="ao_show_future",
+    )
+
     # Date filter runs first — defaults to today, so on page load the working set is
     # cut down immediately, before branch/status/type/search processing runs on it.
     # Clearing the date entirely means "show everything" — no 60-day window, no
     # implicit restriction. "Show 60+ days" only mattered for the old default-window
     # behavior; with a cleared date already showing all orders, it has no filter to
     # add — left in place since removing the widget wasn't asked for.
-    if f_date:
+    if show_future:
+        filtered = [o for o in orders if str(o.get("target_date",""))[:10] > date.today().isoformat()]
+    elif f_date:
         filtered = [o for o in orders if str(o.get("target_date",""))[:10] == f_date.isoformat()]
     else:
         filtered = orders.copy()
@@ -2121,12 +2210,14 @@ def page_all_orders():
     for o in filtered: _date_groups.setdefault(str(o.get("target_date",""))[:10],[]).append(o)
     filtered=[]
     for _d in sorted(_date_groups.keys(),reverse=True): filtered.extend(sorted(_date_groups[_d],key=_ao_time))
-    if f_date == date.today():
+    if show_future:
+        _ao_caption = "📅 Showing future/advance orders"
+    elif f_date == date.today():
         _ao_caption = "📅 Today's orders"
     elif f_date:
         _ao_caption = "📅 Filtered by date"
     else:
-        _ao_caption = "📋 Showing all orders (no date filter)"
+        _ao_caption = "📋 Showing all orders"
     col_count, col_export = st.columns([3,1])
     col_count.markdown(f"**{len(filtered)} order(s) found** — {_ao_caption}")
     if filtered:
