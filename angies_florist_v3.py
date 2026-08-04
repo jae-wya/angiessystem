@@ -918,6 +918,45 @@ def scope_by_branch(items: list, field: str = "branch") -> list:
 # HELPERS
 # ─────────────────────────────────────────────────────────────────────────────
 
+@st.cache_data(ttl=30)
+def get_committed_stock() -> dict:
+    """
+    Returns dict of {(item_name_upper, branch): committed_qty}
+    Committed = sum of qty needed by all active non-cancelled,
+    non-delivered orders with target_date >= today.
+    """
+    orders    = db.get_orders()
+    committed = {}
+    today_str = date.today().isoformat()
+
+    TERMINAL = {"Delivered", "Picked Up", "Cancelled", "Failed Delivery"}
+
+    active_future = [
+        o for o in orders
+        if o.get("status") not in TERMINAL
+        and str(o.get("target_date",""))[:10] >= today_str
+    ]
+
+    for o in active_future:
+        branch = o.get("fulfillment_branch", o.get("branch",""))
+        for fi in (o.get("flower_items") or []):
+            flower = fi.get("flower","").strip().upper()
+            qty    = int(fi.get("qty", 1))
+            colors = [c for c in fi.get("colors",[])
+                     if c and c.lower() != "any"]
+
+            if colors:
+                names = [f"{c.upper()} {flower}" for c in colors]
+            else:
+                names = [flower]
+
+            for name in names:
+                key = (name, branch)
+                committed[key] = committed.get(key, 0) + qty
+
+    return committed
+
+
 def check_inventory_for_order(flower_items: list,
                                branch: str) -> list:
     if not flower_items or not branch:
@@ -941,6 +980,7 @@ def check_inventory_for_order(flower_items: list,
             names_to_check.append(flower_name.upper())
 
         for item_name in names_to_check:
+            # Try exact match
             match = next((i for i in inventory
                 if i.get("name","").strip().upper() == item_name
                 and i.get("branch","") == branch), None)
@@ -949,6 +989,16 @@ def check_inventory_for_order(flower_items: list,
                 # Try base name
                 match = next((i for i in inventory
                     if i.get("name","").strip().upper() == flower_name.upper()
+                    and i.get("branch","") == branch), None)
+
+            # Try fuzzy if no exact match
+            if match is None:
+                match = next((i for i in inventory
+                    if i.get("name","").strip().upper() == item_name + "S"
+                    and i.get("branch","") == branch), None)
+            if match is None and item_name.endswith("S") and len(item_name) > 3:
+                match = next((i for i in inventory
+                    if i.get("name","").strip().upper() == item_name[:-1]
                     and i.get("branch","") == branch), None)
 
             if match is None:
@@ -3264,10 +3314,12 @@ def page_schedule():
     filtered = sorted([o for o in active if str(o.get("target_date",""))[:10] in target_dates],
                        key=lambda x: (str(x.get("target_date","")), x.get("target_time","")))
 
-    c1,c2,c3 = st.columns(3)
-    c1.metric(f"Total Orders ({label})", len(filtered))
-    c2.metric("Deliveries", len([o for o in filtered if o.get("order_type")=="Delivery"]))
-    c3.metric("Pick-ups",   len([o for o in filtered if o.get("order_type")=="Pick-up"]))
+    deliveries = len([o for o in filtered if o.get("order_type")=="Delivery"])
+    pickups    = len([o for o in filtered if o.get("order_type")=="Pick-up"])
+    sc1,sc2,sc3 = st.columns(3)
+    sc1.markdown(metric_card_html("TOTAL ORDERS", len(filtered), accent="#C85C8E"), unsafe_allow_html=True)
+    sc2.markdown(metric_card_html("DELIVERIES", deliveries, accent="#0E7490"), unsafe_allow_html=True)
+    sc3.markdown(metric_card_html("PICK-UPS", pickups, accent="#7C3AED"), unsafe_allow_html=True)
     st.divider()
 
     if not filtered:
@@ -3278,14 +3330,76 @@ def page_schedule():
     for d, day_orders in sorted(by_date.items()):
         st.markdown(f"#### 📅 {d}")
         for o in sorted(day_orders, key=lambda x: x.get("target_time","")):
-            status_c = STATUS_COLOR.get(o["status"],"#888")
-            rush = " 🚀" if o.get("priority_rush") else ""
-            st.markdown(
-                f"**{o['target_time']}** | `{o.get('order_code','N/A')}`{rush} | "
-                f"{o['customer_name']} | {o.get('arrangement','')} | ₱{float(o.get('total_price',0)):,.0f} | "
-                f"<span style='color:{status_c}; font-weight:700;'>{o['status']}</span>",
-                unsafe_allow_html=True,
-            )
+            status_color = STATUS_COLOR.get(o.get("status",""), "#888")
+            is_rush = o.get("priority_rush", False)
+            order_time = o.get("target_time", "—")
+            order_code = o.get("order_code", "")
+            customer = o.get("customer_name", "—")
+            arrangement = o.get("arrangement", "—")
+            price = float(o.get("total_price", 0))
+            order_type = o.get("order_type", "Delivery")
+            status = o.get("status", "Pending")
+            branch = o.get("fulfillment_branch", o.get("branch",""))
+
+            type_icon = "🚴" if order_type == "Delivery" else "🛍️"
+            rush_html = "<span style='background:#DC2626;color:white;font-size:0.65rem;font-weight:700;padding:2px 6px;border-radius:4px;margin-left:6px;'>RUSH</span>" if is_rush else ""
+
+            balance = float(o.get("total_balance", 0))
+            bal_method = o.get("balance_payment_method", "")
+
+            if balance <= 0:
+                bal_html = "<div style='font-size:0.72rem; color:#2D7A4F; font-weight:600; margin-top:4px;'>✅ Paid in full</div>"
+            else:
+                bal_color = "#D97706" if bal_method == "COD" else "#DC2626"
+                bal_html = (
+                    f"<div style='font-size:0.72rem; font-weight:700; "
+                    f"color:{bal_color}; margin-top:4px;'>"
+                    f"₱{balance:,.0f} due"
+                    f"{'  · COD' if bal_method == 'COD' else ''}"
+                    f"</div>"
+                )
+
+            st.markdown(f"""
+<div style="display:grid; grid-template-columns: 80px 1fr;
+gap:0; margin-bottom:8px; border-radius:10px; overflow:hidden;
+box-shadow:0 2px 8px rgba(200,92,142,0.08); border:1px solid #E8E3DC;">
+<div style="background:{status_color}; color:white;
+display:flex; flex-direction:column; align-items:center;
+justify-content:center; padding:12px 8px; min-height:70px;">
+<div style="font-size:1.1rem; font-weight:800;
+font-family:'JetBrains Mono',monospace; line-height:1;">
+{order_time.split(' ')[0] if order_time != '—' else '—'}</div>
+<div style="font-size:0.65rem; font-weight:600;
+letter-spacing:0.08em; margin-top:2px; opacity:0.9;">
+{order_time.split(' ')[1] if len(order_time.split(' ')) > 1 else ''}</div>
+<div style="font-size:0.7rem; margin-top:4px;">{type_icon}</div>
+</div>
+<div style="background:white; padding:10px 14px;">
+<div style="display:flex; justify-content:space-between;
+align-items:flex-start;">
+<div>
+<span style="font-family:'JetBrains Mono',monospace;
+font-size:0.75rem; color:#C85C8E; background:#FCEEF5;
+padding:2px 6px; border-radius:4px;">{order_code}</span>
+{rush_html}
+<div style="font-weight:700; font-size:1rem;
+color:#1C1B22; margin-top:4px;">{customer}</div>
+<div style="font-size:0.8rem; color:#6B7280; margin-top:2px;">
+🌸 {arrangement} &nbsp;·&nbsp; 🏢 {branch}</div>
+</div>
+<div style="text-align:right;">
+<div style="font-weight:700; color:#1C1B22;
+font-size:0.95rem;">₱{price:,.0f}</div>
+<span style="background:{status_color}20; color:{status_color};
+border:1px solid {status_color}; font-size:0.68rem; font-weight:700;
+padding:2px 8px; border-radius:20px; letter-spacing:0.06em;
+text-transform:uppercase;">{status}</span>
+{bal_html}
+</div>
+</div>
+</div>
+</div>
+""", unsafe_allow_html=True)
         st.divider()
 
 
@@ -3345,16 +3459,28 @@ def page_customers():
 
     rows = sorted(rows, key=lambda x: x["Lifetime Spend (₱)"], reverse=True)
 
-    c1,c2,c3 = st.columns(3)
-    c1.metric("👥 Unique Customers", len(customers))
-    c2.metric("🔁 Returning Customers", len([r for r in rows if r["Total Orders"] > 1]))
-    c3.metric("💰 Total Lifetime Revenue", f"₱{sum(r['Lifetime Spend (₱)'] for r in rows):,.0f}")
+    unique_count    = len(customers)
+    returning_count = len([r for r in rows if r["Total Orders"] > 1])
+    lifetime_rev    = sum(r['Lifetime Spend (₱)'] for r in rows)
+    col1,col2,col3 = st.columns(3)
+    col1.markdown(metric_card_html("UNIQUE CUSTOMERS", unique_count, accent="#C85C8E"), unsafe_allow_html=True)
+    col2.markdown(metric_card_html("RETURNING CUSTOMERS", returning_count, accent="#7C3AED"), unsafe_allow_html=True)
+    col3.markdown(metric_card_html("LIFETIME REVENUE", f"₱{lifetime_rev:,.0f}", accent="#2D7A4F"), unsafe_allow_html=True)
     st.divider()
 
     if not rows:
         st.info("No customers match your search."); return
 
     df = pd.DataFrame(rows)
+    st.markdown("""
+    <div style='background:white; border-radius:12px;
+    border:1px solid #E8E3DC; overflow:hidden; margin-bottom:1rem;
+    box-shadow:0 2px 8px rgba(200,92,142,0.06);'>
+    <div style='background:#1C1B22; color:white; padding:10px 16px;
+    font-size:0.75rem; font-weight:700; letter-spacing:0.1em;
+    text-transform:uppercase;'>👥 Customer Rankings — by Lifetime Spend</div>
+    </div>
+    """, unsafe_allow_html=True)
     st.dataframe(
         df.style.format({"Lifetime Spend (₱)": "₱{:,.2f}"}),
         use_container_width=True, hide_index=True,
@@ -3548,6 +3674,21 @@ def page_inventory():
                 if not cat_items:
                     continue
                 st.markdown(f"##### {cat}")
+                st.markdown(
+                    "<div style='display:grid; grid-template-columns: 2.5fr 1fr 0.7fr 0.7fr 0.7fr 1fr 0.5fr; "
+                    "gap:8px; padding:4px 0; border-bottom:2px solid #E8E3DC; "
+                    "font-size:0.72rem; font-weight:700; letter-spacing:0.08em; "
+                    "text-transform:uppercase; color:#6B7280; margin-bottom:8px;'>"
+                    "<span>Item / Branch</span>"
+                    "<span>Unit</span>"
+                    "<span style='text-align:center'>Physical</span>"
+                    "<span style='text-align:center'>Committed</span>"
+                    "<span style='text-align:center'>Free</span>"
+                    "<span>Status</span>"
+                    "<span></span>"
+                    "</div>",
+                    unsafe_allow_html=True,
+                )
                 for item in cat_items:
                     qty     = item.get("quantity", 0)
                     reorder = item.get("reorder_point", 10)
@@ -3555,15 +3696,52 @@ def page_inventory():
                                "🔴 Low"        if qty <= reorder else
                                "🟡 Medium"     if qty <= reorder * 2 else
                                "🟢 Optimal")
-                    ic1, ic2, ic3, ic4, ic5, ic6 = st.columns([2.5, 1.2, 0.8, 0.8, 1, 0.6])
+                    ic1, ic2, ic3, ic4, ic5, ic6, ic7 = st.columns([2.5, 1, 0.7, 0.7, 0.7, 1, 0.5])
                     ic1.write(f"**{item['name']}** — {item.get('branch','')}")
                     ic2.write(item.get("unit", ""))
-                    ic3.write(str(qty))
-                    ic4.write(status)
-                    ic5.markdown(f"<div style='text-align:center; font-weight:700; "
-                                 f"font-size:1.1rem; color:#1C1B22;'>{qty}</div>",
-                                 unsafe_allow_html=True)
-                    with ic5:
+
+                    # Get committed qty for this item
+                    committed_map = get_committed_stock()
+                    item_key = (item['name'].strip().upper(), item.get('branch',''))
+                    committed_qty = committed_map.get(item_key, 0)
+                    # Try singular/plural variants
+                    if committed_qty == 0:
+                        name_up = item['name'].strip().upper()
+                        alt_key1 = (name_up + "S", item.get('branch',''))
+                        alt_key2 = (name_up[:-1] if name_up.endswith("S") else name_up,
+                                    item.get('branch',''))
+                        committed_qty = committed_map.get(alt_key1, 0) or \
+                                       committed_map.get(alt_key2, 0)
+
+                    free_qty = qty - committed_qty
+
+                    # Physical stock
+                    ic3.markdown(
+                        f"<div style='text-align:center; font-weight:700; "
+                        f"font-size:1rem;'>{qty}</div>",
+                        unsafe_allow_html=True
+                    )
+
+                    # Committed
+                    committed_color = "#D97706" if committed_qty > 0 else "#888"
+                    ic4.markdown(
+                        f"<div style='text-align:center; font-weight:600; "
+                        f"font-size:0.9rem; color:{committed_color};'>{committed_qty}</div>",
+                        unsafe_allow_html=True
+                    )
+
+                    # Free to sell
+                    free_color = "#DC2626" if free_qty < 0 else "#2D7A4F" if free_qty > 0 else "#888"
+                    ic5.markdown(
+                        f"<div style='text-align:center; font-weight:700; "
+                        f"font-size:0.9rem; color:{free_color};'>{free_qty}</div>",
+                        unsafe_allow_html=True
+                    )
+
+                    ic6.write(status)  # existing status column
+
+                    # Edit / delete buttons (existing)
+                    with ic7:
                         if st.button("✏️", key=f"iq_{item['id']}",
                                      help="Adjust stock via Manual Adjustment tab",
                                      use_container_width=True):
@@ -3571,7 +3749,6 @@ def page_inventory():
                             st.session_state["adj_prefill_branch"] = item.get("branch","")
                             st.session_state["active_inv_tab"] = 1
                             st.rerun()
-                    with ic6:
                         if st.button("🗑", key=f"di_{item['id']}", use_container_width=True):
                             db.delete_inventory_item(item["id"]); st.rerun()
                     with st.expander(f"📋 Details — {item['name']}", expanded=False):
@@ -4497,13 +4674,44 @@ def page_staff_management():
         if not florists: st.info("No florists added yet.")
         for f in florists:
             load     = db.get_florist_active_load(f["name"])
-            max_load = f.get("max_concurrent_orders",5)
-            fc1,fc2,fc3,fc4 = st.columns([2.5,1.5,1,0.6])
-            fc1.write(f"**{f['name']}** | 📱 {f.get('contact','')}")
-            fc2.write(f"🏪 {f.get('branch','')}")
-            fc3.write(f"📋 Load: {load}/{max_load}")
-            if fc4.button("🗑", key=f"df_{f['id']}"):
-                db.delete_florist(f["id"]); st.rerun()
+            max_load = f.get("max_concurrent_orders", 5)
+            load_pct = min(load / max_load, 1.0) if max_load else 1.0
+            load_color = "#DC2626" if load_pct >= 1.0 else "#D97706" if load_pct >= 0.7 else "#2D7A4F"
+
+            fcard, fdel = st.columns([6, 0.6])
+            with fcard:
+                st.markdown(f"""
+<div style="background:white; border-radius:10px;
+border:1px solid #E8E3DC; padding:12px 16px; margin-bottom:8px;
+box-shadow:0 2px 8px rgba(200,92,142,0.06);
+display:grid; grid-template-columns:1fr auto; gap:12px;
+align-items:center;">
+  <div>
+    <div style="font-weight:700; font-size:1rem;
+    color:#1C1B22;">{f['name']}</div>
+    <div style="font-size:0.82rem; color:#6B7280; margin-top:2px;">
+    📞 {f.get('contact','—')} &nbsp;·&nbsp;
+    🏢 {f.get('branch','—')}</div>
+    <div style="margin-top:8px;">
+      <div style="font-size:0.7rem; color:#6B7280;
+      margin-bottom:3px;">Active load: {load}/{max_load}</div>
+      <div style="background:#E8E3DC; border-radius:4px; height:6px;">
+        <div style="background:{load_color};
+        width:{load_pct*100:.0f}%; height:6px;
+        border-radius:4px; transition:width 0.3s;"></div>
+      </div>
+    </div>
+  </div>
+  <div style="text-align:center;">
+    <div style="font-size:1.4rem; font-weight:800;
+    color:{load_color};">{load}</div>
+    <div style="font-size:0.65rem; color:#888;">orders</div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+            with fdel:
+                if st.button("🗑", key=f"df_{f['id']}"):
+                    db.delete_florist(f["id"]); st.rerun()
 
     with tab2:
         with st.form("add_florist"):
@@ -4519,11 +4727,25 @@ def page_staff_management():
     with tab3:
         if not riders: st.info("No riders added yet.")
         for r in riders:
-            rc1,rc2,rc3 = st.columns([2.5,2,0.6])
-            rc1.write(f"**{r['name']}** | 📱 {r.get('contact','')}")
-            rc2.write(f"🏪 {r.get('branch','')}")
-            if rc3.button("🗑", key=f"dr_{r['id']}"):
-                db.delete_rider(r["id"]); st.rerun()
+            rcard, rdel = st.columns([6, 0.6])
+            with rcard:
+                st.markdown(f"""
+<div style="background:white; border-radius:10px;
+border:1px solid #E8E3DC; padding:12px 16px; margin-bottom:8px;
+box-shadow:0 2px 8px rgba(200,92,142,0.06);
+display:flex; justify-content:space-between; align-items:center;">
+  <div>
+    <div style="font-weight:700; font-size:1rem;
+    color:#1C1B22;">{r['name']}</div>
+    <div style="font-size:0.82rem; color:#6B7280; margin-top:2px;">
+    📞 {r.get('contact','—')} &nbsp;·&nbsp;
+    🏢 {r.get('branch','—')}</div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+            with rdel:
+                if st.button("🗑", key=f"dr_{r['id']}"):
+                    db.delete_rider(r["id"]); st.rerun()
 
     with tab4:
         with st.form("add_rider"):
@@ -4631,11 +4853,11 @@ def page_reports():
         margin     = (profit/revenue*100) if revenue>0 else 0
         avg_order  = revenue/len(completed) if completed else 0
         c1,c2,c3,c4,c5 = st.columns(5)
-        c1.metric("💰 Revenue",       f"₱{revenue:,.0f}")
-        c2.metric("📉 Waste",         f"₱{waste_cost:,.0f}")
-        c3.metric("📈 Profit",        f"₱{profit:,.0f}")
-        c4.metric("% Margin",         f"{margin:.1f}%")
-        c5.metric("Avg Order Value",  f"₱{avg_order:,.0f}")
+        c1.markdown(metric_card_html("REVENUE", f"₱{revenue:,.0f}", accent="#2D7A4F"), unsafe_allow_html=True)
+        c2.markdown(metric_card_html("WASTE COST", f"₱{waste_cost:,.0f}", accent="#DC2626"), unsafe_allow_html=True)
+        c3.markdown(metric_card_html("PROFIT", f"₱{profit:,.0f}", accent="#C85C8E"), unsafe_allow_html=True)
+        c4.markdown(metric_card_html("MARGIN", f"{margin:.1f}%", accent="#7C3AED"), unsafe_allow_html=True)
+        c5.markdown(metric_card_html("AVG ORDER VALUE", f"₱{avg_order:,.0f}", accent="#0E7490"), unsafe_allow_html=True)
         st.divider()
 
         if completed:

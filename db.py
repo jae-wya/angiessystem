@@ -457,6 +457,53 @@ def delete_session_token(token: str):
 # INVENTORY AUTO-DEDUCTION (color-aware, allows negative stock)
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _normalize_flower_name(name: str) -> str:
+    name = name.strip().upper()
+    # Remove trailing S for plural matching
+    # CARNATIONS → CARNATION, ROSES → ROSE, etc.
+    # But preserve names that naturally end in S (STARGAZERS, GERBERAS)
+    # Rule: if name ends in S and length > 4, try both with and without S
+    return name
+
+
+def _find_inventory_item(inventory: list, name: str, branch: str):
+    name_upper = name.strip().upper()
+
+    # 1. Exact match first
+    match = next((i for i in inventory
+        if i.get("name","").strip().upper() == name_upper
+        and i.get("branch","") == branch), None)
+    if match:
+        return match
+
+    # 2. Singular/plural fuzzy match
+    # Try adding S (CARNATION → CARNATIONS)
+    match = next((i for i in inventory
+        if i.get("name","").strip().upper() == name_upper + "S"
+        and i.get("branch","") == branch), None)
+    if match:
+        return match
+
+    # Try removing S (CARNATIONS → CARNATION)
+    if name_upper.endswith("S") and len(name_upper) > 3:
+        match = next((i for i in inventory
+            if i.get("name","").strip().upper() == name_upper[:-1]
+            and i.get("branch","") == branch), None)
+        if match:
+            return match
+
+    # 3. Try adding ES (ROSE → ROSES handled above,
+    #    but BUNCH → BUNCHES)
+    if not name_upper.endswith("S"):
+        match = next((i for i in inventory
+            if i.get("name","").strip().upper() == name_upper + "ES"
+            and i.get("branch","") == branch), None)
+        if match:
+            return match
+
+    return None
+
+
 def deduct_inventory_for_order(flower_items: list, branch: str, order_id: str = "", logged_by: str = "") -> list:
     if not flower_items:
         return []
@@ -464,9 +511,7 @@ def deduct_inventory_for_order(flower_items: list, branch: str, order_id: str = 
     warnings  = []
 
     def _find(name):
-        return next((i for i in inventory
-            if i.get("name","").strip().lower() == name.strip().lower()
-            and i.get("branch","") == branch), None)
+        return _find_inventory_item(inventory, name, branch)
 
     def _deduct(item, qty_used, display_name):
         current_qty = int(item.get("quantity", 0))
@@ -557,9 +602,7 @@ def return_inventory_for_order(flower_items: list, branch: str, reason: str, ord
     info = []
 
     def _find(name):
-        return next((i for i in inventory
-            if i.get("name","").strip().lower() == name.strip().lower()
-            and i.get("branch","") == branch), None)
+        return _find_inventory_item(inventory, name, branch)
 
     for fi in flower_items:
         flower_name = fi.get("flower","").strip()
@@ -590,9 +633,7 @@ def deduct_inventory_for_waste(item_name: str, qty: int, branch: str, logged_by:
     """Deduct from inventory when a waste entry is logged."""
     inventory = get_inventory()
     warnings  = []
-    match = next((i for i in inventory
-        if i.get("name","").strip().lower() == item_name.strip().lower()
-        and i.get("branch","") == branch), None)
+    match = _find_inventory_item(inventory, item_name, branch)
 
     if match is None:
         new_qty = -qty
