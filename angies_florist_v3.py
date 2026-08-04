@@ -3493,13 +3493,14 @@ def page_inventory():
     st.markdown("<div class='section-header'>📦 Inventory Management</div>", unsafe_allow_html=True)
     inventory = scope_by_branch(db.get_inventory())
 
-    tab_inv, tab_adjust, tab_count, tab_log, tab_backfill, tab_transfer = st.tabs([
+    tab_inv, tab_adjust, tab_count, tab_log, tab_backfill, tab_transfer, tab_forecast = st.tabs([
         "📦 Stock List",
         "🔧 Manual Adjustment",
         "📋 Stock Count Entry",
         "📜 Audit Log",
         "🔁 Backfill",
         "🔄 Inter-Branch Transfer",
+        "📊 Demand Forecast",
     ])
 
     # ── TAB 1: STOCK LIST ─────────────────────────────────────────────────
@@ -4121,6 +4122,308 @@ def page_inventory():
                                      key=lambda x: x.get("sent_at",""),
                                      reverse=True)]
                     st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+    # ── TAB 7: DEMAND FORECAST ────────────────────────────────────────────
+    with tab_forecast:
+        st.markdown("#### 📊 Flower Demand Forecast")
+        st.caption(
+            "See exactly what flowers are needed for a date range — "
+            "across all orders already booked. Use this to plan purchases "
+            "before peak season."
+        )
+
+        # ── Date range filters ─────────────────────────────────────────────
+        fc1, fc2, fc3 = st.columns(3)
+        fc_from  = fc1.date_input("From Date", value=date.today(), key="fc_from")
+        fc_to    = fc2.date_input("To Date",   value=date.today() + timedelta(days=7), key="fc_to")
+        fc_branch = fc3.selectbox(
+            "Branch", ["All"] + BRANCHES[:3], key="fc_branch"
+        )
+
+        if fc_from > fc_to:
+            st.error("❌ From date must be before To date.")
+        else:
+
+            # ── Pull orders in range ───────────────────────────────────────────
+            all_orders_fc = db.get_orders()
+            range_orders  = [
+                o for o in all_orders_fc
+                if fc_from.isoformat() <= str(o.get("target_date",""))[:10] <= fc_to.isoformat()
+                and o.get("status") not in ("Cancelled",)
+                and (fc_branch == "All" or
+                     o.get("fulfillment_branch", o.get("branch","")) == fc_branch)
+            ]
+
+            if not range_orders:
+                st.info(f"No orders found from {fc_from} to {fc_to}.")
+            else:
+                st.markdown(
+                    f"**{len(range_orders)} order(s)** from "
+                    f"**{fc_from}** to **{fc_to}**"
+                    + (f" · {fc_branch}" if fc_branch != "All" else " · All Branches")
+                )
+
+                # ── Build demand map ───────────────────────────────────────────
+                # demand_map[flower_name][branch] = {
+                #   "needed": int, "orders": [order dicts]
+                # }
+                demand_map = {}
+
+                for o in range_orders:
+                    o_branch = o.get("fulfillment_branch", o.get("branch",""))
+                    for fi in (o.get("flower_items") or []):
+                        flower  = fi.get("flower","").strip()
+                        qty     = int(fi.get("qty", 1))
+                        colors  = [c for c in fi.get("colors",[])
+                                   if c and c.lower() != "any"]
+                        if not flower:
+                            continue
+
+                        # Build item names
+                        if colors:
+                            names = [f"{c.upper()} {flower.upper()}" for c in colors]
+                        else:
+                            names = [flower.upper()]
+
+                        for name in names:
+                            if name not in demand_map:
+                                demand_map[name] = {}
+                            if o_branch not in demand_map[name]:
+                                demand_map[name][o_branch] = {
+                                    "needed": 0, "orders": []
+                                }
+                            demand_map[name][o_branch]["needed"] += qty
+                            demand_map[name][o_branch]["orders"].append({
+                                "order_code":    o.get("order_code",""),
+                                "customer_name": o.get("customer_name",""),
+                                "customer_contact": o.get("customer_contact",""),
+                                "target_date":   str(o.get("target_date",""))[:10],
+                                "qty":           qty,
+                            })
+
+                if not demand_map:
+                    st.info("No flower items found in orders for this period.")
+                else:
+                    # ── Get current inventory ──────────────────────────────────
+                    inventory_fc = db.get_inventory()
+
+                    def get_stock(flower_name, branch):
+                        match = next((
+                            i for i in inventory_fc
+                            if i.get("name","").strip().upper() == flower_name
+                            and (branch == "All" or i.get("branch","") == branch)
+                        ), None)
+                        if match:
+                            return int(match.get("quantity", 0))
+                        # Try base name (without color prefix)
+                        parts = flower_name.split(" ")
+                        if len(parts) > 1:
+                            base = " ".join(parts[1:])
+                            match2 = next((
+                                i for i in inventory_fc
+                                if i.get("name","").strip().upper() == base
+                                and (branch == "All" or i.get("branch","") == branch)
+                            ), None)
+                            if match2:
+                                return int(match2.get("quantity", 0))
+                        return None  # Not found
+
+                    # ── Build summary rows ─────────────────────────────────────
+                    summary_rows = []
+                    for flower_name, branches in sorted(demand_map.items()):
+                        total_needed = sum(
+                            b["needed"] for b in branches.values()
+                        )
+
+                        if fc_branch == "All":
+                            # Sum stock across all branches
+                            total_stock = 0
+                            for br in BRANCHES[:3]:
+                                s = get_stock(flower_name, br)
+                                if s is not None:
+                                    total_stock += s
+                        else:
+                            s = get_stock(flower_name, fc_branch)
+                            total_stock = s if s is not None else 0
+
+                        gap = total_stock - total_needed
+
+                        if total_stock == 0 and get_stock(flower_name,
+                            fc_branch if fc_branch != "All" else BRANCHES[0]) is None:
+                            status = "❓ NOT IN INVENTORY"
+                            level  = "critical"
+                        elif gap < 0:
+                            status = f"⚠️ SHORT by {abs(gap)}"
+                            level  = "short"
+                        elif total_stock <= total_needed * 1.2:
+                            status = "🟡 LOW BUFFER"
+                            level  = "low"
+                        else:
+                            status = "✅ OK"
+                            level  = "ok"
+
+                        summary_rows.append({
+                            "flower":       flower_name,
+                            "total_needed": total_needed,
+                            "total_stock":  total_stock,
+                            "gap":          gap,
+                            "status":       status,
+                            "level":        level,
+                            "branches":     branches,
+                        })
+
+                    # Sort: critical first, then short, then low, then ok
+                    level_order = {"critical": 0, "short": 1, "low": 2, "ok": 3}
+                    summary_rows.sort(key=lambda x: (
+                        level_order.get(x["level"], 4), x["flower"]
+                    ))
+
+                    # ── Render summary table ───────────────────────────────────
+                    st.divider()
+
+                    for row in summary_rows:
+                        flower_name   = row["flower"]
+                        total_needed  = row["total_needed"]
+                        total_stock   = row["total_stock"]
+                        gap           = row["gap"]
+                        status        = row["status"]
+                        level         = row["level"]
+                        branches      = row["branches"]
+
+                        # Color scheme per level
+                        bg     = {"critical":"#FDEDEC","short":"#FEF9E7",
+                                  "low":"#FFFDE7","ok":"#F9FFF9"}.get(level,"white")
+                        border = {"critical":"#DC2626","short":"#D97706",
+                                  "low":"#CA8A04","ok":"#2D7A4F"}.get(level,"#E8E3DC")
+
+                        # Main row
+                        st.markdown(
+                            f"<div style='background:{bg}; border-left:4px solid {border}; "
+                            f"border-radius:8px; padding:10px 16px; margin-bottom:6px;'>"
+                            f"<div style='display:flex; justify-content:space-between; "
+                            f"align-items:center; flex-wrap:wrap; gap:8px;'>"
+                            f"<strong style='font-family:JetBrains Mono,monospace; "
+                            f"font-size:0.95rem;'>{flower_name}</strong>"
+                            f"<span style='font-size:0.82rem; color:#555;'>"
+                            f"Needed: <strong>{total_needed}</strong> pcs &nbsp;|&nbsp; "
+                            f"In Stock: <strong>{total_stock}</strong> pcs &nbsp;|&nbsp; "
+                            f"Gap: <strong style='color:{border};'>"
+                            f"{'+' if gap >= 0 else ''}{gap}</strong>"
+                            f"</span>"
+                            f"<span style='font-weight:700; color:{border}; "
+                            f"font-size:0.82rem;'>{status}</span>"
+                            f"</div></div>",
+                            unsafe_allow_html=True,
+                        )
+
+                        # Branch breakdown (always shown)
+                        if fc_branch == "All" and len(branches) > 1:
+                            with st.expander(
+                                f"📍 Branch breakdown — {flower_name}",
+                                expanded=(level in ("critical","short"))
+                            ):
+                                for br_name, br_data in sorted(branches.items()):
+                                    br_needed = br_data["needed"]
+                                    br_stock  = get_stock(flower_name, br_name)
+                                    br_stock  = br_stock if br_stock is not None else 0
+                                    br_gap    = br_stock - br_needed
+                                    br_color  = "#DC2626" if br_gap < 0 else "#2D7A4F"
+
+                                    st.markdown(
+                                        f"&nbsp;&nbsp;**{br_name}**: "
+                                        f"needs {br_needed} · "
+                                        f"has {br_stock} · "
+                                        f"<span style='color:{br_color}; font-weight:600;'>"
+                                        f"{'SHORT ' + str(abs(br_gap)) if br_gap < 0 else 'OK'}"
+                                        f"</span>",
+                                        unsafe_allow_html=True,
+                                    )
+
+                                    # Show order list for SHORT and CRITICAL items
+                                    if br_gap < 0 or level == "critical":
+                                        order_list = br_data["orders"]
+                                        if order_list:
+                                            st.markdown(
+                                                "<span style='font-size:0.78rem; "
+                                                "color:#888;'>Orders requiring this:</span>",
+                                                unsafe_allow_html=True,
+                                            )
+                                            for ord_item in sorted(
+                                                order_list,
+                                                key=lambda x: x["target_date"]
+                                            ):
+                                                st.markdown(
+                                                    f"&nbsp;&nbsp;&nbsp;&nbsp;"
+                                                    f"• `{ord_item['order_code']}` — "
+                                                    f"{ord_item['customer_name']} — "
+                                                    f"**{ord_item['qty']} pcs** — "
+                                                    f"{ord_item['target_date']} "
+                                                    f"📞 {ord_item['customer_contact']}",
+                                                    unsafe_allow_html=True,
+                                                )
+
+                        # For single branch view, show orders for short/critical
+                        elif level in ("critical", "short"):
+                            all_orders_for_flower = []
+                            for br_data in branches.values():
+                                all_orders_for_flower.extend(br_data["orders"])
+
+                            with st.expander(
+                                f"📋 {len(all_orders_for_flower)} order(s) need this flower",
+                                expanded=True
+                            ):
+                                for ord_item in sorted(
+                                    all_orders_for_flower,
+                                    key=lambda x: x["target_date"]
+                                ):
+                                    st.markdown(
+                                        f"• `{ord_item['order_code']}` — "
+                                        f"{ord_item['customer_name']} — "
+                                        f"**{ord_item['qty']} pcs** — "
+                                        f"{ord_item['target_date']} "
+                                        f"📞 {ord_item['customer_contact']}",
+                                        unsafe_allow_html=True,
+                                    )
+
+                    st.divider()
+
+                    # ── Purchase List ──────────────────────────────────────────
+                    short_items = [r for r in summary_rows
+                                  if r["level"] in ("critical","short")]
+
+                    if short_items:
+                        st.markdown("### 🛒 Purchase List")
+                        st.caption(
+                            "Minimum quantities to buy to fulfill all orders "
+                            "in this date range."
+                        )
+
+                        purchase_rows = []
+                        for r in short_items:
+                            buy_qty = abs(r["gap"]) if r["gap"] < 0 else r["total_needed"]
+                            purchase_rows.append({
+                                "Flower":       r["flower"],
+                                "Need to Buy":  f"{buy_qty} pcs",
+                                "Currently Have": f"{r['total_stock']} pcs",
+                                "Needed for Orders": f"{r['total_needed']} pcs",
+                                "Status":       r["status"],
+                            })
+
+                        df_purchase = pd.DataFrame(purchase_rows)
+                        st.dataframe(df_purchase, use_container_width=True, hide_index=True)
+
+                        # CSV export
+                        st.download_button(
+                            "📥 Export Purchase List CSV",
+                            data=df_purchase.to_csv(index=False).encode("utf-8"),
+                            file_name=f"purchase_list_{fc_from}_{fc_to}.csv",
+                            mime="text/csv",
+                            key="fc_purchase_csv",
+                        )
+                    else:
+                        st.success(
+                            "✅ All flowers are sufficiently stocked for this period."
+                        )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
