@@ -4618,14 +4618,44 @@ def page_waste_tracker():
             st.download_button("⬇️ Export Waste CSV", data=waste_to_csv(waste),
                 file_name=f"angies_waste_{datetime.now().strftime('%Y%m%d')}.csv", mime="text/csv")
             total_waste_cost = sum(float(w.get("cost",0)) for w in waste)
-            st.metric("Total Waste Cost", f"₱{total_waste_cost:,.2f}")
+            st.markdown(metric_card_html("🗑️ TOTAL WASTE COST",
+                f"₱{total_waste_cost:,.2f}", accent="#DC2626"),
+                unsafe_allow_html=True)
             st.divider()
             for w in sorted(waste, key=lambda x: str(x.get("date","")), reverse=True):
-                wc1,wc2,wc3 = st.columns([3,1,0.7])
-                wc1.write(f"**{w['item_name']}** | {w.get('branch','')} | {w['reason']} | {str(w.get('date',''))[:10]} | {w.get('quantity','')} {w.get('unit','')}")
-                wc2.write(f"₱{float(w.get('cost',0)):,.0f}")
-                if wc3.button("🗑", key=f"dw_{w['id']}"):
-                    db.delete_waste_entry(w["id"]); st.rerun()
+                item_name = w.get("item_name", w.get("flower_name", "—"))
+                branch = w.get("branch","—")
+                reason = w.get("reason","—")
+                date_str = str(w.get("date", w.get("created_at","")))[:10]
+                qty = w.get("quantity", w.get("qty", 0))
+                unit = w.get("unit","pcs")
+                cost = float(w.get("cost", 0))
+
+                col_card, col_del = st.columns([10, 1])
+                with col_card:
+                    st.markdown(f"""
+<div style="background:white;border-radius:10px;border:1px solid #E8E3DC;
+border-left:4px solid #DC2626;padding:12px 16px;margin-bottom:8px;
+box-shadow:0 2px 8px rgba(220,38,38,0.06);
+display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;">
+<div>
+<div style="font-weight:700;font-size:0.95rem;color:#1C1B22;">{item_name}</div>
+<div style="font-size:0.8rem;color:#6B7280;margin-top:3px;">
+🏢 {branch} &nbsp;·&nbsp; 📋 {reason} &nbsp;·&nbsp; 📅 {date_str}
+</div>
+<div style="font-size:0.8rem;color:#DC2626;font-weight:600;margin-top:3px;">
+{qty} {unit} wasted
+</div>
+</div>
+<div style="text-align:right;">
+<div style="font-weight:700;font-size:1.1rem;color:#DC2626;">₱{cost:,.2f}</div>
+<div style="font-size:0.7rem;color:#888;">waste cost</div>
+</div>
+</div>
+""", unsafe_allow_html=True)
+                with col_del:
+                    if st.button("🗑", key=f"dw_{w['id']}"):
+                        db.delete_waste_entry(w["id"]); st.rerun()
 
     with tab2:
         with st.form("log_waste"):
@@ -4686,27 +4716,27 @@ border:1px solid #E8E3DC; padding:12px 16px; margin-bottom:8px;
 box-shadow:0 2px 8px rgba(200,92,142,0.06);
 display:grid; grid-template-columns:1fr auto; gap:12px;
 align-items:center;">
-  <div>
-    <div style="font-weight:700; font-size:1rem;
-    color:#1C1B22;">{f['name']}</div>
-    <div style="font-size:0.82rem; color:#6B7280; margin-top:2px;">
-    📞 {f.get('contact','—')} &nbsp;·&nbsp;
-    🏢 {f.get('branch','—')}</div>
-    <div style="margin-top:8px;">
-      <div style="font-size:0.7rem; color:#6B7280;
-      margin-bottom:3px;">Active load: {load}/{max_load}</div>
-      <div style="background:#E8E3DC; border-radius:4px; height:6px;">
-        <div style="background:{load_color};
-        width:{load_pct*100:.0f}%; height:6px;
-        border-radius:4px; transition:width 0.3s;"></div>
-      </div>
-    </div>
-  </div>
-  <div style="text-align:center;">
-    <div style="font-size:1.4rem; font-weight:800;
-    color:{load_color};">{load}</div>
-    <div style="font-size:0.65rem; color:#888;">orders</div>
-  </div>
+<div>
+<div style="font-weight:700; font-size:1rem;
+color:#1C1B22;">{f['name']}</div>
+<div style="font-size:0.82rem; color:#6B7280; margin-top:2px;">
+📞 {f.get('contact','—')} &nbsp;·&nbsp;
+🏢 {f.get('branch','—')}</div>
+<div style="margin-top:8px;">
+<div style="font-size:0.7rem; color:#6B7280;
+margin-bottom:3px;">Active load: {load}/{max_load}</div>
+<div style="background:#E8E3DC; border-radius:4px; height:6px;">
+<div style="background:{load_color};
+width:{load_pct*100:.0f}%; height:6px;
+border-radius:4px; transition:width 0.3s;"></div>
+</div>
+</div>
+</div>
+<div style="text-align:center;">
+<div style="font-size:1.4rem; font-weight:800;
+color:{load_color};">{load}</div>
+<div style="font-size:0.65rem; color:#888;">orders</div>
+</div>
 </div>
 """, unsafe_allow_html=True)
             with fdel:
@@ -4734,13 +4764,13 @@ align-items:center;">
 border:1px solid #E8E3DC; padding:12px 16px; margin-bottom:8px;
 box-shadow:0 2px 8px rgba(200,92,142,0.06);
 display:flex; justify-content:space-between; align-items:center;">
-  <div>
-    <div style="font-weight:700; font-size:1rem;
-    color:#1C1B22;">{r['name']}</div>
-    <div style="font-size:0.82rem; color:#6B7280; margin-top:2px;">
-    📞 {r.get('contact','—')} &nbsp;·&nbsp;
-    🏢 {r.get('branch','—')}</div>
-  </div>
+<div>
+<div style="font-weight:700; font-size:1rem;
+color:#1C1B22;">{r['name']}</div>
+<div style="font-size:0.82rem; color:#6B7280; margin-top:2px;">
+📞 {r.get('contact','—')} &nbsp;·&nbsp;
+🏢 {r.get('branch','—')}</div>
+</div>
 </div>
 """, unsafe_allow_html=True)
             with rdel:
@@ -5437,12 +5467,40 @@ def page_hr():
         if not hr_logs: st.info("No HR entries logged yet.")
         else:
             df = pd.DataFrame(hr_logs)
-            st.dataframe(df, use_container_width=True)
+            rename_map = {
+                "id": "ID",
+                "employee": "Employee",
+                "date": "Date",
+                "regular_hours": "Regular Hrs",
+                "overtime_hours": "OT Hrs",
+                "hourly_rate": "Rate (₱/hr)",
+                "ot_multiplier": "OT Multiplier",
+                "regular_pay": "Regular Pay",
+                "overtime_pay": "OT Pay",
+                "total_pay": "Total Pay",
+                "notes": "Notes",
+                "logged_by": "Logged By",
+            }
+            df_display = df.rename(columns={
+                k: v for k, v in rename_map.items() if k in df.columns
+            })
+            st.dataframe(df_display, use_container_width=True)
             if "employee" in df.columns and "total_pay" in df.columns:
                 st.markdown("**Pay Summary by Employee**")
                 summary = df.groupby("employee")["total_pay"].sum().reset_index()
                 summary.columns = ["Employee","Total Pay (₱)"]
-                st.dataframe(summary.style.format({"Total Pay (₱)":"₱{:,.2f}"}), use_container_width=True)
+                for _, row in summary.iterrows():
+                    emp_name  = row["Employee"]
+                    total_pay = float(row["Total Pay (₱)"])
+                    st.markdown(f"""
+<div style="background:white;border-radius:10px;border:1px solid #E8E3DC;
+border-left:4px solid #2D7A4F;padding:12px 16px;margin-bottom:8px;
+box-shadow:0 2px 8px rgba(45,122,79,0.06);
+display:flex;justify-content:space-between;align-items:center;">
+<div style="font-weight:700;font-size:1rem;color:#1C1B22;">👤 {emp_name}</div>
+<div style="font-weight:800;font-size:1.2rem;color:#2D7A4F;">₱{total_pay:,.2f}</div>
+</div>
+""", unsafe_allow_html=True)
             st.download_button("⬇️ Export HR Log CSV", data=df.to_csv(index=False).encode("utf-8"),
                 file_name=f"hr_log_{datetime.now().strftime('%Y%m%d')}.csv", mime="text/csv")
 
