@@ -29,6 +29,14 @@ from peak_features import (
     is_vday_mode_on,
 )
 
+from datetime import timezone, timedelta
+PHT = timezone(timedelta(hours=8))
+
+def now_pht() -> str:
+    """Returns current Philippine Time as ISO string."""
+    from datetime import datetime, timezone, timedelta
+    return datetime.now(timezone(timedelta(hours=8))).isoformat()
+
 # ─────────────────────────────────────────────────────────────────────────────
 # PAGE CONFIG
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1029,7 +1037,7 @@ def check_inventory_for_order(flower_items: list,
 
 def gen_order_code(branch: str) -> str:
     import time as _time
-    date_str = datetime.now().strftime("%Y-%m-%d")
+    date_str = datetime.now(PHT).strftime("%Y-%m-%d")
     bc = BRANCH_CODES.get(branch, "XX")
     orders = db.get_orders()
     today_branch = [o for o in orders if o.get("branch") == branch and str(o.get("order_code","")).startswith(date_str)]
@@ -1054,7 +1062,7 @@ def check_order_cutoff(branch: str, target_date) -> str | None:
         return None
     cutoff_str = BRANCH_CONFIG.get(branch,{}).get("order_cutoff_time","14:00")
     cutoff_time = datetime.strptime(cutoff_str, "%H:%M").time()
-    if datetime.now().time() > cutoff_time:
+    if datetime.now(PHT).time() > cutoff_time:
         return f"Same-day orders for **{branch}** must be placed before **{cutoff_str}**. Consider setting the target date to tomorrow."
     return None
 
@@ -1272,14 +1280,14 @@ with st.sidebar:
         st.query_params.clear()
         st.rerun()
 
-    st.markdown(f"<div style='font-size:11px; color:#C9A0B0; text-align:center; margin-top:8px;'>{datetime.now().strftime('%A, %B %d %Y')}</div>", unsafe_allow_html=True)
+    st.markdown(f"<div style='font-size:11px; color:#C9A0B0; text-align:center; margin-top:8px;'>{datetime.now(PHT).strftime('%A, %B %d %Y')}</div>", unsafe_allow_html=True)
 
 
 def mark_cod_collected(order_id: str, order_code: str):
     db.update_order(order_id, {
         "total_balance": 0,
         "payment_status": "Fully Paid",
-        "updated_at": datetime.now().isoformat(),
+        "updated_at": now_pht(),
     })
     st.success(f"✅ COD collected for {order_code}")
     st.rerun()
@@ -1851,9 +1859,9 @@ font-weight:700; color:#1C1B22; margin-bottom:0.5rem;">💰 Pricing</div>
             "finished_product_picture": None,
             "proof_of_delivery": None,
             "delivery_attempts": 0, "cancellation_reason": "", "cancellation_notes": "",
-            "created_at": datetime.now().isoformat(), "updated_at": datetime.now().isoformat(),
+            "created_at": now_pht(), "updated_at": now_pht(),
             "encoded_by": CURRENT_USER.get("name", ""),
-            "encoded_at": datetime.now().strftime("%B %d, %Y %I:%M %p"),
+            "encoded_at": datetime.now(PHT).strftime("%B %d, %Y %I:%M %p"),
         }
         db.save_order(order)
 
@@ -1862,7 +1870,7 @@ font-weight:700; color:#1C1B22; margin-bottom:0.5rem;">💰 Pricing</div>
                 "id": str(uuid.uuid4())[:8], "order_id": order_code,
                 "amount": split_amount, "method": split_method,
                 "note": "Split payment logged at order creation",
-                "created_at": datetime.now().isoformat(),
+                "created_at": now_pht(),
             })
 
         # Auto inventory deduction
@@ -2076,7 +2084,7 @@ def page_edit_order():
             "landmark": landmark,
             "priority_rush": priority_rush,
             "payment_status": "Fully Paid" if total_balance == 0 else "Partially Paid",
-            "updated_at": datetime.now().isoformat(),
+            "updated_at": now_pht(),
         })
         # Inventory adjustment on edit
         old_fi = order.get("flower_items", [])
@@ -2196,7 +2204,7 @@ def page_all_orders():
                              key="bulk_execute",
                              disabled=not bulk_confirm,
                              use_container_width=True):
-                    now = datetime.now().isoformat()
+                    now = now_pht()
                     success = 0
                     for o in affected:
                         new_status = "Delivered" if o.get("order_type") == "Delivery" else "Picked Up"
@@ -2272,7 +2280,7 @@ def page_all_orders():
     col_count.markdown(f"**{len(filtered)} order(s) found** — {_ao_caption}")
     if filtered:
         col_export.download_button("⬇️ Export CSV", data=orders_to_csv(filtered),
-            file_name=f"angies_orders_{datetime.now().strftime('%Y%m%d_%H%M')}.csv", mime="text/csv", use_container_width=True)
+            file_name=f"angies_orders_{datetime.now(PHT).strftime('%Y%m%d_%H%M')}.csv", mime="text/csv", use_container_width=True)
     st.divider()
 
     # Pagination — show 25 at a time to keep the page snappy
@@ -2414,7 +2422,7 @@ def _render_all_orders_card(o, florists):
                             st.error(f"⛔ {sel_f} is at full capacity.")
                         else:
                             if st.button("✓ Assign Florist", key=f"af_{order_code}", use_container_width=True):
-                                db.update_order(o["id"], {"assigned_florist": sel_f, "florist_assigned_at": datetime.now().isoformat()})
+                                db.update_order(o["id"], {"assigned_florist": sel_f, "florist_assigned_at": now_pht()})
                                 st.rerun()
                     st.divider()
 
@@ -2600,7 +2608,7 @@ def _render_all_orders_card(o, florists):
                         fail_reason = o.get("cancellation_reason", "") or o.get("delivery_failure_reason", "")
 
                         new_notes = old_notes
-                        new_notes += (f"\n[Attempt {attempts} failed — {datetime.now().strftime('%b %d %Y')}]"
+                        new_notes += (f"\n[Attempt {attempts} failed — {datetime.now(PHT).strftime('%b %d %Y')}]"
                                      f"{' Reason: ' + fail_reason if fail_reason else ''}")
                         if redeliv_notes:
                             new_notes += f"\n[Redelivery scheduled: {redeliv_notes}]"
@@ -2611,7 +2619,7 @@ def _render_all_orders_card(o, florists):
                             "target_time": new_time.strftime("%I:%M %p"),
                             "delivery_attempts": attempts,
                             "notes": new_notes.strip(),
-                            "updated_at": datetime.now().isoformat(),
+                            "updated_at": now_pht(),
                         }
 
                         # Add redelivery fee to total if specified
@@ -2827,7 +2835,7 @@ def _render_florist_board_cards(section_orders: list, florists: list):
                                         st.error(f"⛔ {sel_f} is at full capacity.")
                                     elif st.button("✓ Assign Florist", key=f"fb_af_{status_group}_{order_code}", use_container_width=True):
                                         db.update_order(o["id"], {"assigned_florist": sel_f,
-                                            "florist_assigned_at": datetime.now().isoformat()})
+                                            "florist_assigned_at": now_pht()})
                                         st.rerun()
                         else:
                             if st.button("✅ Confirm Order", key=f"fb_conf_{status_group}_{order_code}", use_container_width=True):
@@ -2865,7 +2873,7 @@ def _render_florist_board_cards(section_orders: list, florists: list):
             with st.expander("📄 Full Production Sheet & Print", key=f"fb_expander_{status_group}_{order_code}"):
                 st.markdown(f"""<div class="print-sheet">
               <h3>🌹 FLORIST PRODUCTION SHEET</h3>
-              <p style="color:#888; font-size:12px;">Order #{order_code} · {datetime.now().strftime('%b %d, %Y %I:%M %p')}</p>
+              <p style="color:#888; font-size:12px;">Order #{order_code} · {datetime.now(PHT).strftime('%b %d, %Y %I:%M %p')}</p>
               <table>
                 <tr><th>Order Code</th><td colspan='2'><span class="order-code">{order_code}</span></td></tr>
                 <tr><th>Customer</th><td colspan='2'>{o['customer_name']} | {o['customer_contact']}</td></tr>
@@ -2953,7 +2961,7 @@ def _render_florist_board_cards(section_orders: list, florists: list):
                 rush_banner = "<div class='rush-banner'>🚀 RUSH ORDER — PRIORITISE IMMEDIATELY</div>" if o.get("priority_rush") else ""
                 order_type_label = "🚴 DELIVERY" if o.get("order_type") == "Delivery" else "🛍 PICK-UP"
                 branch_name = o.get("fulfillment_branch", o.get("branch",""))
-                print_timestamp = datetime.now().strftime("%b %d, %Y %I:%M %p")
+                print_timestamp = datetime.now(PHT).strftime("%b %d, %Y %I:%M %p")
 
                 # Full print HTML
                 print_html = (
@@ -3508,7 +3516,7 @@ def page_customers():
     st.download_button(
         "⬇️ Export Customer List CSV",
         data=df.to_csv(index=False).encode("utf-8"),
-        file_name=f"customers_{datetime.now().strftime('%Y%m%d')}.csv",
+        file_name=f"customers_{datetime.now(PHT).strftime('%Y%m%d')}.csv",
         mime="text/csv",
     )
 
@@ -3546,7 +3554,7 @@ def _inventory_add_modal():
                 "id": str(uuid.uuid4())[:8], "name": name.strip(),
                 "category": category, "branch": branch, "quantity": qty,
                 "unit": unit, "unit_cost": cost, "reorder_point": reorder,
-                "notes": notes_i, "created_at": datetime.now().isoformat(),
+                "notes": notes_i, "created_at": now_pht(),
             })
             st.success(f"✅ **{name}** added to {branch}!"); st.rerun()
 
@@ -3663,7 +3671,7 @@ def page_inventory():
             sm3.metric("🔴 Low Stock",   low_count)
 
             st.download_button("⬇️ Export Inventory CSV", data=inventory_to_csv(filtered),
-                file_name=f"angies_inventory_{datetime.now().strftime('%Y%m%d')}.csv",
+                file_name=f"angies_inventory_{datetime.now(PHT).strftime('%Y%m%d')}.csv",
                 mime="text/csv")
             st.divider()
 
@@ -3890,7 +3898,7 @@ def page_inventory():
                         "variance": variance,
                         "notes": sc_notes,
                         "encoded_by": CURRENT_USER.get("name", ""),
-                        "created_at": datetime.now().isoformat(),
+                        "created_at": now_pht(),
                     }
                     db.save_stock_count_entry(entry)
                     db.log_inventory_change(
@@ -3976,7 +3984,7 @@ def page_inventory():
             st.dataframe(df_logs, use_container_width=True, hide_index=True)
             st.download_button("⬇️ Export Audit Log CSV",
                 data=df_logs.to_csv(index=False).encode("utf-8"),
-                file_name=f"inventory_log_{datetime.now().strftime('%Y%m%d')}.csv",
+                file_name=f"inventory_log_{datetime.now(PHT).strftime('%Y%m%d')}.csv",
                 mime="text/csv")
 
     # ── TAB 5: BACKFILL (Super Admin only) ────────────────────────────────
@@ -4063,11 +4071,11 @@ def page_inventory():
                                             db.save_inventory_item({"id": str(uuid.uuid4())[:8],"name":item_name,
                                                 "category":"🌹 Flowers","branch":branch_o,"quantity":nq,
                                                 "unit":"pcs","unit_cost":0.0,"reorder_point":10,
-                                                "notes":"Auto-created by backfill.","created_at":datetime.now().isoformat()})
+                                                "notes":"Auto-created by backfill.","created_at":now_pht()})
                                             db.log_inventory_change(item_name, branch_o, -total_d, 0, nq,
                                                 "Inventory backfill (auto-created)", "", CURRENT_USER.get("name",""))
                                         if nq <= 0: total_warnings.append(f"{'🔴🔴' if nq<0 else '🔴'} **{item_name}** ({branch_o}): {nq} pcs")
-                                    db.set_system_flag("inventory_backfill_applied", datetime.now().strftime("%Y-%m-%d %H:%M"))
+                                    db.set_system_flag("inventory_backfill_applied", datetime.now(PHT).strftime("%Y-%m-%d %H:%M"))
                                     db._invalidate_all()
                                 st.success("✅ Backfill complete!")
                                 if total_warnings:
@@ -4180,10 +4188,10 @@ def page_inventory():
                             "rider": transfer_rider,
                             "notes": transfer_notes,
                             "sent_by": CURRENT_USER.get("name",""),
-                            "sent_at": datetime.now().isoformat(),
+                            "sent_at": now_pht(),
                             "confirmed_by": "",
                             "confirmed_at": "",
-                            "created_at": datetime.now().isoformat(),
+                            "created_at": now_pht(),
                         })
 
                         st.success(
@@ -4260,7 +4268,7 @@ def page_inventory():
                                         "unit_cost": 0.0,
                                         "reorder_point": 10,
                                         "notes": f"Auto-created from transfer #{t['id']}",
-                                        "created_at": datetime.now().isoformat(),
+                                        "created_at": now_pht(),
                                     })
                                     db.log_inventory_change(
                                         t.get("item_name",""), t.get("to_branch",""),
@@ -4616,7 +4624,7 @@ def page_waste_tracker():
             st.info("No waste entries logged yet.")
         else:
             st.download_button("⬇️ Export Waste CSV", data=waste_to_csv(waste),
-                file_name=f"angies_waste_{datetime.now().strftime('%Y%m%d')}.csv", mime="text/csv")
+                file_name=f"angies_waste_{datetime.now(PHT).strftime('%Y%m%d')}.csv", mime="text/csv")
             total_waste_cost = sum(float(w.get("cost",0)) for w in waste)
             st.markdown(metric_card_html("🗑️ TOTAL WASTE COST",
                 f"₱{total_waste_cost:,.2f}", accent="#DC2626"),
@@ -4678,7 +4686,7 @@ display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;">
                         "id": str(uuid.uuid4())[:8], "item_name": item,
                         "quantity": qty, "unit": unit, "cost": cost,
                         "reason": reason, "branch": branch, "notes": notes,
-                        "date": wdate.isoformat(), "logged_at": datetime.now().isoformat(),
+                        "date": wdate.isoformat(), "logged_at": now_pht(),
                     })
                     st.success("✅ Waste entry logged!")
                     waste_warns = db.deduct_inventory_for_waste(
@@ -4751,7 +4759,7 @@ color:{load_color};">{load}</div>
             max_conc = st.number_input("Max Concurrent Orders", min_value=1, value=5)
             if st.form_submit_button("➕ Add Florist", use_container_width=True):
                 if name and contact:
-                    db.save_florist({"id":str(uuid.uuid4())[:8],"name":name,"contact":contact,"branch":branch,"max_concurrent_orders":max_conc,"created_at":datetime.now().isoformat()})
+                    db.save_florist({"id":str(uuid.uuid4())[:8],"name":name,"contact":contact,"branch":branch,"max_concurrent_orders":max_conc,"created_at":now_pht()})
                     st.success(f"✅ Florist **{name}** added!")
 
     with tab3:
@@ -4784,7 +4792,7 @@ color:#1C1B22;">{r['name']}</div>
             branch  = st.selectbox("Branch *", smgmt_branch_options)
             if st.form_submit_button("➕ Add Rider", use_container_width=True):
                 if name and contact:
-                    db.save_rider({"id":str(uuid.uuid4())[:8],"name":name,"contact":contact,"branch":branch,"created_at":datetime.now().isoformat()})
+                    db.save_rider({"id":str(uuid.uuid4())[:8],"name":name,"contact":contact,"branch":branch,"created_at":now_pht()})
                     st.success(f"✅ Rider **{name}** added!")
 
     with tab5:
@@ -4849,7 +4857,7 @@ color:#1C1B22;">{r['name']}</div>
                         "id": str(uuid.uuid4())[:8], "name": acc_name,
                         "pin_salt": salt, "pin_hash": pin_hash,
                         "role": acc_role, "branch": acc_branch, "active": True,
-                        "created_at": datetime.now().isoformat(),
+                        "created_at": now_pht(),
                     })
                     st.success(f"✅ Account for **{acc_name}** created!")
                     st.rerun()
@@ -4927,11 +4935,11 @@ def page_reports():
         st.divider()
         ex1,ex2,ex3 = st.columns(3)
         with ex1:
-            st.download_button("⬇️ All Orders CSV", data=orders_to_csv(orders), file_name=f"all_orders_{datetime.now().strftime('%Y%m%d')}.csv", mime="text/csv", use_container_width=True)
+            st.download_button("⬇️ All Orders CSV", data=orders_to_csv(orders), file_name=f"all_orders_{datetime.now(PHT).strftime('%Y%m%d')}.csv", mime="text/csv", use_container_width=True)
         with ex2:
-            st.download_button("⬇️ Completed Orders CSV", data=orders_to_csv(completed), file_name=f"completed_orders_{datetime.now().strftime('%Y%m%d')}.csv", mime="text/csv", use_container_width=True)
+            st.download_button("⬇️ Completed Orders CSV", data=orders_to_csv(completed), file_name=f"completed_orders_{datetime.now(PHT).strftime('%Y%m%d')}.csv", mime="text/csv", use_container_width=True)
         with ex3:
-            st.download_button("⬇️ Waste Log CSV", data=waste_to_csv(waste), file_name=f"waste_log_{datetime.now().strftime('%Y%m%d')}.csv", mime="text/csv", use_container_width=True)
+            st.download_button("⬇️ Waste Log CSV", data=waste_to_csv(waste), file_name=f"waste_log_{datetime.now(PHT).strftime('%Y%m%d')}.csv", mime="text/csv", use_container_width=True)
 
     with tab2:
         if not florists: st.info("No florists added yet.")
@@ -5084,7 +5092,7 @@ def page_reports():
             st.download_button(
                 "⬇️ Export Restock Forecast CSV",
                 data=df_forecast.to_csv(index=False).encode("utf-8"),
-                file_name=f"restock_forecast_{datetime.now().strftime('%Y%m%d')}.csv",
+                file_name=f"restock_forecast_{datetime.now(PHT).strftime('%Y%m%d')}.csv",
                 mime="text/csv",
             )
 
@@ -5367,7 +5375,7 @@ def page_reports():
                             "amount": exp_log_amt,
                             "notes": exp_log_notes,
                             "encoded_by": CURRENT_USER.get("name",""),
-                            "created_at": datetime.now().isoformat(),
+                            "created_at": now_pht(),
                         })
                         st.success("✅ Expense logged.")
 
@@ -5395,7 +5403,7 @@ def page_reports():
                                 "daily_electricity":   elec,
                                 "daily_water":         wat,
                                 "daily_other":         oth,
-                                "updated_at":  datetime.now().isoformat(),
+                                "updated_at":  now_pht(),
                                 "updated_by":  CURRENT_USER.get("name",""),
                             })
                             st.success(f"✅ Fixed costs saved for {br}.")
@@ -5446,7 +5454,7 @@ def page_reports():
                 st.pyplot(fig); plt.close(fig)
             st.download_button("⬇️ Export Branch Comparison CSV",
                 data=df_bc.to_csv(index=False).encode("utf-8"),
-                file_name=f"branch_comparison_{datetime.now().strftime('%Y%m%d')}.csv", mime="text/csv")
+                file_name=f"branch_comparison_{datetime.now(PHT).strftime('%Y%m%d')}.csv", mime="text/csv")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -5502,7 +5510,7 @@ display:flex;justify-content:space-between;align-items:center;">
 </div>
 """, unsafe_allow_html=True)
             st.download_button("⬇️ Export HR Log CSV", data=df.to_csv(index=False).encode("utf-8"),
-                file_name=f"hr_log_{datetime.now().strftime('%Y%m%d')}.csv", mime="text/csv")
+                file_name=f"hr_log_{datetime.now(PHT).strftime('%Y%m%d')}.csv", mime="text/csv")
 
     with tab2:
         with st.form("hr_log_form"):
@@ -5520,7 +5528,7 @@ display:flex;justify-content:space-between;align-items:center;">
                 reg_pay   = reg_hours * hourly_rate
                 ot_pay    = ot_hours  * hourly_rate * ot_mult
                 total_pay = reg_pay + ot_pay
-                db.save_hr_log({"id":str(uuid.uuid4())[:8],"employee":emp_name,"date":work_date.isoformat(),"regular_hours":reg_hours,"overtime_hours":ot_hours,"hourly_rate":hourly_rate,"ot_multiplier":ot_mult,"regular_pay":round(reg_pay,2),"overtime_pay":round(ot_pay,2),"total_pay":round(total_pay,2),"notes":notes_hr,"logged_at":datetime.now().isoformat()})
+                db.save_hr_log({"id":str(uuid.uuid4())[:8],"employee":emp_name,"date":work_date.isoformat(),"regular_hours":reg_hours,"overtime_hours":ot_hours,"hourly_rate":hourly_rate,"ot_multiplier":ot_mult,"regular_pay":round(reg_pay,2),"overtime_pay":round(ot_pay,2),"total_pay":round(total_pay,2),"notes":notes_hr,"logged_at":now_pht()})
                 st.success(f"✅ Logged ₱{total_pay:,.2f} for {emp_name} on {work_date}.")
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -5529,7 +5537,7 @@ display:flex;justify-content:space-between;align-items:center;">
 # ─────────────────────────────────────────────────────────────────────────────
 def page_management_kpi():
     st.markdown("<div class='section-header'>🎯 Management KPI Dashboard</div>", unsafe_allow_html=True)
-    st.caption(f"Live as of {datetime.now().strftime('%A, %B %d %Y · %I:%M %p')}  ·  Hit 🔄 Refresh Data in the sidebar to force-update.")
+    st.caption(f"Live as of {datetime.now(PHT).strftime('%A, %B %d %Y · %I:%M %p')}  ·  Hit 🔄 Refresh Data in the sidebar to force-update.")
 
     # ── DATA LOAD ─────────────────────────────────────────────────────────────
     all_orders    = db.get_orders()

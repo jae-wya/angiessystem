@@ -11,6 +11,14 @@ import uuid
 from datetime import datetime, date, timedelta
 import db
 
+from datetime import timezone, timedelta
+PHT = timezone(timedelta(hours=8))
+
+def now_pht() -> str:
+    """Returns current Philippine Time as ISO string."""
+    from datetime import datetime, timezone, timedelta
+    return datetime.now(timezone(timedelta(hours=8))).isoformat()
+
 
 PAYMENT_CHANNELS = [
     "GCash",
@@ -233,13 +241,13 @@ def page_cash_count(CURRENT_USER, CURRENT_ROLE, CURRENT_BRANCH, BRANCHES, scope_
                 "date":          count_date_str,
                 "branch":        count_branch,
                 "submitted_by":  CURRENT_USER.get("name", ""),
-                "submitted_at":  datetime.now().isoformat(),
+                "submitted_at":  now_pht(),
                 "order_total":   round(total_order_rev, 2),
                 "walk_in_total": round(total_walk_in, 2),
                 "grand_total":   round(grand_total, 2),
                 "breakdown":     breakdown,
                 "notes":         notes,
-                "created_at":    datetime.now().isoformat(),
+                "created_at":    now_pht(),
             }
             _save_cash_count_session(session)
             st.success(f"✅ Cash count submitted for **{count_branch}** · **{count_date_str}** · Total: **₱{grand_total:,.2f}**")

@@ -15,6 +15,14 @@ import hashlib
 import secrets
 from datetime import datetime, timedelta
 
+from datetime import timezone, timedelta
+PHT = timezone(timedelta(hours=8))
+
+def now_pht() -> str:
+    """Returns current Philippine Time as ISO string."""
+    from datetime import datetime, timezone, timedelta
+    return datetime.now(timezone(timedelta(hours=8))).isoformat()
+
 CACHE_TTL = 10  # seconds — balances freshness vs. speed for multi-user use
 STORAGE_BUCKET = "angies-florist-uploads"
 
@@ -129,7 +137,7 @@ def save_order(order: dict) -> dict:
 
 
 def update_order(order_id: str, updates: dict) -> dict:
-    updates["updated_at"] = datetime.now().isoformat()
+    updates["updated_at"] = now_pht()
     result = _update("orders", order_id, updates)
     _invalidate_orders()
     return result
@@ -144,12 +152,12 @@ def delete_order(order_id: str) -> bool:
 def update_order_status(order_id: str, new_status: str):
     updates = {
         "status": new_status,
-        "updated_at": datetime.now().isoformat(),
+        "updated_at": now_pht(),
     }
     if new_status == "Delivered":
-        updates["delivered_at"] = datetime.now().isoformat()
+        updates["delivered_at"] = now_pht()
     elif new_status == "Picked Up":
-        updates["picked_up_at"] = datetime.now().isoformat()
+        updates["picked_up_at"] = now_pht()
     _update("orders", order_id, updates)
     _invalidate_orders()
 
@@ -399,13 +407,13 @@ def pin_in_use(pin: str, exclude_id: str = None) -> bool:
 def create_session_token(account_id: str) -> str:
     """Create a persistent session token valid for 30 days. Returns the token."""
     token      = secrets.token_urlsafe(32)
-    expires_at = (datetime.now() + timedelta(days=30)).isoformat()
+    expires_at = (datetime.now(PHT) + timedelta(days=30)).isoformat()
     try:
         sb = get_supabase()
         sb.table("session_tokens").insert({
             "token":      token,
             "account_id": account_id,
-            "created_at": datetime.now().isoformat(),
+            "created_at": now_pht(),
             "expires_at": expires_at,
         }).execute()
     except Exception as e:
@@ -426,7 +434,7 @@ def validate_session_token(token: str) -> Optional[dict]:
         row = res.data[0]
 
         # Check expiry
-        if datetime.now().isoformat() > row.get("expires_at", ""):
+        if now_pht() > row.get("expires_at", ""):
             sb.table("session_tokens").delete().eq("token", token).execute()
             return None
 
@@ -551,7 +559,7 @@ def deduct_inventory_for_order(flower_items: list, branch: str, order_id: str = 
                     "category": "🌹 Flowers", "branch": branch, "quantity": new_qty,
                     "unit": "pcs", "unit_cost": 0.0, "reorder_point": 10,
                     "notes": "Auto-added from order. Please update unit cost and reorder point.",
-                    "created_at": datetime.now().isoformat()}
+                    "created_at": now_pht()}
                 _insert("inventory", new_item)
                 _invalidate_inventory()
                 inventory.append(new_item)
@@ -578,7 +586,7 @@ def deduct_inventory_for_order(flower_items: list, branch: str, order_id: str = 
                 "category": "🌹 Flowers", "branch": branch, "quantity": new_qty,
                 "unit": "pcs", "unit_cost": 0.0, "reorder_point": 10,
                 "notes": "Auto-added from order. Please update unit cost and reorder point.",
-                "created_at": datetime.now().isoformat()}
+                "created_at": now_pht()}
             _insert("inventory", new_item)
             _invalidate_inventory()
             inventory.append(new_item)
@@ -641,7 +649,7 @@ def deduct_inventory_for_waste(item_name: str, qty: int, branch: str, logged_by:
             "category": "🌹 Flowers", "branch": branch, "quantity": new_qty,
             "unit": "pcs", "unit_cost": 0.0, "reorder_point": 10,
             "notes": "Auto-created by waste log. Please update unit cost.",
-            "created_at": datetime.now().isoformat()})
+            "created_at": now_pht()})
         _invalidate_inventory()
         log_inventory_change(item_name, branch, -qty, 0, new_qty, "Waste deduction (auto-created)", "", logged_by)
         warnings.append(f"⚠️ **{item_name}** was not in inventory. Auto-added with **{new_qty} pcs** at **{branch}**.")
@@ -672,7 +680,7 @@ def log_inventory_change(item_name, branch, change_qty, qty_before, qty_after, r
             "id": str(uuid.uuid4())[:8], "item_name": item_name, "branch": branch,
             "change_qty": change_qty, "qty_before": qty_before, "qty_after": qty_after,
             "reason": reason, "order_id": order_id, "logged_by": logged_by,
-            "created_at": datetime.now().isoformat(),
+            "created_at": now_pht(),
         })
         _invalidate_inventory_logs()
     except Exception:
@@ -696,7 +704,7 @@ def get_system_flag(key: str):
 def set_system_flag(key: str, value: str):
     try:
         get_supabase().table("system_flags").upsert(
-            {"key": key, "value": value, "set_at": datetime.now().isoformat()}
+            {"key": key, "value": value, "set_at": now_pht()}
         ).execute()
     except Exception:
         pass
@@ -837,7 +845,7 @@ def confirm_transfer(transfer_id: str, confirmed_by: str) -> bool:
     _update("branch_transfers", transfer_id, {
         "status": "Received",
         "confirmed_by": confirmed_by,
-        "confirmed_at": datetime.now().isoformat(),
+        "confirmed_at": now_pht(),
     })
     _invalidate_transfers()
     return True

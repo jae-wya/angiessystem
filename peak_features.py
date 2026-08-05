@@ -13,6 +13,14 @@ import uuid
 from datetime import datetime, date, time, timedelta
 import db
 
+from datetime import timezone, timedelta
+PHT = timezone(timedelta(hours=8))
+
+def now_pht() -> str:
+    """Returns current Philippine Time as ISO string."""
+    from datetime import datetime, timezone, timedelta
+    return datetime.now(timezone(timedelta(hours=8))).isoformat()
+
 # ── V-DAY MODE ────────────────────────────────────────────────────────────────
 
 VDAY_DATE = date(2027, 2, 14)
@@ -259,7 +267,7 @@ def page_vday_settings():
                         "slot_end":     slot_end.strftime("%H:%M"),
                         "max_capacity": qa_cap,
                         "created_by":   st.session_state.get("auth_user", {}).get("name",""),
-                        "created_at":   datetime.now().isoformat(),
+                        "created_at":   now_pht(),
                     })
                     current = slot_end
             else:
@@ -277,7 +285,7 @@ def page_vday_settings():
                         "slot_end":     "23:59",
                         "max_capacity": qa_cap,
                         "created_by":   st.session_state.get("auth_user", {}).get("name",""),
-                        "created_at":   datetime.now().isoformat(),
+                        "created_at":   now_pht(),
                     })
 
             for s in slots_to_save:
