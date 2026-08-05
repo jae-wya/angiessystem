@@ -404,10 +404,11 @@ def pin_in_use(pin: str, exclude_id: str = None) -> bool:
 # SESSION TOKENS — persistent login across server restarts
 # ─────────────────────────────────────────────────────────────────────────────
 
-def create_session_token(account_id: str) -> str:
-    """Create a persistent session token valid for 7 days. Returns the token."""
+def create_session_token(account_id: str, days: int = 7) -> str:
+    """Create a persistent session token. Default 7 days,
+    up to 30 days if user checks Remember this device."""
     token      = secrets.token_urlsafe(32)
-    expires_at = (datetime.now(PHT) + timedelta(days=7)).isoformat()
+    expires_at = (datetime.now(PHT) + timedelta(days=days)).isoformat()
     try:
         sb = get_supabase()
         sb.table("session_tokens").insert({

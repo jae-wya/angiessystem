@@ -890,6 +890,11 @@ animation: floatPetal2 7s ease-in-out 5s infinite; pointer-events:none; z-index:
         with st.form("login_form"):
             pin       = st.text_input("Enter your PIN", type="password",
                                       max_chars=6, placeholder="••••••")
+            remember_device = st.checkbox(
+                "☑️ Remember this device for 30 days",
+                value=False,
+                key="remember_device"
+            )
             submitted = st.form_submit_button(
                 "🔐 Log In",
                 disabled=locked,
@@ -902,7 +907,8 @@ animation: floatPetal2 7s ease-in-out 5s infinite; pointer-events:none; z-index:
                 if account:
                     st.session_state["login_attempts"] = 0
                     st.session_state["login_locked_until"] = None
-                    token = db.create_session_token(account["id"])
+                    days = 30 if st.session_state.get("remember_device") else 7
+                    token = db.create_session_token(account["id"], days=days)
                     st.session_state.auth_user      = account
                     st.session_state.active_page    = "Dashboard"
                     st.session_state._session_token = token
