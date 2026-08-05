@@ -867,16 +867,41 @@ animation: floatPetal2 7s ease-in-out 5s infinite; pointer-events:none; z-index:
 </div>
 """, unsafe_allow_html=True)
 
+    # Brute force protection
+    if "login_attempts" not in st.session_state:
+        st.session_state["login_attempts"] = 0
+    if "login_locked_until" not in st.session_state:
+        st.session_state["login_locked_until"] = None
+
+    # Check if locked
+    locked = False
+    if st.session_state["login_locked_until"]:
+        if datetime.now(PHT) < st.session_state["login_locked_until"]:
+            remaining = (st.session_state["login_locked_until"] -
+                        datetime.now(PHT)).seconds // 60 + 1
+            st.error(f"🔒 Too many failed attempts. Try again in {remaining} minute(s).")
+            locked = True
+        else:
+            st.session_state["login_attempts"] = 0
+            st.session_state["login_locked_until"] = None
+
     _, mid, _ = st.columns([1, 1.2, 1])
     with mid:
         with st.form("login_form"):
             pin       = st.text_input("Enter your PIN", type="password",
                                       max_chars=6, placeholder="••••••")
-            submitted = st.form_submit_button("🔓 Log In", use_container_width=True)
+            submitted = st.form_submit_button(
+                "🔐 Log In",
+                disabled=locked,
+                use_container_width=True,
+                type="primary"
+            )
 
-            if submitted:
+            if submitted and not locked:
                 account = db.verify_login(pin.strip())
                 if account:
+                    st.session_state["login_attempts"] = 0
+                    st.session_state["login_locked_until"] = None
                     token = db.create_session_token(account["id"])
                     st.session_state.auth_user      = account
                     st.session_state.active_page    = "Dashboard"
@@ -884,7 +909,15 @@ animation: floatPetal2 7s ease-in-out 5s infinite; pointer-events:none; z-index:
                     st.query_params["session"]      = token
                     st.rerun()
                 else:
-                    st.error("❌ Invalid PIN. Please try again.")
+                    st.session_state["login_attempts"] += 1
+                    attempts_left = 5 - st.session_state["login_attempts"]
+                    if st.session_state["login_attempts"] >= 5:
+                        st.session_state["login_locked_until"] = (
+                            datetime.now(PHT) + timedelta(minutes=15)
+                        )
+                        st.error("🔒 Account locked for 15 minutes after 5 failed attempts.")
+                    else:
+                        st.error(f"❌ Invalid PIN. {attempts_left} attempt(s) remaining.")
 
         st.caption("Forgot your PIN? Ask a Branch Manager or Super Admin to reset it.")
 
@@ -6902,23 +6935,30 @@ def page_route_planner():
 # ROUTER
 # ─────────────────────────────────────────────────────────────────────────────
 page = st.session_state.active_page
-if   page == "Management KPI":   page_management_kpi()
-elif page == "Cash Count":       page_cash_count(CURRENT_USER, CURRENT_ROLE, CURRENT_BRANCH, BRANCHES, scope_by_branch)
-elif page == "Route Planner":    page_route_planner()
-elif page == "Dashboard":        page_dashboard()
-elif page == "New Order":        page_new_order()
-elif page == "All Orders":       page_all_orders()
-elif page == "Edit Order":       page_edit_order()
-elif page == "Florist Board":    page_florist_board()
-elif page == "Rider Board":      page_rider_board()
-elif page == "Schedule":         page_schedule()
-elif page == "Customers":        page_customers()
-elif page == "Inventory":        page_inventory()
-elif page == "Waste Tracker":    page_waste_tracker()
-elif page == "Staff Management": page_staff_management()
-elif page == "Reports":          page_reports()
-elif page == "HR":               page_hr()
-elif page == "V-Day Settings":    page_vday_settings()
+try:
+    if   page == "Management KPI":   page_management_kpi()
+    elif page == "Cash Count":       page_cash_count(CURRENT_USER, CURRENT_ROLE, CURRENT_BRANCH, BRANCHES, scope_by_branch)
+    elif page == "Route Planner":    page_route_planner()
+    elif page == "Dashboard":        page_dashboard()
+    elif page == "New Order":        page_new_order()
+    elif page == "All Orders":       page_all_orders()
+    elif page == "Edit Order":       page_edit_order()
+    elif page == "Florist Board":    page_florist_board()
+    elif page == "Rider Board":      page_rider_board()
+    elif page == "Schedule":         page_schedule()
+    elif page == "Customers":        page_customers()
+    elif page == "Inventory":        page_inventory()
+    elif page == "Waste Tracker":    page_waste_tracker()
+    elif page == "Staff Management": page_staff_management()
+    elif page == "Reports":          page_reports()
+    elif page == "HR":               page_hr()
+    elif page == "V-Day Settings":    page_vday_settings()
+except Exception as e:
+    st.error(f"⚠️ Something went wrong loading this page.")
+    with st.expander("🔍 Error details (share with developer)"):
+        import traceback
+        st.code(traceback.format_exc())
+    st.info("Try refreshing the page. If the issue persists, contact Jr.")
 
 st.divider()
 st.markdown("<div style='text-align:center; color:#C9A0B0; font-size:11px;'>🌸 Angie's Florist System v3.0 · Supabase Edition</div>", unsafe_allow_html=True)

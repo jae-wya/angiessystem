@@ -405,9 +405,9 @@ def pin_in_use(pin: str, exclude_id: str = None) -> bool:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def create_session_token(account_id: str) -> str:
-    """Create a persistent session token valid for 30 days. Returns the token."""
+    """Create a persistent session token valid for 7 days. Returns the token."""
     token      = secrets.token_urlsafe(32)
-    expires_at = (datetime.now(PHT) + timedelta(days=30)).isoformat()
+    expires_at = (datetime.now(PHT) + timedelta(days=7)).isoformat()
     try:
         sb = get_supabase()
         sb.table("session_tokens").insert({
