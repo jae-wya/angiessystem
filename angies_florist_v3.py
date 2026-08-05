@@ -1283,12 +1283,26 @@ with st.sidebar:
     st.markdown(f"<div style='font-size:11px; color:#C9A0B0; text-align:center; margin-top:8px;'>{datetime.now(PHT).strftime('%A, %B %d %Y')}</div>", unsafe_allow_html=True)
 
 
-def mark_cod_collected(order_id: str, order_code: str):
+def mark_cod_collected(order_id: str, order_code: str, balance: float = None):
     db.update_order(order_id, {
         "total_balance": 0,
         "payment_status": "Fully Paid",
         "updated_at": now_pht(),
     })
+    if balance is not None:
+        db.log_order_action(
+            order_code, order_id,
+            "COD Collected",
+            CURRENT_USER.get("name",""),
+            old_value=f"Balance: ₱{balance:,.0f}",
+            new_value="Balance: ₱0 (Collected)",
+        )
+    else:
+        db.log_order_action(
+            order_code, order_id,
+            "COD Collected",
+            CURRENT_USER.get("name",""),
+        )
     st.success(f"✅ COD collected for {order_code}")
     st.rerun()
 
@@ -1864,6 +1878,14 @@ font-weight:700; color:#1C1B22; margin-bottom:0.5rem;">💰 Pricing</div>
             "encoded_at": datetime.now(PHT).strftime("%B %d, %Y %I:%M %p"),
         }
         db.save_order(order)
+        db.log_order_action(
+            order_code, order_id,
+            "Created",
+            CURRENT_USER.get("name",""),
+            old_value="",
+            new_value=f"Type:{order_type} · ₱{total_price:,.0f} · {target_date}",
+            notes=f"Logged via New Order form"
+        )
 
         if split_amount > 0:
             db.save_payment_transaction({
@@ -2061,6 +2083,17 @@ def page_edit_order():
             path = f"orders/{order_code}/payment_proof/{uuid.uuid4().hex[:8]}.{ext}"
             proof_path = db.upload_file(proof_replace.getvalue(), path, content_type=proof_replace.type or "application/octet-stream")
 
+        old_snapshot = {
+            "customer": order.get("customer_name",""),
+            "contact":  order.get("customer_contact",""),
+            "price":    float(order.get("total_price", 0)),
+            "date":     str(order.get("target_date",""))[:10],
+            "arrangement": order.get("arrangement",""),
+            "florist":  order.get("assigned_florist",""),
+            "rider":    order.get("assigned_rider",""),
+            "status":   order.get("status",""),
+        }
+
         db.update_order(order_id, {
             "customer_name": customer_name, "customer_contact": customer_contact,
             "recipient_name": recipient_name, "recipient_contact": recipient_contact,
@@ -2086,6 +2119,29 @@ def page_edit_order():
             "payment_status": "Fully Paid" if total_balance == 0 else "Partially Paid",
             "updated_at": now_pht(),
         })
+        new_arrangement = flower_items_to_arrangement_str(efi) or order.get("arrangement","")
+        changes = []
+        if old_snapshot["customer"] != customer_name:
+            changes.append(f"Name: {old_snapshot['customer']} → {customer_name}")
+        if old_snapshot["contact"] != customer_contact:
+            changes.append(f"Contact: {old_snapshot['contact']} → {customer_contact}")
+        if old_snapshot["price"] != total_price:
+            changes.append(f"Price: ₱{old_snapshot['price']:,.0f} → ₱{total_price:,.0f}")
+        if old_snapshot["date"] != target_date.isoformat():
+            changes.append(f"Date: {old_snapshot['date']} → {target_date}")
+        if old_snapshot["arrangement"] != new_arrangement:
+            changes.append(f"Arrangement: {old_snapshot['arrangement']} → {new_arrangement}")
+
+        change_summary = " · ".join(changes) if changes else "Minor edit"
+
+        db.log_order_action(
+            order.get("order_code",""), order_id,
+            "Edited",
+            CURRENT_USER.get("name",""),
+            old_value="",
+            new_value=change_summary,
+            notes="Edited via Edit Order form"
+        )
         # Inventory adjustment on edit
         old_fi = order.get("flower_items", [])
         old_br = order.get("fulfillment_branch", order.get("branch",""))
@@ -2214,6 +2270,14 @@ def page_all_orders():
                                 "updated_at": now,
                                 "delivered_at": now if new_status == "Delivered" else None,
                             })
+                            db.log_order_action(
+                                o.get("order_code",""), o["id"],
+                                "Bulk Status Update",
+                                CURRENT_USER.get("name",""),
+                                old_value=o.get("status",""),
+                                new_value=new_status,
+                                notes="Applied via Bulk Status Update tool"
+                            )
                             success += 1
                         except Exception:
                             pass
@@ -2367,16 +2431,24 @@ def _render_all_orders_card(o, florists):
                     st.caption("⏳ Assign florist first")
                 else:
                     if st.button("✅ Confirm", key=f"conf_{order_code}", use_container_width=True):
-                        db.update_order_status(o["id"],"Confirmed"); st.rerun()
+                        db.update_order_status(o["id"],"Confirmed")
+                        db.log_order_action(order_code, o["id"], "Status Changed", CURRENT_USER.get("name",""), old_value=status, new_value="Confirmed")
+                        st.rerun()
             elif status == "Confirmed":
                 if st.button("🌹 Start", key=f"start_{order_code}", use_container_width=True):
-                    db.update_order_status(o["id"],"In Progress"); st.rerun()
+                    db.update_order_status(o["id"],"In Progress")
+                    db.log_order_action(order_code, o["id"], "Status Changed", CURRENT_USER.get("name",""), old_value=status, new_value="In Progress")
+                    st.rerun()
             elif status == "In Progress":
                 if st.button("🎉 Mark Ready", key=f"ready_{order_code}", use_container_width=True):
-                    db.update_order_status(o["id"],"Ready"); st.rerun()
+                    db.update_order_status(o["id"],"Ready")
+                    db.log_order_action(order_code, o["id"], "Status Changed", CURRENT_USER.get("name",""), old_value=status, new_value="Ready")
+                    st.rerun()
             elif status == "Ready" and order_type == "Pick-up":
                 if st.button("🛍 Picked Up", key=f"pu_{order_code}", use_container_width=True):
-                    db.update_order_status(o["id"],"Picked Up"); st.rerun()
+                    db.update_order_status(o["id"],"Picked Up")
+                    db.log_order_action(order_code, o["id"], "Status Changed", CURRENT_USER.get("name",""), old_value=status, new_value="Picked Up")
+                    st.rerun()
             elif status == "Ready" and order_type == "Delivery":
                 st.caption("→ Rider Board")
 
@@ -2395,7 +2467,14 @@ def _render_all_orders_card(o, florists):
         with hc5:
             st.markdown('<div class="action-btn-wrap action-btn-wrap-delete">', unsafe_allow_html=True)
             if st.button("🗑", key=f"del_{order_code}", use_container_width=True):
-                db.delete_order(o["id"]); st.rerun()
+                db.delete_order(o["id"])
+                db.log_order_action(
+                    order_code, o["id"],
+                    "Deleted",
+                    CURRENT_USER.get("name",""),
+                    notes="Order deleted permanently"
+                )
+                st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
 
         with card:
@@ -2439,6 +2518,14 @@ def _render_all_orders_card(o, florists):
                             ok_col, abort_col = st.columns(2)
                             if ok_col.button("✅ Confirm Cancellation", key=f"cok_{order_code}"):
                                 db.update_order(o["id"],{"status":"Cancelled","cancellation_reason":cancel_reason,"cancellation_notes":cancel_notes})
+                                db.log_order_action(
+                                    order_code, o["id"],
+                                    "Cancelled",
+                                    CURRENT_USER.get("name",""),
+                                    old_value=o.get("status",""),
+                                    new_value="Cancelled",
+                                    notes=cancel_reason,
+                                )
                                 # Auto-return stock
                                 if o.get("flower_items"):
                                     ret = db.return_inventory_for_order(
@@ -2512,7 +2599,7 @@ def _render_all_orders_card(o, florists):
                         key=f"cod_collect_ao_{o.get('order_code', o.get('id',''))}",
                         use_container_width=True,
                     ):
-                        mark_cod_collected(o["id"], o.get("order_code",""))
+                        mark_cod_collected(o["id"], o.get("order_code",""), balance=float(o.get("total_balance",0)))
 
                 if any([o.get("message_card_to"), o.get("message_card_body"), o.get("message_card_from")]):
                     st.markdown("**💌 Message Card:**")
@@ -2635,6 +2722,14 @@ def _render_all_orders_card(o, florists):
                             updates["assigned_rider"] = redeliv_rider
 
                         db.update_order(o["id"], updates)
+                        db.log_order_action(
+                            order_code, o["id"],
+                            "Redelivery Scheduled",
+                            CURRENT_USER.get("name",""),
+                            old_value="Failed Delivery",
+                            new_value=f"Ready · {new_date} {new_time.strftime('%I:%M %p')}",
+                            notes=redeliv_notes if redeliv_notes else ""
+                        )
                         st.success(
                             f"✅ Redelivery scheduled for **{new_date}** at "
                             f"**{new_time.strftime('%I:%M %p')}**. "
@@ -2642,6 +2737,44 @@ def _render_all_orders_card(o, florists):
                             + (f" Redelivery fee of ₱{redeliv_fee:,.2f} added." if redeliv_fee > 0 else "")
                         )
                         st.rerun()
+
+                if CURRENT_ROLE in ("Super Admin", "Branch Manager"):
+                    st.divider()
+                    st.markdown("**📋 Order Audit Log**")
+                    audit_entries = db.get_order_audit_log(o["id"])
+                    if not audit_entries:
+                        st.caption("No audit entries yet.")
+                    else:
+                        for entry in audit_entries:
+                            action   = entry.get("action","")
+                            by       = entry.get("changed_by","—")
+                            at       = str(entry.get("changed_at",""))[:16]
+                            old_val  = entry.get("old_value","")
+                            new_val  = entry.get("new_value","")
+                            notes    = entry.get("notes","")
+
+                            action_colors = {
+                                "Created":            "#2D7A4F",
+                                "Edited":             "#0E7490",
+                                "Status Changed":     "#7C3AED",
+                                "Cancelled":          "#DC2626",
+                                "Deleted":            "#DC2626",
+                                "COD Collected":      "#D97706",
+                                "Bulk Status Update": "#C85C8E",
+                                "Redelivery Scheduled": "#2D7A4F",
+                            }
+                            color = action_colors.get(action, "#6B7280")
+
+                            st.markdown(f"""
+<div style="border-left:3px solid {color};padding:6px 12px;margin-bottom:6px;background:#FAFAFA;border-radius:0 6px 6px 0;">
+<div style="display:flex;justify-content:space-between;align-items:center;">
+<span style="font-weight:700;font-size:0.82rem;color:{color};">{action}</span>
+<span style="font-size:0.75rem;color:#888;">{at} · {by}</span>
+</div>
+{f'<div style="font-size:0.78rem;color:#555;margin-top:2px;">{old_val} → {new_val}</div>' if old_val or new_val else ''}
+{f'<div style="font-size:0.75rem;color:#888;margin-top:1px;">{notes}</div>' if notes else ''}
+</div>
+""", unsafe_allow_html=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2839,7 +2972,9 @@ def _render_florist_board_cards(section_orders: list, florists: list):
                                         st.rerun()
                         else:
                             if st.button("✅ Confirm Order", key=f"fb_conf_{status_group}_{order_code}", use_container_width=True):
-                                db.update_order_status(o["id"], "Confirmed"); st.rerun()
+                                db.update_order_status(o["id"], "Confirmed")
+                                db.log_order_action(order_code, o["id"], "Status Changed", CURRENT_USER.get("name",""), old_value="Pending", new_value="Confirmed")
+                                st.rerun()
                     else:
                         # Florist/Rider — read only
                         if florist_assigned:
@@ -2849,7 +2984,9 @@ def _render_florist_board_cards(section_orders: list, florists: list):
             with ac2:
                 if o["status"] == "Confirmed":
                     if st.button("🌹 Start Production", key=f"fstart_{status_group}_{order_code}", use_container_width=True):
-                        db.update_order_status(o["id"],"In Progress"); st.rerun()
+                        db.update_order_status(o["id"],"In Progress")
+                        db.log_order_action(order_code, o["id"], "Status Changed", CURRENT_USER.get("name",""), old_value="Confirmed", new_value="In Progress")
+                        st.rerun()
             with ac3:
                 if o["status"] == "In Progress":
                     finished_pic = st.file_uploader(
@@ -2862,6 +2999,7 @@ def _render_florist_board_cards(section_orders: list, florists: list):
                             path = f"orders/{order_code}/finished_product/{uuid.uuid4().hex[:8]}.{ext}"
                             url = db.upload_file(finished_pic.getvalue(), path, content_type=finished_pic.type or "image/jpeg")
                             db.update_order(o["id"], {"finished_product_picture": url, "status": "Ready"})
+                            db.log_order_action(order_code, o["id"], "Status Changed", CURRENT_USER.get("name",""), old_value="In Progress", new_value="Ready")
                             if o.get("order_type") == "Delivery":
                                 st.success(f"✅ Order **{order_code}** marked READY — it will appear on the 🚴 Rider Board!")
                             else:
@@ -3235,6 +3373,7 @@ def page_rider_board():
                 st.image(pod, caption="Delivery Proof", width=300)
                 if st.button(f"✅ Mark as DELIVERED", key=f"mkdel_{order_code}"):
                     db.update_order_status(o["id"],"Delivered")
+                    db.log_order_action(order_code, o["id"], "Status Changed", CURRENT_USER.get("name",""), old_value=o.get("status",""), new_value="Delivered")
                     st.success("✅ Order marked as DELIVERED!"); st.rerun()
             else:
                 st.warning("📷 **Upload a proof of delivery photo before marking as Delivered.**")
@@ -3251,6 +3390,7 @@ def page_rider_board():
                         url = db.upload_file(proof_image.getvalue(), path, content_type=proof_image.type or "image/jpeg")
                         db.update_order(o["id"], {"proof_of_delivery": url})
                         db.update_order_status(o["id"],"Delivered")
+                        db.log_order_action(order_code, o["id"], "Status Changed", CURRENT_USER.get("name",""), old_value=o.get("status",""), new_value="Delivered")
                         st.success("✅ Order marked as DELIVERED with proof!"); st.rerun()
 
             # Failed delivery
@@ -3263,6 +3403,7 @@ def page_rider_board():
                 fail_reason = fc1.selectbox("Failure Reason", DELIVERY_FAILURE_REASONS, key=f"frsn_{order_code}")
                 if fc2.button("✅ Submit Report", key=f"fsubmit_{order_code}"):
                     db.update_order(o["id"],{"status":"Failed Delivery","delivery_attempts":o.get("delivery_attempts",0)+1,"delivery_fail_reason":fail_reason})
+                    db.log_order_action(order_code, o["id"], "Status Changed", CURRENT_USER.get("name",""), old_value=o.get("status",""), new_value="Failed Delivery", notes=fail_reason)
                     st.session_state.pop(f"reporting_fail_{order_code}", None)
                     st.warning(f"⚠️ Order {order_code} marked as Failed Delivery."); st.rerun()
 
@@ -3297,7 +3438,7 @@ def page_rider_board():
                         key=f"cod_collect_rb_{o.get('order_code', o.get('id',''))}",
                         use_container_width=True,
                     ):
-                        mark_cod_collected(o["id"], o.get("order_code",""))
+                        mark_cod_collected(o["id"], o.get("order_code",""), balance=float(o.get("total_balance",0)))
 
                 st.divider()
 

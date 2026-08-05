@@ -849,3 +849,47 @@ def confirm_transfer(transfer_id: str, confirmed_by: str) -> bool:
     })
     _invalidate_transfers()
     return True
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ORDER AUDIT LOG
+# ─────────────────────────────────────────────────────────────────────────────
+
+def log_order_action(
+    order_code: str,
+    order_id: str,
+    action: str,
+    changed_by: str,
+    old_value: str = "",
+    new_value: str = "",
+    notes: str = "",
+):
+    """Log an audit entry for an order action. Silent — never blocks."""
+    try:
+        _insert("order_audit_log", {
+            "id":          str(uuid.uuid4())[:8],
+            "order_code":  order_code,
+            "order_id":    order_id,
+            "action":      action,
+            "changed_by":  changed_by,
+            "changed_at":  now_pht(),
+            "old_value":   old_value,
+            "new_value":   new_value,
+            "notes":       notes,
+        })
+    except Exception:
+        pass  # Never block any operation due to audit log failure
+
+
+def get_order_audit_log(order_id: str) -> list:
+    """Get audit log entries for a specific order."""
+    try:
+        sb  = get_supabase()
+        res = sb.table("order_audit_log")\
+                .select("*")\
+                .eq("order_id", order_id)\
+                .order("changed_at", desc=True)\
+                .execute()
+        return res.data or []
+    except Exception:
+        return []
