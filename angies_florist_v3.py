@@ -2583,6 +2583,61 @@ def _render_all_orders_card(o, florists):
 **Logged by:** {o.get('encoded_by','—') or '—'} · {o.get('encoded_at','—') or '—'}
                 """)
 
+                if order_type == "Delivery" and status not in ("Delivered", "Picked Up", "Cancelled"):
+                    st.markdown("**🚴 Assign Rider**")
+                    rider_names = [r["name"] for r in db.get_riders()]
+                    current_rider = o.get("assigned_rider", "")
+
+                    assign_col1, assign_col2 = st.columns([3, 1])
+
+                    # Text input with datalist-style — shows registered riders as
+                    # suggestions but allows free text
+                    new_rider_name = assign_col1.text_input(
+                        "Assign Rider",
+                        value=current_rider,
+                        placeholder="Type rider name or select from list",
+                        key=f"rider_text_{order_code}",
+                        label_visibility="collapsed",
+                    )
+
+                    # Show registered riders as quick-select buttons
+                    if rider_names:
+                        with assign_col1.popover("👥 Quick select registered rider"):
+                            for rn in rider_names:
+                                if st.button(rn, key=f"qr_{order_code}_{rn}"):
+                                    db.update_order(o["id"], {
+                                        "assigned_rider": rn,
+                                        "updated_at": now_pht()
+                                    })
+                                    db.log_order_action(
+                                        order_code, o["id"],
+                                        "Rider Assigned",
+                                        CURRENT_USER.get("name",""),
+                                        old_value=current_rider,
+                                        new_value=rn,
+                                    )
+                                    st.rerun()
+
+                    if assign_col2.button(
+                        "✓ Assign",
+                        key=f"rider_assign_{order_code}",
+                        use_container_width=True
+                    ):
+                        if new_rider_name.strip():
+                            db.update_order(o["id"], {
+                                "assigned_rider": new_rider_name.strip(),
+                                "updated_at": now_pht()
+                            })
+                            db.log_order_action(
+                                order_code, o["id"],
+                                "Rider Assigned",
+                                CURRENT_USER.get("name",""),
+                                old_value=current_rider,
+                                new_value=new_rider_name.strip(),
+                            )
+                            st.success(f"✅ Rider assigned: {new_rider_name.strip()}")
+                            st.rerun()
+
                 if (o.get("status") in ("Delivered", "Picked Up")
                     and o.get("balance_payment_method") == "COD"
                     and float(o.get("total_balance", 0)) > 0):
@@ -3301,12 +3356,57 @@ def page_rider_board():
         with st.expander(f"📦 {order_code} — {o['customer_name']} | Rider: {rider_name or '⏳ Unassigned'}"):
             if not rider_name:
                 st.warning("⏳ **Rider not yet assigned**")
-                ra1,ra2 = st.columns([2,1])
-                with ra1:
-                    sel_rider = st.selectbox("Assign Rider", rider_names, key=f"ar_{order_code}", label_visibility="collapsed")
-                with ra2:
-                    if st.button("✓ Assign Rider", key=f"arbtn_{order_code}"):
-                        db.update_order(o["id"],{"assigned_rider": sel_rider}); st.rerun()
+                current_rider = o.get("assigned_rider", "")
+
+                assign_col1, assign_col2 = st.columns([3, 1])
+
+                # Text input with datalist-style — shows registered riders as
+                # suggestions but allows free text
+                new_rider_name = assign_col1.text_input(
+                    "Assign Rider",
+                    value=current_rider,
+                    placeholder="Type rider name or select from list",
+                    key=f"rb_rider_text_{order_code}",
+                    label_visibility="collapsed",
+                )
+
+                # Show registered riders as quick-select buttons
+                if rider_names:
+                    with assign_col1.popover("👥 Quick select registered rider"):
+                        for rn in rider_names:
+                            if st.button(rn, key=f"rb_qr_{order_code}_{rn}"):
+                                db.update_order(o["id"], {
+                                    "assigned_rider": rn,
+                                    "updated_at": now_pht()
+                                })
+                                db.log_order_action(
+                                    order_code, o["id"],
+                                    "Rider Assigned",
+                                    CURRENT_USER.get("name",""),
+                                    old_value=current_rider,
+                                    new_value=rn,
+                                )
+                                st.rerun()
+
+                if assign_col2.button(
+                    "✓ Assign",
+                    key=f"rb_rider_assign_{order_code}",
+                    use_container_width=True
+                ):
+                    if new_rider_name.strip():
+                        db.update_order(o["id"], {
+                            "assigned_rider": new_rider_name.strip(),
+                            "updated_at": now_pht()
+                        })
+                        db.log_order_action(
+                            order_code, o["id"],
+                            "Rider Assigned",
+                            CURRENT_USER.get("name",""),
+                            old_value=current_rider,
+                            new_value=new_rider_name.strip(),
+                        )
+                        st.success(f"✅ Rider assigned: {new_rider_name.strip()}")
+                        st.rerun()
             st.divider()
             st.markdown(f"""<div class="print-sheet">
               <h3>🚴 RIDER DELIVERY SHEET</h3>
@@ -6337,7 +6437,6 @@ def page_route_planner():
 
     if not route_orders:
         st.info(f"No delivery orders found for **{rp_date_str}** with the selected status filter.")
-        return
 
     st.divider()
 
@@ -6346,7 +6445,11 @@ def page_route_planner():
         st.warning(f"⚠️ **{len(unassigned)} order(s) have no rider assigned.** Use the Zone view below to batch-assign by zone.")
 
     # ── TABS ─────────────────────────────────────────────────────────────────
-    tab_rider, tab_zone = st.tabs(["🚴 By Rider (Dispatch)", "📍 By Zone (Planning)"])
+    tab_rider, tab_zone, tab_dispatch = st.tabs([
+        "🚴 By Rider (Dispatch)",
+        "📍 By Zone (Planning)",
+        "🚨 Dispatch Board",
+    ])
 
     # ═══════════════════════════════════════════════════════════════════════════
     # TAB 1: BY RIDER — Dispatcher view. One card per rider + unassigned section.
@@ -6590,6 +6693,210 @@ def page_route_planner():
                                 unsafe_allow_html=True,
                             )
                     st.markdown("---")
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # TAB 3: DISPATCH BOARD — Live view of all delivery orders, independent
+    # of the By Rider / By Zone filters above.
+    # ═══════════════════════════════════════════════════════════════════════════
+    with tab_dispatch:
+        st.markdown("#### 🚨 Live Dispatch Board")
+        st.caption("Real-time view of all delivery orders — who has what, what's waiting. Auto-use with today's date.")
+
+        # Date filter — today by default
+        dp_col1, dp_col2 = st.columns([2, 1])
+        dp_date = dp_col1.date_input(
+            "📅 Dispatch Date",
+            value=date.today(),
+            key="dp_date"
+        )
+        dp_show_all = dp_col2.checkbox(
+            "Show all dates",
+            value=False,
+            key="dp_show_all"
+        )
+        dp_date_str = dp_date.isoformat()
+
+        # Pull delivery orders
+        all_orders_dp = db.get_orders()
+
+        if dp_show_all:
+            delivery_orders = [
+                o for o in all_orders_dp
+                if o.get("order_type") == "Delivery"
+                and o.get("status") not in ("Cancelled",)
+            ]
+        else:
+            delivery_orders = [
+                o for o in all_orders_dp
+                if o.get("order_type") == "Delivery"
+                and str(o.get("target_date",""))[:10] == dp_date_str
+                and o.get("status") not in ("Cancelled",)
+            ]
+
+        if not delivery_orders:
+            st.info(f"No delivery orders for {dp_date_str}.")
+        else:
+            # Summary metrics
+            waiting  = [o for o in delivery_orders if o.get("status") == "Ready"]
+            out      = [o for o in delivery_orders if o.get("status") in ("In Progress",)]
+            done     = [o for o in delivery_orders if o.get("status") in ("Delivered", "Picked Up")]
+            failed   = [o for o in delivery_orders if o.get("status") == "Failed Delivery"]
+
+            m1, m2, m3, m4 = st.columns(4)
+            m1.markdown(metric_card_html(
+                "⏳ WAITING", len(waiting), accent="#D97706"
+            ), unsafe_allow_html=True)
+            m2.markdown(metric_card_html(
+                "🔴 OUT FOR DELIVERY", len(out), accent="#DC2626"
+            ), unsafe_allow_html=True)
+            m3.markdown(metric_card_html(
+                "✅ DELIVERED", len(done), accent="#2D7A4F"
+            ), unsafe_allow_html=True)
+            m4.markdown(metric_card_html(
+                "❌ FAILED", len(failed), accent="#6B7280"
+            ), unsafe_allow_html=True)
+
+            st.divider()
+
+            # ── OUT FOR DELIVERY ─────────────────────────────────────
+            if out:
+                st.markdown("### 🔴 Out for Delivery")
+
+                # Group by rider
+                rider_groups = {}
+                for o in sorted(out, key=lambda x: x.get("assigned_rider","") or "Unassigned"):
+                    rider = o.get("assigned_rider","") or "Unassigned"
+                    rider_groups.setdefault(rider, []).append(o)
+
+                for rider_name, r_orders in sorted(rider_groups.items()):
+                    r_cod = sum(
+                        float(o.get("total_balance",0))
+                        for o in r_orders
+                        if o.get("balance_payment_method") == "COD"
+                        and float(o.get("total_balance",0)) > 0
+                    )
+
+                    st.markdown(f"""
+<div style="background:#FDEDEC;border-left:4px solid #DC2626;border-radius:8px;padding:10px 16px;margin-bottom:6px;">
+<div style="display:flex;justify-content:space-between;align-items:center;">
+<strong style="font-size:1rem;">🚴 {rider_name}</strong>
+<span style="font-size:0.82rem;color:#555;">{len(r_orders)} order(s){f' · 💰 COD ₱{r_cod:,.0f}' if r_cod > 0 else ''}</span>
+</div>
+</div>
+""", unsafe_allow_html=True)
+
+                    for o in r_orders:
+                        oc   = o.get("order_code","")
+                        cust = o.get("recipient_name") or o.get("customer_name","—")
+                        zone = o.get("delivery_zone","—")
+                        addr = o.get("delivery_address","—")
+                        bal  = float(o.get("total_balance",0))
+                        bm   = o.get("balance_payment_method","")
+                        rush = o.get("priority_rush", False)
+                        time = o.get("target_time","—")
+
+                        rush_tag = "🚀 " if rush else ""
+                        cod_tag  = f" · 💰 COD ₱{bal:,.0f}" if bal > 0 and bm == "COD" else ""
+
+                        st.markdown(f"""
+<div style="background:white;border-radius:8px;border:1px solid #E8E3DC;padding:8px 14px;margin-bottom:4px;margin-left:20px;">
+<div style="display:flex;justify-content:space-between;align-items:center;">
+<div>
+<span style="font-family:'JetBrains Mono',monospace;font-size:0.78rem;color:#C85C8E;background:#FCEEF5;padding:2px 6px;border-radius:4px;">{rush_tag}{oc}</span>
+<span style="font-size:0.85rem;font-weight:600;color:#1C1B22;margin-left:8px;">{cust}</span>
+</div>
+<span style="font-size:0.78rem;color:#555;">🕐 {time}</span>
+</div>
+<div style="font-size:0.78rem;color:#6B7280;margin-top:3px;">
+📍 {zone} · {addr[:50]}{'...' if len(addr) > 50 else ''}{cod_tag}
+</div>
+</div>
+""", unsafe_allow_html=True)
+
+                st.divider()
+
+            # ── WAITING FOR RIDER ────────────────────────────────────
+            if waiting:
+                st.markdown("### ⏳ Waiting for Rider")
+                st.caption(f"{len(waiting)} order(s) Ready — assign a rider and print waybill")
+
+                # Sort: Rush first, then by time
+                def _sort_waiting(o):
+                    rush = 0 if o.get("priority_rush") else 1
+                    t = o.get("target_time","23:59")
+                    try:
+                        t = datetime.strptime(t, "%I:%M %p").strftime("%H:%M")
+                    except Exception:
+                        pass
+                    return (rush, t)
+
+                for o in sorted(waiting, key=_sort_waiting):
+                    oc   = o.get("order_code","")
+                    cust = o.get("recipient_name") or o.get("customer_name","—")
+                    zone = o.get("delivery_zone","—")
+                    addr = o.get("delivery_address","—")
+                    bal  = float(o.get("total_balance",0))
+                    bm   = o.get("balance_payment_method","")
+                    rush = o.get("priority_rush", False)
+                    time = o.get("target_time","—")
+                    maps_url = f"https://maps.google.com/?q={urllib.parse.quote(addr)}" if addr and addr != "—" else ""
+
+                    rush_html = "<span style='background:#DC2626;color:white;font-size:0.65rem;font-weight:700;padding:2px 6px;border-radius:4px;margin-right:4px;'>RUSH</span>" if rush else ""
+                    cod_html  = f"<span style='background:#FEF9E7;border:1px solid #D97706;color:#92400E;font-size:0.72rem;font-weight:700;padding:2px 8px;border-radius:4px;margin-left:6px;'>COD ₱{bal:,.0f}</span>" if bal > 0 and bm == "COD" else ""
+
+                    wa1, wa2 = st.columns([4, 1])
+                    with wa1:
+                        st.markdown(f"""
+<div style="background:white;border-radius:8px;border:1.5px solid #D97706;padding:10px 14px;margin-bottom:6px;">
+<div style="display:flex;justify-content:space-between;align-items:flex-start;">
+<div>
+{rush_html}<span style="font-family:'JetBrains Mono',monospace;font-size:0.78rem;color:#C85C8E;background:#FCEEF5;padding:2px 6px;border-radius:4px;">{oc}</span>{cod_html}
+<div style="font-size:0.9rem;font-weight:700;color:#1C1B22;margin-top:4px;">{cust}</div>
+<div style="font-size:0.78rem;color:#6B7280;margin-top:2px;">📍 {zone} · {addr[:45]}{'...' if len(addr) > 45 else ''} · 🕐 {time}</div>
+</div>
+</div>
+</div>
+""", unsafe_allow_html=True)
+                    with wa2:
+                        if maps_url:
+                            st.markdown(
+                                f"<a href='{maps_url}' target='_blank' style='display:block;background:#4285F4;color:white;text-align:center;padding:8px;border-radius:8px;text-decoration:none;font-size:0.8rem;font-weight:600;margin-top:4px;'>📍 Maps</a>",
+                                unsafe_allow_html=True
+                            )
+
+                st.divider()
+
+            # ── DELIVERED ────────────────────────────────────────────
+            if done:
+                with st.expander(f"✅ Delivered — {len(done)} order(s)", expanded=False):
+                    for o in sorted(done, key=lambda x: x.get("delivered_at","") or "", reverse=True):
+                        oc     = o.get("order_code","")
+                        cust   = o.get("recipient_name") or o.get("customer_name","—")
+                        rider  = o.get("assigned_rider","—")
+                        zone   = o.get("delivery_zone","—")
+                        del_at = str(o.get("delivered_at",""))[:16]
+                        st.markdown(
+                            f"✅ `{oc}` — {cust} · 📍 {zone} · 🚴 {rider}"
+                            + (f" · {del_at}" if del_at else ""),
+                            unsafe_allow_html=True,
+                        )
+
+            # ── FAILED ───────────────────────────────────────────────
+            if failed:
+                st.markdown("### ❌ Failed Deliveries")
+                for o in failed:
+                    oc   = o.get("order_code","")
+                    cust = o.get("recipient_name") or o.get("customer_name","—")
+                    zone = o.get("delivery_zone","—")
+                    st.markdown(
+                        f"<div style='background:#FDEDEC;border-left:4px solid #DC2626;"
+                        f"border-radius:6px;padding:8px 14px;margin-bottom:4px;'>"
+                        f"❌ `{oc}` — {cust} · 📍 {zone} · "
+                        f"<a href='#' style='color:#DC2626;font-weight:600;'>Schedule Redelivery in All Orders</a>"
+                        f"</div>",
+                        unsafe_allow_html=True,
+                    )
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # ROUTER
