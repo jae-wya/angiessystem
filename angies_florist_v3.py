@@ -5680,6 +5680,39 @@ def page_management_kpi():
     st.markdown("<div class='section-header'>🎯 Management KPI Dashboard</div>", unsafe_allow_html=True)
     st.caption(f"Live as of {datetime.now(PHT).strftime('%A, %B %d %Y · %I:%M %p')}  ·  Hit 🔄 Refresh Data in the sidebar to force-update.")
 
+    period = st.radio(
+        "📅 View Period",
+        ["Today", "This Week", "Bi-Weekly", "This Month"],
+        horizontal=True,
+        key="kpi_period",
+    )
+
+    today = date.today()
+    if period == "Today":
+        period_start = today.isoformat()
+        prev_start   = (today - timedelta(days=1)).isoformat()
+        prev_end     = (today - timedelta(days=1)).isoformat()
+        period_label = "today"
+        prev_label   = "yesterday"
+    elif period == "This Week":
+        period_start = (today - timedelta(days=today.weekday())).isoformat()
+        prev_start   = (today - timedelta(days=today.weekday()+7)).isoformat()
+        prev_end     = (today - timedelta(days=today.weekday()+1)).isoformat()
+        period_label = "this week"
+        prev_label   = "last week"
+    elif period == "Bi-Weekly":
+        period_start = (today - timedelta(days=13)).isoformat()
+        prev_start   = (today - timedelta(days=27)).isoformat()
+        prev_end     = (today - timedelta(days=14)).isoformat()
+        period_label = "last 14 days"
+        prev_label   = "prior 14 days"
+    else:  # This Month
+        period_start = today.replace(day=1).isoformat()
+        prev_start   = (today.replace(day=1) - timedelta(days=1)).replace(day=1).isoformat()
+        prev_end     = (today.replace(day=1) - timedelta(days=1)).isoformat()
+        period_label = "this month"
+        prev_label   = "last month"
+
     # ── DATA LOAD ─────────────────────────────────────────────────────────────
     all_orders    = db.get_orders()
     all_inventory = db.get_inventory()
@@ -5699,6 +5732,21 @@ def page_management_kpi():
 
     def _rev(order_list):
         return sum(float(o.get("total_price", 0)) for o in order_list if o.get("status") in COMPLETED)
+
+    # Period orders
+    period_orders = [o for o in all_orders
+        if str(o.get("target_date",""))[:10] >= period_start
+        and str(o.get("target_date",""))[:10] <= today.isoformat()
+        and o.get("status") not in ("Cancelled",)]
+
+    prev_orders = [o for o in all_orders
+        if prev_start <= str(o.get("target_date",""))[:10] <= prev_end
+        and o.get("status") not in ("Cancelled",)]
+
+    period_rev = _rev(period_orders)
+    prev_rev   = _rev(prev_orders)
+    rev_delta  = period_rev - prev_rev
+    rev_delta_pct = (rev_delta / prev_rev * 100) if prev_rev > 0 else 0
 
     # ── SECTION 1: LIVE OPERATIONS ───────────────────────────────────────────
     st.markdown("### 🔴 Live Operations")
@@ -5747,14 +5795,277 @@ def page_management_kpi():
     net_profit     = rev_all_time - waste_cost_all
     margin_pct     = (net_profit / rev_all_time * 100) if rev_all_time > 0 else 0
 
-    r1,r2,r3,r4,r5 = st.columns(5)
-    r1.metric("Today",            f"₱{rev_today:,.0f}")
-    r2.metric("This Week",        f"₱{rev_week:,.0f}")
-    r3.metric("This Month",       f"₱{rev_month:,.0f}",
-              delta=f"{'▲' if mom_delta >= 0 else '▼'} ₱{abs(mom_delta):,.0f} vs last mo. ({mom_pct:+.1f}%)")
-    r4.metric("All-Time Revenue", f"₱{rev_all_time:,.0f}")
-    r5.metric("Net Margin",       f"{margin_pct:.1f}%",
-              delta=f"after ₱{waste_cost_all:,.0f} waste cost")
+    period_completed  = [o for o in period_orders if o.get("status") in COMPLETED]
+    order_count_delta = len(period_orders) - len(prev_orders)
+    completion_rate   = (len(period_completed) / len(period_orders) * 100) if period_orders else 0
+    avg_order_value   = (period_rev / len(period_completed)) if period_completed else 0
+
+    rev_period_col, cnt_col, comp_col, aov_col = st.columns(4)
+    rev_period_col.metric(
+        f"Revenue ({period_label})",
+        f"₱{period_rev:,.0f}",
+        delta=f"{'▲' if rev_delta >= 0 else '▼'} ₱{abs(rev_delta):,.0f} vs {prev_label} ({rev_delta_pct:+.1f}%)"
+    )
+    cnt_col.metric(
+        "Order Count",
+        len(period_orders),
+        delta=f"{'▲' if order_count_delta >= 0 else '▼'} {abs(order_count_delta)} vs {prev_label}"
+    )
+    comp_col.metric("Completion Rate", f"{completion_rate:.0f}%")
+    aov_col.metric("Avg Order Value",  f"₱{avg_order_value:,.0f}")
+
+    st.divider()
+
+    # ── SECTION: SALES QUOTA TRACKER ─────────────────────────────────────────
+    st.markdown("### 🎯 Sales Quota")
+
+    # Load quotas from system_flags
+    overall_quota = float(db.get_system_flag("quota_overall") or 0)
+    branch_quotas = {
+        "Main Branch":      float(db.get_system_flag("quota_main") or 0),
+        "San Pablo Branch": float(db.get_system_flag("quota_san_pablo") or 0),
+        "Sta. Rosa Branch": float(db.get_system_flag("quota_sta_rosa") or 0),
+    }
+
+    # Quota setting form (Super Admin only)
+    if CURRENT_ROLE == "Super Admin":
+        with st.expander("⚙️ Set Monthly Quotas", expanded=(overall_quota == 0)):
+            qf1, qf2, qf3, qf4 = st.columns(4)
+            new_overall = qf1.number_input(
+                "Overall (₱)", min_value=0.0, step=10000.0,
+                value=overall_quota, key="quota_overall_input"
+            )
+            new_main = qf2.number_input(
+                "Main Branch (₱)", min_value=0.0, step=5000.0,
+                value=branch_quotas["Main Branch"], key="quota_main_input"
+            )
+            new_sp = qf3.number_input(
+                "San Pablo (₱)", min_value=0.0, step=5000.0,
+                value=branch_quotas["San Pablo Branch"], key="quota_sp_input"
+            )
+            new_sr = qf4.number_input(
+                "Sta. Rosa (₱)", min_value=0.0, step=5000.0,
+                value=branch_quotas["Sta. Rosa Branch"], key="quota_sr_input"
+            )
+            if st.button("💾 Save Quotas", key="save_quotas"):
+                db.set_system_flag("quota_overall",   str(new_overall))
+                db.set_system_flag("quota_main",      str(new_main))
+                db.set_system_flag("quota_san_pablo", str(new_sp))
+                db.set_system_flag("quota_sta_rosa",  str(new_sr))
+                st.success("✅ Quotas saved.")
+                st.rerun()
+
+    # Monthly revenue for quota comparison (always use monthly)
+    month_start_quota = today.replace(day=1).isoformat()
+    rev_this_month = _rev([o for o in all_orders
+        if str(o.get("target_date",""))[:10] >= month_start_quota])
+
+    # Days projection
+    days_in_month  = (today.replace(month=today.month % 12 + 1, day=1)
+                      - timedelta(days=1)).day if today.month < 12 else 31
+    days_elapsed   = today.day
+    daily_pace     = rev_this_month / days_elapsed if days_elapsed > 0 else 0
+    projected_month = daily_pace * days_in_month
+
+    # Weekly and bi-weekly quota
+    week_quota     = overall_quota / 4 if overall_quota > 0 else 0
+    biweek_quota   = overall_quota / 2 if overall_quota > 0 else 0
+
+    # Overall quota progress
+    if overall_quota > 0:
+        pct = min(rev_this_month / overall_quota * 100, 100)
+        bar_color = "#2D7A4F" if pct >= 80 else "#D97706" if pct >= 50 else "#DC2626"
+
+        st.markdown(
+            f"<div style='background:white;border-radius:12px;border:1px solid #E8E3DC;"
+            f"padding:16px 20px;margin-bottom:12px;"
+            f"box-shadow:0 2px 8px rgba(200,92,142,0.06);'>"
+            f"<div style='display:flex;justify-content:space-between;margin-bottom:8px;'>"
+            f"<span style='font-weight:700;font-size:1rem;'>Overall Monthly Quota</span>"
+            f"<span style='font-weight:700;color:{bar_color};font-size:1rem;'>"
+            f"₱{rev_this_month:,.0f} / ₱{overall_quota:,.0f} ({pct:.1f}%)</span>"
+            f"</div>"
+            f"<div style='background:#E8E3DC;border-radius:6px;height:12px;'>"
+            f"<div style='background:{bar_color};width:{pct:.1f}%;height:12px;"
+            f"border-radius:6px;transition:width 0.5s;'></div>"
+            f"</div>"
+            f"<div style='display:flex;justify-content:space-between;margin-top:6px;"
+            f"font-size:0.78rem;color:#6B7280;'>"
+            f"<span>📈 Projected month-end: ₱{projected_month:,.0f}</span>"
+            f"<span>📅 Day {days_elapsed}/{days_in_month}</span>"
+            f"</div>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+
+        # Period quota reference
+        if week_quota > 0:
+            wk_rev = _rev([o for o in all_orders
+                if str(o.get("target_date",""))[:10] >= (today - timedelta(days=today.weekday())).isoformat()])
+            bw_rev = _rev([o for o in all_orders
+                if str(o.get("target_date",""))[:10] >= (today - timedelta(days=13)).isoformat()])
+
+            qa, qb, qc = st.columns(3)
+            wk_pct = min(wk_rev / week_quota * 100, 100) if week_quota > 0 else 0
+            bw_pct = min(bw_rev / biweek_quota * 100, 100) if biweek_quota > 0 else 0
+            mo_pct = pct
+
+            for col, label, earned, quota_val, p in [
+                (qa, "Weekly Pace",    wk_rev,  week_quota,   wk_pct),
+                (qb, "Bi-Weekly Pace", bw_rev,  biweek_quota, bw_pct),
+                (qc, "Monthly Pace",   rev_this_month, overall_quota, mo_pct),
+            ]:
+                c = "#2D7A4F" if p >= 80 else "#D97706" if p >= 50 else "#DC2626"
+                col.markdown(
+                    f"<div style='background:white;border-radius:10px;"
+                    f"border:1px solid #E8E3DC;padding:12px 14px;text-align:center;'>"
+                    f"<div style='font-size:0.72rem;font-weight:700;letter-spacing:0.08em;"
+                    f"text-transform:uppercase;color:#6B7280;margin-bottom:4px;'>{label}</div>"
+                    f"<div style='font-weight:800;font-size:1.3rem;color:{c};'>{p:.0f}%</div>"
+                    f"<div style='font-size:0.75rem;color:#888;margin-top:2px;'>"
+                    f"₱{earned:,.0f} / ₱{quota_val:,.0f}</div>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+
+    # Branch quota progress
+    if any(v > 0 for v in branch_quotas.values()):
+        st.markdown("**Branch Quotas — This Month**")
+        for br, br_quota in branch_quotas.items():
+            if br_quota <= 0:
+                continue
+            br_rev = _rev([o for o in all_orders
+                if o.get("fulfillment_branch", o.get("branch","")) == br
+                and str(o.get("target_date",""))[:10] >= month_start_quota])
+            br_pct = min(br_rev / br_quota * 100, 100)
+            br_color = "#2D7A4F" if br_pct >= 80 else "#D97706" if br_pct >= 50 else "#DC2626"
+            st.markdown(
+                f"<div style='margin-bottom:8px;'>"
+                f"<div style='display:flex;justify-content:space-between;"
+                f"font-size:0.82rem;font-weight:600;margin-bottom:3px;'>"
+                f"<span>{br}</span>"
+                f"<span style='color:{br_color};'>₱{br_rev:,.0f} / ₱{br_quota:,.0f} ({br_pct:.0f}%)</span>"
+                f"</div>"
+                f"<div style='background:#E8E3DC;border-radius:4px;height:8px;'>"
+                f"<div style='background:{br_color};width:{br_pct:.1f}%;"
+                f"height:8px;border-radius:4px;'></div>"
+                f"</div></div>",
+                unsafe_allow_html=True,
+            )
+
+    st.divider()
+
+    # ── SECTION: MARKETING KPIs ──────────────────────────────────────────────
+    st.markdown("### 📢 Marketing KPIs")
+    st.caption(f"Based on {period_label} orders · vs {prev_label}")
+
+    # Source performance for period vs prior period
+    source_data = []
+    for src in SOURCE_PAGES:
+        curr = [o for o in period_orders if o.get("source_page","") == src]
+        prev = [o for o in prev_orders  if o.get("source_page","") == src]
+        curr_rev  = _rev(curr)
+        prev_rev_s = _rev(prev)
+        curr_cnt  = len(curr)
+        prev_cnt  = len(prev)
+        if curr_cnt == 0 and prev_cnt == 0:
+            continue
+        rev_chg = curr_rev - prev_rev_s
+        cnt_chg = curr_cnt - prev_cnt
+        source_data.append({
+            "Source":        src,
+            "Orders":        curr_cnt,
+            "vs Prior":      f"{'▲' if cnt_chg >= 0 else '▼'}{abs(cnt_chg)}",
+            "Revenue":       f"₱{curr_rev:,.0f}",
+            "Rev vs Prior":  f"{'▲' if rev_chg >= 0 else '▼'} ₱{abs(rev_chg):,.0f}",
+            "% of Revenue":  f"{(curr_rev/period_rev*100):.1f}%" if period_rev > 0 else "0%",
+        })
+
+    # Sort by revenue descending
+    source_data.sort(key=lambda x: float(x["Revenue"].replace("₱","").replace(",","")), reverse=True)
+
+    if source_data:
+        st.dataframe(
+            pd.DataFrame(source_data),
+            use_container_width=True,
+            hide_index=True,
+        )
+    else:
+        st.info("No source page data for this period.")
+
+    st.divider()
+
+    # Top 5 arrangements (trend setters)
+    st.markdown("#### 🏆 Top Arrangements — Trend Setters")
+
+    arr_counts = {}
+    arr_rev    = {}
+    for o in period_orders:
+        arr = o.get("arrangement","").strip()
+        if not arr:
+            continue
+        arr_counts[arr] = arr_counts.get(arr, 0) + int(o.get("quantity", 1))
+        arr_rev[arr]    = arr_rev.get(arr, 0) + float(o.get("total_price", 0))
+
+    top_arr = sorted(arr_counts.items(), key=lambda x: x[1], reverse=True)[:5]
+
+    if top_arr:
+        max_count = top_arr[0][1] if top_arr else 1
+        for rank, (arr_name, count) in enumerate(top_arr, 1):
+            rev_val  = arr_rev.get(arr_name, 0)
+            bar_w    = int(count / max_count * 100)
+            medal    = ["🥇","🥈","🥉","4️⃣","5️⃣"][rank-1]
+            st.markdown(
+f"""<div style='background:white;border-radius:10px;border:1px solid #E8E3DC;
+padding:10px 14px;margin-bottom:6px;'>
+<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;'>
+<span style='font-weight:700;font-size:0.9rem;'>{medal} {arr_name[:50]}</span>
+<span style='font-size:0.82rem;color:#C85C8E;font-weight:700;'>{count} orders · ₱{rev_val:,.0f}</span>
+</div>
+<div style='background:#F0D9E8;border-radius:4px;height:6px;'>
+<div style='background:#C85C8E;width:{bar_w}%;height:6px;border-radius:4px;'></div>
+</div>
+</div>""",
+                unsafe_allow_html=True,
+            )
+    else:
+        st.info("No arrangement data for this period.")
+
+    st.divider()
+
+    # Best ordering days
+    st.markdown("#### 📅 Best Ordering Days")
+    day_counts = {}
+    for o in period_orders:
+        try:
+            d = date.fromisoformat(str(o.get("target_date",""))[:10])
+            day_name = d.strftime("%A")
+            day_counts[day_name] = day_counts.get(day_name, 0) + 1
+        except Exception:
+            pass
+
+    if day_counts:
+        day_order = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
+        day_sorted = [(d, day_counts.get(d, 0)) for d in day_order if day_counts.get(d, 0) > 0]
+        day_sorted.sort(key=lambda x: x[1], reverse=True)
+        max_day = day_sorted[0][1] if day_sorted else 1
+
+        dc1, dc2 = st.columns(2)
+        for i, (day_name, count) in enumerate(day_sorted):
+            col = dc1 if i % 2 == 0 else dc2
+            bar_w = int(count / max_day * 100)
+            col.markdown(
+f"""<div style='margin-bottom:6px;'>
+<div style='display:flex;justify-content:space-between;font-size:0.8rem;margin-bottom:2px;'>
+<span style='font-weight:600;'>{day_name}</span>
+<span style='color:#C85C8E;font-weight:700;'>{count} orders</span>
+</div>
+<div style='background:#F0D9E8;border-radius:3px;height:5px;'>
+<div style='background:#C85C8E;width:{bar_w}%;height:5px;border-radius:3px;'></div>
+</div>
+</div>""",
+                unsafe_allow_html=True,
+            )
 
     st.divider()
 
