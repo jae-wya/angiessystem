@@ -580,6 +580,17 @@ FILLER_FLOWERS = {
     "SNAPDRAGON", "MISTY WHITE", "MISTY BLUE", "EUCALYPTUS",
 }
 
+COLOR_FREE_FLOWERS = {
+    "SUNFLOWER", "SUNFLOWERS",
+    "GYPSO", "GYPSOPHILA",
+    "EUCALYPTUS",
+    "MISTY WHITE", "MISTY BLUE",
+    "STARGAZERS", "STARGAZER",
+    "YELLOWIN",
+    "CASA BLANCA",
+    "CHAMOMILE",
+}
+
 ARRANGEMENT_NAMES = [
     "Apricot Bloom",
     "Pink Dreams",
@@ -1205,15 +1216,30 @@ def render_flower_builder(form_key_prefix: str, existing_items=None) -> list:
             "Qty" if i == 0 else f"Qty{i}", min_value=1, value=int(fi.get("qty",1)),
             key=f"{sk}_qty_{i}", label_visibility="visible" if i == 0 else "collapsed",
         )
-        new_colors = rc3.multiselect(
-            "Colors" if i == 0 else f"Colors{i}", COLOR_PREFERENCES,
-            default=[c for c in fi.get("colors",["Any"]) if c in COLOR_PREFERENCES],
-            key=f"{sk}_colors_{i}", label_visibility="visible" if i == 0 else "collapsed",
-        )
+        is_color_free = new_flower.strip().upper() in COLOR_FREE_FLOWERS
+        if is_color_free:
+            # Hide color selection — show locked label instead
+            rc3.markdown(
+                "<div style='padding:8px 12px;background:#F5F5F5;"
+                "border-radius:6px;font-size:0.82rem;color:#888;"
+                "margin-top:24px;'>🔒 Color fixed</div>",
+                unsafe_allow_html=True,
+            )
+            new_colors = []  # no color prefix for these flowers
+        else:
+            new_colors = rc3.multiselect(
+                "Colors" if i == 0 else f"Colors{i}", COLOR_PREFERENCES,
+                default=[c for c in fi.get("colors",["Any"]) if c in COLOR_PREFERENCES],
+                key=f"{sk}_colors_{i}", label_visibility="visible" if i == 0 else "collapsed",
+            )
         with rc4:
             if st.button("🗑", key=f"{sk}_del_{i}", help="Remove"):
                 rows_to_delete.append(i)
-        items[i] = {"flower": new_flower, "qty": new_qty, "colors": new_colors if new_colors else ["Any"]}
+        if is_color_free:
+            items[i] = {"flower": new_flower, "qty": new_qty, "colors": []}
+        else:
+            items[i] = {"flower": new_flower, "qty": new_qty,
+                        "colors": new_colors if new_colors else ["Any"]}
 
         # ── STOCK PREVIEW ─────────────────────────────────────
         _preview_branch = (
@@ -1226,7 +1252,28 @@ def render_flower_builder(form_key_prefix: str, existing_items=None) -> list:
             _active_colors = [c for c in new_colors if c and c != "Any"] if new_colors else []
             _preview_html_lines = []
 
-            if _active_colors:
+            if is_color_free:
+                # Skip the color-based preview, just show base flower stock
+                _match = next((x for x in _inv
+                    if x.get("name","").strip().upper() == new_flower.strip().upper()
+                    and x.get("branch","") == _preview_branch), None)
+                if _match:
+                    _avail = int(_match.get("quantity", 0))
+                    _unit  = _match.get("unit", "pcs")
+                    _icon  = "🔴" if _avail <= 0 else "🟡" if _avail <= int(_match.get("reorder_point",10)) else "🟢"
+                    _color = "#DC2626" if _avail <= 0 else "#D97706" if _avail <= int(_match.get("reorder_point",10)) else "#2D7A4F"
+                    st.markdown(
+"<div style='background:#F8F9FA;border-radius:6px;"
+"border:1px solid #E8E3DC;padding:6px 12px;margin:4px 0 8px;"
+"font-size:0.8rem;'>"
+f"<span style='color:{_color};font-weight:600;'>{_icon} "
+f"{new_flower.upper()}</span>"
+f"<span style='color:#555;'> — {_avail} {_unit} available</span>"
+f"<div style='font-size:0.7rem;color:#AAA;margin-top:2px;'>"
+f"📍 {_preview_branch}</div></div>",
+                        unsafe_allow_html=True,
+                    )
+            elif _active_colors:
                 for _col in _active_colors:
                     _iname = f"{_col.upper()} {new_flower.upper()}"
                     _match = next((x for x in _inv
@@ -4067,11 +4114,46 @@ def generate_count_sheet_html(branch: str, shift: str,
 </html>"""
 
 
+def get_flower_parent(item_name: str) -> str:
+    """
+    Strip color prefix from inventory item name to get flower family.
+    Examples:
+      PINK CARNATIONS         → CARNATIONS
+      TWO-TONE PURPLE CARNATIONS → CARNATIONS
+      RED CHINA ROSES         → CHINA ROSES
+      TWO-TONE RED CHINA ROSES → CHINA ROSES
+      GYPSO                   → GYPSO (filler, no color)
+    """
+    name = item_name.strip().upper()
+
+    # Two-tone colors — strip "TWO-TONE <COLOR> " prefix
+    import re
+    two_tone = re.match(
+        r'^TWO-TONE\s+\w+\s+(.*)', name
+    )
+    if two_tone:
+        return two_tone.group(1).strip()
+
+    # Single color — strip first word if it matches a known color
+    COLORS = {
+        "RED","PINK","WHITE","PURPLE","YELLOW","ORANGE",
+        "BLUE","GREEN","BROWN","PEACH","FUCHSIA","MIXED",
+        "CUSTOM","BLACK","CORAL","LAVENDER","CREAM",
+        "TWO-TONE","MAGENTA","MAROON",
+    }
+    parts = name.split(" ", 1)
+    if len(parts) > 1 and parts[0] in COLORS:
+        return parts[1].strip()
+
+    # No color prefix — return as-is (filler or base name)
+    return name
+
+
 def page_inventory():
     st.markdown("<div class='section-header'>📦 Inventory Management</div>", unsafe_allow_html=True)
     inventory = scope_by_branch(db.get_inventory())
 
-    tab_inv, tab_adjust, tab_count, tab_log, tab_backfill, tab_transfer, tab_forecast = st.tabs([
+    tab_inv, tab_adjust, tab_count, tab_log, tab_backfill, tab_transfer, tab_forecast, tab_report, tab_merge = st.tabs([
         "📦 Stock List",
         "🔧 Manual Adjustment",
         "📋 Stock Count Entry",
@@ -4079,6 +4161,8 @@ def page_inventory():
         "🔁 Backfill",
         "🔄 Inter-Branch Transfer",
         "📊 Demand Forecast",
+        "🖨️ Inventory Report",
+        "🔀 Merge Items",
     ])
 
     # ── TAB 1: STOCK LIST ─────────────────────────────────────────────────
@@ -5053,6 +5137,461 @@ def page_inventory():
                         st.success(
                             "✅ All flowers are sufficiently stocked for this period."
                         )
+
+    # ── TAB 8: INVENTORY REPORT ───────────────────────────────────────────
+    with tab_report:
+        st.markdown("#### 🖨️ Inventory Report")
+        st.caption("Simple in/out report per flower family. Print-ready.")
+
+        # ── Filters ───────────────────────────────────────────
+        rp1, rp2, rp3 = st.columns(3)
+
+        # Period quick select
+        rp_period = rp1.radio(
+            "Period",
+            ["Today", "This Week", "This Month", "Custom"],
+            horizontal=True,
+            key="rp_period",
+        )
+
+        today_rp = date.today()
+        if rp_period == "Today":
+            rp_from = rp_to = today_rp
+        elif rp_period == "This Week":
+            rp_from = today_rp - timedelta(days=today_rp.weekday())
+            rp_to   = today_rp
+        elif rp_period == "This Month":
+            rp_from = today_rp.replace(day=1)
+            rp_to   = today_rp
+        else:
+            rp_from = rp2.date_input("From", value=today_rp, key="rp_from")
+            rp_to   = rp3.date_input("To",   value=today_rp, key="rp_to")
+
+        rp_branch_opts = ["All"] + BRANCHES[:3]
+        rp_branch = st.selectbox(
+            "Branch", rp_branch_opts, key="rp_branch_sel"
+        )
+
+        # ── Build report data ──────────────────────────────────
+        all_inv     = db.get_inventory()
+        all_orders_rp = db.get_orders()
+
+        today_str   = today_rp.isoformat()
+        rp_from_str = rp_from.isoformat()
+        rp_to_str   = rp_to.isoformat()
+
+        # Orders in period (for used calculation)
+        period_orders = [
+            o for o in all_orders_rp
+            if rp_from_str <= str(o.get("target_date",""))[:10] <= rp_to_str
+            and o.get("status") not in ("Cancelled",)
+            and (rp_branch == "All" or
+                 o.get("fulfillment_branch", o.get("branch","")) == rp_branch)
+        ]
+
+        # Advance orders (future, committed)
+        advance_orders = [
+            o for o in all_orders_rp
+            if str(o.get("target_date",""))[:10] > today_str
+            and o.get("status") not in ("Cancelled", "Delivered", "Picked Up")
+            and (rp_branch == "All" or
+                 o.get("fulfillment_branch", o.get("branch","")) == rp_branch)
+        ]
+
+        # Build used map: {item_name_upper: qty_used}
+        def build_usage_map(orders):
+            usage = {}
+            for o in orders:
+                for fi in (o.get("flower_items") or []):
+                    flower = fi.get("flower","").strip().upper()
+                    qty    = int(fi.get("qty", 1))
+                    colors = [c for c in fi.get("colors",[])
+                             if c and c.lower() != "any"]
+                    if colors:
+                        for c in colors:
+                            key = f"{c.upper()} {flower}"
+                            usage[key] = usage.get(key, 0) + qty
+                    else:
+                        usage[flower] = usage.get(flower, 0) + qty
+            return usage
+
+        used_map    = build_usage_map(period_orders)
+        advance_map = build_usage_map(advance_orders)
+
+        # Get inventory items for selected branch
+        if rp_branch == "All":
+            inv_items = all_inv
+        else:
+            inv_items = [i for i in all_inv
+                         if i.get("branch","") == rp_branch]
+
+        # Group items by flower family then branch
+        # Structure: {parent_name: {branch: [items]}}
+        from collections import defaultdict
+        family_map = defaultdict(lambda: defaultdict(list))
+
+        for item in inv_items:
+            name   = item.get("name","").strip().upper()
+            branch = item.get("branch","")
+            parent = get_flower_parent(name)
+            family_map[parent][branch].append(item)
+
+        # Sort families: FLOWER_TYPES order first, then others
+        ft_upper = [f.upper() for f in FLOWER_TYPES]
+        def family_sort_key(k):
+            try:
+                return ft_upper.index(k)
+            except ValueError:
+                return 999
+
+        sorted_families = sorted(family_map.keys(), key=family_sort_key)
+
+        if not sorted_families:
+            st.info("No inventory items found.")
+        else:
+            # ── On-screen preview ─────────────────────────────
+            st.divider()
+
+            for parent in sorted_families:
+                branches_data = family_map[parent]
+
+                # Family header
+                st.markdown(
+f"<div style='background:#1C1B22;color:white;padding:6px 14px;"
+f"border-radius:6px;font-weight:700;font-size:0.9rem;"
+f"margin-bottom:4px;margin-top:12px;'>{parent}</div>",
+                    unsafe_allow_html=True,
+                )
+
+                # Table header
+                st.markdown(
+"<div style='display:grid;grid-template-columns:2.5fr 1fr 1fr 1fr 1fr;"
+"gap:4px;padding:4px 14px;background:#F5F5F5;"
+"font-size:0.72rem;font-weight:700;letter-spacing:0.08em;"
+"text-transform:uppercase;color:#6B7280;'>"
+"<span>Item / Branch</span>"
+"<span style='text-align:center'>On Hand</span>"
+"<span style='text-align:center'>Used</span>"
+"<span style='text-align:center'>Advance</span>"
+"<span style='text-align:center'>Remaining</span>"
+"</div>",
+                    unsafe_allow_html=True,
+                )
+
+                all_branches = sorted(branches_data.keys()) if rp_branch == "All" else [rp_branch]
+
+                for br in all_branches:
+                    items_in_br = branches_data.get(br, [])
+                    if not items_in_br:
+                        continue
+
+                    if rp_branch == "All":
+                        st.markdown(
+f"<div style='padding:2px 14px;font-size:0.75rem;"
+f"color:#C85C8E;font-weight:600;margin-top:4px;'>"
+f"📍 {br}</div>",
+                            unsafe_allow_html=True,
+                        )
+
+                    for item in sorted(items_in_br,
+                                       key=lambda x: x.get("name","")):
+                        iname    = item.get("name","").strip().upper()
+                        on_hand  = int(item.get("quantity", 0))
+                        used     = used_map.get(iname, 0)
+                        advance  = advance_map.get(iname, 0)
+                        remaining = on_hand - used - advance
+
+                        rem_color = (
+                            "#DC2626" if remaining < 0 else
+                            "#D97706" if remaining <= int(item.get("reorder_point",10)) else
+                            "#2D7A4F"
+                        )
+
+                        display_name = iname.title()
+                        # For color-free flowers, strip color prefix for display
+                        parent_check = get_flower_parent(iname)
+                        if parent_check.upper() in COLOR_FREE_FLOWERS:
+                            display_name = parent_check.title()
+
+                        st.markdown(
+f"<div style='display:grid;grid-template-columns:2.5fr 1fr 1fr 1fr 1fr;"
+f"gap:4px;padding:5px 14px;border-bottom:1px solid #F0F0F0;"
+f"font-size:0.85rem;'>"
+f"<span style='color:#1C1B22;'>{display_name}</span>"
+f"<span style='text-align:center;font-weight:600;'>{on_hand}</span>"
+f"<span style='text-align:center;color:#DC2626;'>{used}</span>"
+f"<span style='text-align:center;color:#D97706;'>{advance}</span>"
+f"<span style='text-align:center;font-weight:700;color:{rem_color};'>{remaining}</span>"
+f"</div>",
+                            unsafe_allow_html=True,
+                        )
+
+            st.divider()
+
+            # ── Print button ───────────────────────────────────
+            if st.button("🖨️ Print Inventory Report",
+                         key="print_inv_report",
+                         type="primary",
+                         use_container_width=True):
+
+                # Build printable HTML
+                period_label = (
+                    f"{rp_from_str}" if rp_from == rp_to
+                    else f"{rp_from_str} to {rp_to_str}"
+                )
+                branch_label = rp_branch
+
+                # Build table rows HTML
+                table_rows = ""
+                for parent in sorted_families:
+                    branches_data = family_map[parent]
+                    table_rows += (
+                        f"<tr class='family-row'>"
+                        f"<td colspan='5'>{parent}</td>"
+                        f"</tr>"
+                    )
+                    all_branches_p = (
+                        sorted(branches_data.keys())
+                        if rp_branch == "All"
+                        else [rp_branch]
+                    )
+                    for br in all_branches_p:
+                        items_in_br = branches_data.get(br, [])
+                        if not items_in_br:
+                            continue
+                        if rp_branch == "All":
+                            table_rows += (
+                                f"<tr class='branch-row'>"
+                                f"<td colspan='5'>📍 {br}</td>"
+                                f"</tr>"
+                            )
+                        for item in sorted(items_in_br,
+                                           key=lambda x: x.get("name","")):
+                            iname     = item.get("name","").strip().upper()
+                            on_hand   = int(item.get("quantity", 0))
+                            used      = used_map.get(iname, 0)
+                            advance   = advance_map.get(iname, 0)
+                            remaining = on_hand - used - advance
+                            rem_class = (
+                                "neg" if remaining < 0 else
+                                "low" if remaining <= int(item.get("reorder_point",10)) else
+                                "ok"
+                            )
+                            display_name = iname.title()
+                            # For color-free flowers, strip color prefix for display
+                            parent_check = get_flower_parent(iname)
+                            if parent_check.upper() in COLOR_FREE_FLOWERS:
+                                display_name = parent_check.title()
+                            table_rows += (
+                                f"<tr>"
+                                f"<td class='item-name'>{display_name}</td>"
+                                f"<td class='num'>{on_hand}</td>"
+                                f"<td class='num used'>{used}</td>"
+                                f"<td class='num advance'>{advance}</td>"
+                                f"<td class='num remaining {rem_class}'>{remaining}</td>"
+                                f"</tr>"
+                            )
+
+                html = f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset='UTF-8'>
+<title>Inventory Report — {branch_label}</title>
+<style>
+*{{margin:0;padding:0;box-sizing:border-box;}}
+body{{font-family:Arial,sans-serif;font-size:11pt;color:#1a1a1a;padding:20px;}}
+.header{{margin-bottom:16px;border-bottom:2px solid #C85C8E;padding-bottom:10px;}}
+.header h1{{font-size:18pt;color:#C85C8E;}}
+.header .meta{{font-size:9pt;color:#666;margin-top:4px;}}
+table{{width:100%;border-collapse:collapse;margin-top:8px;}}
+th{{background:#1C1B22;color:white;padding:7px 10px;
+    text-align:left;font-size:9pt;letter-spacing:0.05em;}}
+th.num{{text-align:center;}}
+td{{padding:5px 10px;border-bottom:1px solid #eee;font-size:10pt;}}
+td.num{{text-align:center;}}
+td.used{{color:#DC2626;font-weight:600;}}
+td.advance{{color:#D97706;font-weight:600;}}
+td.remaining{{font-weight:700;}}
+td.remaining.ok{{color:#2D7A4F;}}
+td.remaining.low{{color:#D97706;}}
+td.remaining.neg{{color:#DC2626;}}
+td.item-name{{padding-left:20px;}}
+tr.family-row td{{
+    background:#C85C8E;color:white;font-weight:700;
+    padding:6px 10px;font-size:10pt;letter-spacing:0.04em;
+}}
+tr.branch-row td{{
+    background:#FDF6F0;color:#C85C8E;font-weight:600;
+    padding:4px 10px;font-size:9pt;
+}}
+tr:hover td{{background:#FAFAFA;}}
+tr.family-row:hover td,tr.branch-row:hover td{{background:inherit;}}
+.legend{{margin-top:16px;font-size:8.5pt;color:#888;}}
+.footer{{margin-top:20px;border-top:1px solid #eee;
+         padding-top:8px;font-size:8pt;color:#aaa;
+         display:flex;justify-content:space-between;}}
+@media print{{
+    @page{{size:A4;margin:15mm;}}
+    body{{padding:0;}}
+    tr.family-row td{{-webkit-print-color-adjust:exact;
+                      print-color-adjust:exact;}}
+}}
+</style>
+</head>
+<body>
+<div class='header'>
+<h1>🌸 Angie's Florist — Inventory Report</h1>
+<div class='meta'>
+Period: {period_label} &nbsp;·&nbsp;
+Branch: {branch_label} &nbsp;·&nbsp;
+Printed: {datetime.now(PHT).strftime('%B %d, %Y %I:%M %p')} &nbsp;·&nbsp;
+By: {CURRENT_USER.get('name','—')}
+</div>
+</div>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th class='num'>On Hand</th>
+<th class='num'>Used</th>
+<th class='num'>Advance</th>
+<th class='num'>Remaining</th>
+</tr>
+</thead>
+<tbody>
+{table_rows}
+</tbody>
+</table>
+<div class='legend'>
+🟢 Remaining = On Hand − Used − Advance &nbsp;·&nbsp;
+🔴 Red = Negative stock &nbsp;·&nbsp;
+🟡 Amber = Below reorder point
+</div>
+<div class='footer'>
+<span>Angie's Florist System v3.0</span>
+<span>REMAINING = ON HAND − USED − ADVANCE ORDERS</span>
+</div>
+</body>
+</html>"""
+
+                import base64 as _b64
+                _b64str = _b64.b64encode(html.encode("utf-8")).decode("utf-8")
+                _js = (
+                    "<script>(function(){"
+                    "var b=atob('" + _b64str + "');"
+                    "var by=new Uint8Array(b.length);"
+                    "for(var i=0;i<b.length;i++){by[i]=b.charCodeAt(i);}"
+                    "var bl=new Blob([by],{type:'text/html;charset=utf-8'});"
+                    "var u=URL.createObjectURL(bl);"
+                    "var w=window.open(u,'_blank');"
+                    "if(!w){alert('Allow pop-ups for this site.');}"
+                    "})();</script>"
+                )
+                import streamlit.components.v1 as _cv1
+                _cv1.html(_js, height=0, scrolling=False)
+
+    # ── TAB 9: MERGE ITEMS ────────────────────────────────────────────────
+    with tab_merge:
+        st.markdown("#### 🔀 Merge Duplicate Inventory Items")
+        st.caption(
+            "Use this to fix duplicate entries like 'YELLOW SUNFLOWERS' "
+            "and 'SUNFLOWERS'. Quantities are added together. "
+            "The wrong entry is deleted after merging."
+        )
+
+        if CURRENT_ROLE not in ("Super Admin", "Branch Manager"):
+            st.warning("Only Branch Manager and Super Admin can merge items.")
+        else:
+            all_inv_merge = db.get_inventory()
+            item_names = sorted(set(
+                f"{i.get('name','')} — {i.get('branch','')}"
+                for i in all_inv_merge
+            ))
+
+            st.markdown("##### Step 1 — Select the WRONG item (to delete)")
+            wrong_label = st.selectbox(
+                "Wrong item (will be deleted after merge)",
+                item_names,
+                key="merge_wrong",
+            )
+
+            st.markdown("##### Step 2 — Select the CORRECT item (to keep)")
+            correct_label = st.selectbox(
+                "Correct item (will receive the merged quantity)",
+                item_names,
+                key="merge_correct",
+            )
+
+            if wrong_label and correct_label and wrong_label != correct_label:
+                # Parse selections
+                wrong_name,  wrong_branch  = [x.strip() for x in wrong_label.rsplit("—", 1)]
+                correct_name, correct_branch = [x.strip() for x in correct_label.rsplit("—", 1)]
+
+                wrong_item   = next((i for i in all_inv_merge
+                    if i.get("name","").strip() == wrong_name
+                    and i.get("branch","") == wrong_branch), None)
+                correct_item = next((i for i in all_inv_merge
+                    if i.get("name","").strip() == correct_name
+                    and i.get("branch","") == correct_branch), None)
+
+                if wrong_item and correct_item:
+                    wrong_qty   = int(wrong_item.get("quantity", 0))
+                    correct_qty = int(correct_item.get("quantity", 0))
+                    new_qty     = correct_qty + wrong_qty
+
+                    st.markdown(
+f"<div style='background:#FEF9E7;border-left:4px solid #D97706;"
+f"border-radius:8px;padding:12px 16px;margin:12px 0;'>"
+f"<strong>Preview:</strong><br>"
+f"❌ DELETE: <strong>{wrong_name}</strong> "
+f"({wrong_branch}) — {wrong_qty} pcs<br>"
+f"✅ KEEP: <strong>{correct_name}</strong> "
+f"({correct_branch}) — {correct_qty} pcs<br>"
+f"📦 New quantity: <strong>{new_qty} pcs</strong> "
+f"({correct_qty} + {wrong_qty})"
+f"</div>",
+                        unsafe_allow_html=True,
+                    )
+
+                    confirm_merge = st.checkbox(
+                        f"✅ I confirm — merge {wrong_name} into "
+                        f"{correct_name} and delete {wrong_name}",
+                        key="merge_confirm",
+                    )
+
+                    if st.button(
+                        "🔀 Execute Merge",
+                        key="merge_execute",
+                        type="primary",
+                        disabled=not confirm_merge,
+                        use_container_width=True,
+                    ):
+                        # 1. Update correct item quantity
+                        db.update_inventory_item(
+                            correct_item["id"], {"quantity": new_qty}
+                        )
+
+                        # 2. Log the merge
+                        db.log_inventory_change(
+                            correct_name, correct_branch,
+                            wrong_qty, correct_qty, new_qty,
+                            f"Merged from '{wrong_name}' "
+                            f"({wrong_branch}) — duplicate cleanup",
+                            "", CURRENT_USER.get("name","")
+                        )
+
+                        # 3. Delete wrong item
+                        db.delete_inventory_item(wrong_item["id"])
+
+                        st.success(
+                            f"✅ Merged {wrong_qty} pcs of "
+                            f"**{wrong_name}** into **{correct_name}**. "
+                            f"New total: **{new_qty} pcs**. "
+                            f"**{wrong_name}** has been deleted."
+                        )
+                        st.rerun()
+            elif wrong_label == correct_label:
+                st.error("❌ Cannot merge an item with itself.")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

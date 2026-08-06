@@ -479,6 +479,9 @@ def _normalize_flower_name(name: str) -> str:
 FILLER_FLOWERS = {
     "GYPSO", "STATICE", "LIPIDIUM", "AMARATHUS",
     "SNAPDRAGON", "MISTY WHITE", "MISTY BLUE", "EUCALYPTUS",
+    "SUNFLOWER", "SUNFLOWERS", "GYPSOPHILA",
+    "STARGAZERS", "STARGAZER", "YELLOWIN",
+    "CASA BLANCA", "CHAMOMILE",
 }
 
 
