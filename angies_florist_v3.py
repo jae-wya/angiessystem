@@ -544,22 +544,79 @@ DELIVERY_FAILURE_REASONS = ["Needs Redelivery","Customer Refused","Address Inval
 COLOR_PREFERENCES = ["Any","Red","Two-tone Red","Pink","Two-tone Pink","Fuchsia Pink","Peach","White","Purple","Two-tone Purple","Yellow","Orange","Two-tone Orange","Blue","Green","Brown","Mixed","Custom"]
 DELIVERY_ZONES = ["Calamba","Los Baños","Calauan","Cabuyao","Sta. Rosa","Biñan","San Pedro","Bay","San Pablo","Alaminos","Quezon","Batangas","Victoria","Pila","Sta. Cruz","Pagsanjan","Lumban","Rizal","Nagcarlan","Liliw","PICK UP","N/A"]
 WASTE_REASONS = ["Wilted","Damaged","Miscalculation","Customer Return","Expired","Other"]
-ARRANGEMENTS = [
-    "CHINA ROSES","ECUADORIAN ROSES","PAPER ROSES/LISIATHUS","STARGAZERS",
-    "YELLOWIN","CASA BLANCA","CARNATIONS","GERBERA","SUNLIGHT","PEONY","LIPIDIUM",
-    "CALLA LILY","GYPSO","STATICE","ORCHIDS","AMARATHUS","SNAPDRAGON",
-    "SUNFLOWER","HYDRANGEAS","CHAMOMILE","TULIPS","MUMS","PINGPONG",
-    "Apricot Bloom","Pink Dreams","Purple Serenade","Blush Amour",
-    "Sunset Blooms","Barbie Fantasy","Blush Petals","Ruby Whisper",
-    "Pink Harmony","Little Whimsy","Sunburst Yellow","Thumbelina Bouquet",
-    "Kyoto Pink","Opaline Dream",
-    "MIXED IMPORTED FLOWERS #1","MIXED IMPORTED FLOWERS #2","MIXED IMPORTED FLOWERS #3",
-    "MIXED IMPORTED FLOWERS #4","MIXED IMPORTED FLOWERS #5","MIXED IMPORTED FLOWERS #6",
-    "MIXED IMPORTED FLOWERS #7","MIXED IMPORTED FLOWERS #8","MIXED IMPORTED FLOWERS #9",
-    "MIXED IMPORTED FLOWERS #10","MIXED IMPORTED FLOWERS #11","MIXED IMPORTED FLOWERS #12",
-    "Sympathy Arrangement","Bag Arrangement #1","Bag Arrangement #2","Bag Arrangement #3",
+FLOWER_TYPES = [
+    "CARNATIONS",
+    "CHINA ROSES",
+    "ECUADORIAN ROSES",
+    "GERBERA",
+    "STARGAZERS",
+    "SUNFLOWER",
+    "TULIPS",
+    "PEONY",
+    "CALLA LILY",
+    "ORCHIDS",
+    "HYDRANGEAS",
+    "MUMS",
+    "PINGPONG",
+    "YELLOWIN",
+    "CASA BLANCA",
+    "SUNLIGHT",
+    "CHAMOMILE",
+    "PAPER ROSES/LISIATHUS",
+    "LISIANTHUS",
+    # Fillers — no color prefix needed
+    "GYPSO",
+    "STATICE",
+    "LIPIDIUM",
+    "AMARATHUS",
+    "SNAPDRAGON",
+    "MISTY WHITE",
+    "MISTY BLUE",
+    "EUCALYPTUS",
+]
+
+FILLER_FLOWERS = {
+    "GYPSO", "STATICE", "LIPIDIUM", "AMARATHUS",
+    "SNAPDRAGON", "MISTY WHITE", "MISTY BLUE", "EUCALYPTUS",
+}
+
+ARRANGEMENT_NAMES = [
+    "Apricot Bloom",
+    "Pink Dreams",
+    "Purple Serenade",
+    "Blush Amour",
+    "Sunset Blooms",
+    "Barbie Fantasy",
+    "Blush Petals",
+    "Ruby Whisper",
+    "Pink Harmony",
+    "Little Whimsy",
+    "Sunburst Yellow",
+    "Thumbelina Bouquet",
+    "Kyoto Pink",
+    "Opaline Dream",
+    "MIXED IMPORTED FLOWERS #1",
+    "MIXED IMPORTED FLOWERS #2",
+    "MIXED IMPORTED FLOWERS #3",
+    "MIXED IMPORTED FLOWERS #4",
+    "MIXED IMPORTED FLOWERS #5",
+    "MIXED IMPORTED FLOWERS #6",
+    "MIXED IMPORTED FLOWERS #7",
+    "MIXED IMPORTED FLOWERS #8",
+    "MIXED IMPORTED FLOWERS #9",
+    "MIXED IMPORTED FLOWERS #10",
+    "MIXED IMPORTED FLOWERS #11",
+    "MIXED IMPORTED FLOWERS #12",
+    "Sympathy Arrangement",
+    "Bag Arrangement #1",
+    "Bag Arrangement #2",
+    "Bag Arrangement #3",
     "CUSTOMIZE - Per Stem",
 ]
+
+# Keep ARRANGEMENTS as alias for backward compatibility
+# (used in existing orders that have old flower names)
+ARRANGEMENTS = FLOWER_TYPES + ARRANGEMENT_NAMES
 INVENTORY_CATEGORIES = {
     "🌹 Flowers": ["CHINA ROSES","ECUADORIAN ROSES","STARGAZERS","SUNFLOWER","TULIPS"],
     "📦 Wrappers": ["Kraft Paper","Cellophane","Tissue Paper","Vellum Paper"],
@@ -1019,8 +1076,10 @@ def check_inventory_for_order(flower_items: list,
         if not flower_name:
             continue
 
+        is_filler = flower_name.strip().upper() in FILLER_FLOWERS
+
         names_to_check = []
-        if colors:
+        if colors and not is_filler:
             for c in colors:
                 names_to_check.append(f"{c.upper()} {flower_name.upper()}")
         else:
@@ -1137,9 +1196,9 @@ def render_flower_builder(form_key_prefix: str, existing_items=None) -> list:
     rows_to_delete = []
     for i, fi in enumerate(items):
         rc1, rc2, rc3, rc4 = st.columns([3, 1, 2, 0.5])
-        arr_idx = ARRANGEMENTS.index(fi["flower"]) if fi["flower"] in ARRANGEMENTS else 0
+        arr_idx = FLOWER_TYPES.index(fi["flower"]) if fi["flower"] in FLOWER_TYPES else 0
         new_flower = rc1.selectbox(
-            f"Flower" if i == 0 else f"Flower #{i+1}", ARRANGEMENTS, index=arr_idx,
+            f"Flower" if i == 0 else f"Flower #{i+1}", FLOWER_TYPES, index=arr_idx,
             key=f"{sk}_flower_{i}", label_visibility="visible" if i == 0 else "collapsed",
         )
         new_qty = rc2.number_input(
@@ -1156,6 +1215,89 @@ def render_flower_builder(form_key_prefix: str, existing_items=None) -> list:
                 rows_to_delete.append(i)
         items[i] = {"flower": new_flower, "qty": new_qty, "colors": new_colors if new_colors else ["Any"]}
 
+        # ── STOCK PREVIEW ─────────────────────────────────────
+        _preview_branch = (
+            st.session_state.get("_so_branch_preview") or
+            st.session_state.get("edit_fulfillment_branch") or
+            (CURRENT_BRANCH if CURRENT_BRANCH not in ("All","","TikTok","WhatsApp") else "")
+        )
+        if new_flower and _preview_branch:
+            _inv = db.get_inventory()
+            _active_colors = [c for c in new_colors if c and c != "Any"] if new_colors else []
+            _preview_html_lines = []
+
+            if _active_colors:
+                for _col in _active_colors:
+                    _iname = f"{_col.upper()} {new_flower.upper()}"
+                    _match = next((x for x in _inv
+                        if x.get("name","").strip().upper() == _iname
+                        and x.get("branch","") == _preview_branch), None)
+                    if _match is None:
+                        _match = next((x for x in _inv
+                            if x.get("name","").strip().upper() == _iname + "S"
+                            and x.get("branch","") == _preview_branch), None)
+                    if _match is None and _iname.endswith("S"):
+                        _match = next((x for x in _inv
+                            if x.get("name","").strip().upper() == _iname[:-1]
+                            and x.get("branch","") == _preview_branch), None)
+                    if _match:
+                        _avail = int(_match.get("quantity", 0))
+                        _unit  = _match.get("unit", "pcs")
+                        _rp    = int(_match.get("reorder_point", 10))
+                        if _avail <= 0:
+                            _icon  = "🔴"
+                            _msg   = f"OUT OF STOCK ({_avail} {_unit})"
+                            _color = "#DC2626"
+                        elif _avail < new_qty:
+                            _icon  = "🔴"
+                            _msg   = f"Only {_avail} {_unit} — need {new_qty}"
+                            _color = "#DC2626"
+                        elif _avail <= _rp:
+                            _icon  = "🟡"
+                            _msg   = f"{_avail} {_unit} (low stock)"
+                            _color = "#D97706"
+                        else:
+                            _icon  = "🟢"
+                            _msg   = f"{_avail} {_unit} available"
+                            _color = "#2D7A4F"
+                        _preview_html_lines.append(
+                            f"<span style='color:{_color};font-weight:600;'>"
+                            f"{_icon} {_iname}</span>"
+                            f"<span style='color:#555;'> — {_msg}</span>"
+                        )
+                    else:
+                        _preview_html_lines.append(
+                            f"<span style='color:#888;'>⚫ <strong>"
+                            f"{_iname}</strong> — not in inventory at {_preview_branch}</span>"
+                        )
+            else:
+                # No specific color — show all variants
+                _variants = [x for x in _inv
+                    if new_flower.upper() in x.get("name","").upper()
+                    and x.get("branch","") == _preview_branch]
+                if _variants:
+                    for _v in sorted(_variants, key=lambda x: x.get("name","")):
+                        _avail = int(_v.get("quantity", 0))
+                        _unit  = _v.get("unit", "pcs")
+                        _icon  = "🔴" if _avail <= 0 else "🟡" if _avail < 20 else "🟢"
+                        _color = "#DC2626" if _avail <= 0 else "#D97706" if _avail < 20 else "#2D7A4F"
+                        _preview_html_lines.append(
+                            f"<span style='color:{_color};font-weight:600;'>"
+                            f"{_icon} {_v['name']}</span>"
+                            f"<span style='color:#555;'> — {_avail} {_unit}</span>"
+                        )
+
+            if _preview_html_lines:
+                st.markdown(
+"<div style='background:#F8F9FA;border-radius:6px;border:1px solid #E8E3DC;"
+"padding:6px 12px;margin:4px 0 8px;font-size:0.8rem;line-height:1.8;'>"
++ "<br>".join(_preview_html_lines)
++ f"<div style='font-size:0.7rem;color:#AAA;margin-top:2px;'>📍 {_preview_branch}</div>"
++ "</div>",
+                    unsafe_allow_html=True,
+                )
+        # ── END STOCK PREVIEW ──────────────────────────────────
+
     for idx in sorted(rows_to_delete, reverse=True):
         items.pop(idx)
     if rows_to_delete:
@@ -1163,12 +1305,17 @@ def render_flower_builder(form_key_prefix: str, existing_items=None) -> list:
         st.rerun()
 
     if st.button("➕ Add Another Flower", key=f"{sk}_add"):
-        items.append({"flower": ARRANGEMENTS[0], "qty": 1, "colors": ["Any"]})
+        items.append({"flower": FLOWER_TYPES[0], "qty": 1, "colors": ["Any"]})
         st.session_state[sk] = items
         st.rerun()
 
     if not items:
-        st.warning("⚠️ Please add at least one flower.")
+        _arr_name_selected = (
+            form_key_prefix == "new"
+            and st.session_state.get("new_arrangement_name", "") not in ("", "— select if applicable —")
+        )
+        if not _arr_name_selected:
+            st.warning("⚠️ Please add at least one flower.")
     else:
         preview_lines = [
             f"🌸 <strong>{fi['flower']}</strong> × {fi['qty']} — <em>{', '.join(fi.get('colors',['Any']))}</em>"
@@ -1675,6 +1822,14 @@ Paste the customer's filled order form from Messenger or Instagram DM.</div>
     st.info("💡 Fill Flower Price + Delivery Fee + Down Payment above to preview the balance before filling the order form below.")
     st.divider()
 
+    st.markdown("##### 🌸 Arrangement Name")
+    arrangement_name = st.selectbox(
+        "Arrangement Name (Optional)",
+        ["— select if applicable —"] + ARRANGEMENT_NAMES,
+        key="new_arrangement_name",
+        help="Choose a named bouquet if applicable. Otherwise add flowers below."
+    )
+
     flower_items = render_flower_builder("new")
     st.divider()
 
@@ -1724,10 +1879,11 @@ Paste the customer's filled order form from Messenger or Instagram DM.</div>
         recipient_contact = rc2.text_input(_label("recipient_phone", "Recipient Contact"), value=_pv("recipient_contact"), placeholder="Optional")
         is_surprise       = rc3.checkbox("🤫 Surprise Delivery?")
 
-        st.markdown("##### 📦 Arrangement & Occasion")
-        c1,c2 = st.columns(2)
-        source_page = c1.selectbox("Source Page *", SOURCE_PAGES)
-        occasion    = c2.selectbox("Occasion", OCCASIONS, index=OCCASIONS.index("Other"))
+        st.markdown("##### 🌸 Arrangement & Occasion")
+        source_page = st.selectbox("Source Page *", SOURCE_PAGES,
+            key="new_source_page")
+        occasion = st.selectbox("Occasion", OCCASIONS,
+            index=OCCASIONS.index("Other"), key="new_occasion")
         cp1,cp2 = st.columns(2)
         allow_substitution = cp1.checkbox("Allow Substitutions?")
         substitution_notes = cp2.text_input("Substitution Notes", placeholder="e.g., No red — use orange instead") if allow_substitution else ""
@@ -1842,7 +1998,11 @@ font-weight:700; color:#1C1B22; margin-bottom:0.5rem;">💰 Pricing</div>
         if not customer_name or not customer_contact: errors.append("Customer name and contact are required.")
         if price == 0: errors.append("Flower price is required.")
         if order_type == "Delivery" and not delivery_address: errors.append("Delivery address is required.")
-        if not flower_items: errors.append("Please add at least one flower in the Flower Selection above.")
+        arrangement_name_val = st.session_state.get("new_arrangement_name", "")
+        if arrangement_name_val == "— select if applicable —":
+            arrangement_name_val = ""
+        if not flower_items and not arrangement_name_val:
+            errors.append("Please add at least one flower OR select an arrangement name.")
         if errors:
             for e in errors: st.error(f"❌ {e}")
             return
@@ -1860,7 +2020,10 @@ font-weight:700; color:#1C1B22; margin-bottom:0.5rem;">💰 Pricing</div>
         total_price     = price + delivery_fee
         effective_down  = down_payment + split_amount
         total_balance   = max(total_price - effective_down, 0)
-        arrangement_str = flower_items_to_arrangement_str(flower_items)
+        arrangement_name_val = st.session_state.get("new_arrangement_name", "")
+        if arrangement_name_val == "— select if applicable —":
+            arrangement_name_val = ""
+        arrangement_str = arrangement_name_val or flower_items_to_arrangement_str(flower_items)
         total_qty       = sum(fi.get("qty",1) for fi in flower_items)
         all_colors      = list(set(c for fi in flower_items for c in fi.get("colors",[])))
         color_pref_str  = ", ".join(sorted(all_colors)) if all_colors else "Any"
@@ -2073,6 +2236,7 @@ def page_edit_order():
         chat_branch = c3.selectbox("Chat Branch *", BRANCHES, index=cb_idx)
         fb_idx = BRANCHES.index(order.get("fulfillment_branch",BRANCHES[0])) if order.get("fulfillment_branch") in BRANCHES else 0
         fulfillment_branch = st.selectbox("Fulfillment Branch *", BRANCHES, index=fb_idx)
+        st.session_state["edit_fulfillment_branch"] = fulfillment_branch
 
         ot_idx = 0 if order.get("order_type","Delivery") == "Delivery" else 1
         order_type = st.radio("Order Type *", ["Delivery","Pick-up"], horizontal=True, index=ot_idx)

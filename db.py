@@ -475,6 +475,13 @@ def _normalize_flower_name(name: str) -> str:
     return name
 
 
+# Fillers don't use color prefix — they're tracked as-is
+FILLER_FLOWERS = {
+    "GYPSO", "STATICE", "LIPIDIUM", "AMARATHUS",
+    "SNAPDRAGON", "MISTY WHITE", "MISTY BLUE", "EUCALYPTUS",
+}
+
+
 def _find_inventory_item(inventory: list, name: str, branch: str):
     name_upper = name.strip().upper()
 
@@ -550,7 +557,9 @@ def deduct_inventory_for_order(flower_items: list, branch: str, order_id: str = 
         colors      = [c for c in fi.get("colors",[]) if c and c.lower() != "any"]
         if not flower_name: continue
 
-        if not colors:
+        is_filler = flower_name.strip().upper() in FILLER_FLOWERS
+
+        if not colors or is_filler:
             item = _find(flower_name)
             if item:
                 _deduct(item, qty_used, flower_name)
@@ -576,11 +585,6 @@ def deduct_inventory_for_order(flower_items: list, branch: str, order_id: str = 
             item = _find(color_item_name)
             if item:
                 _deduct(item, qty_used, color_item_name)
-                continue
-            base_item = _find(flower_name)
-            if base_item:
-                warnings.append(f"ℹ️ **{color_item_name}** not found — deducting from base **{flower_name}** instead.")
-                _deduct(base_item, qty_used, flower_name)
                 continue
             new_qty = -qty_used
             new_item = {"id": str(uuid.uuid4())[:8], "name": color_item_name,
@@ -619,7 +623,10 @@ def return_inventory_for_order(flower_items: list, branch: str, reason: str, ord
         colors      = [c for c in fi.get("colors",[]) if c and c.lower() != "any"]
         if not flower_name: continue
 
-        targets = [(f"{c.upper()} {flower_name.upper()}", flower_name) for c in colors] if colors else [(flower_name, flower_name)]
+        is_filler = flower_name.strip().upper() in FILLER_FLOWERS
+
+        targets = [(flower_name, flower_name)] if (is_filler or not colors) else \
+            [(f"{c.upper()} {flower_name.upper()}", flower_name) for c in colors]
 
         for (item_name, base_name) in targets:
             match = _find(item_name) or _find(base_name)
