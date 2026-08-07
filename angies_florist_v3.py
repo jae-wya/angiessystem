@@ -4153,17 +4153,17 @@ def page_inventory():
     st.markdown("<div class='section-header'>📦 Inventory Management</div>", unsafe_allow_html=True)
     inventory = scope_by_branch(db.get_inventory())
 
-    tab_inv, tab_adjust, tab_count, tab_log, tab_backfill, tab_transfer, tab_forecast, tab_report, tab_merge = st.tabs([
-        "📦 Stock List",
-        "🔧 Manual Adjustment",
-        "📋 Stock Count Entry",
-        "📜 Audit Log",
-        "🔁 Backfill",
-        "🔄 Inter-Branch Transfer",
-        "📊 Demand Forecast",
-        "🖨️ Inventory Report",
-        "🔀 Merge Items",
-    ])
+    base_tabs  = ["📦 Stock List", "🔧 Manual Adjustment",
+                  "📋 Stock Count Entry", "📜 Audit Log",
+                  "🔄 Inter-Branch Transfer", "📊 Demand Forecast",
+                  "🖨️ Inventory Report", "🔀 Merge Items"]
+    admin_tabs = ["🔁 Backfill"] if CURRENT_ROLE == "Super Admin" else []
+    all_tab_labels = base_tabs + admin_tabs
+
+    tabs_result = st.tabs(all_tab_labels)
+    tab_inv, tab_adjust, tab_count, tab_log, tab_transfer, \
+    tab_forecast, tab_report, tab_merge = tabs_result[:8]
+    tab_backfill = tabs_result[8] if CURRENT_ROLE == "Super Admin" else None
 
     # ── TAB 1: STOCK LIST ─────────────────────────────────────────────────
     with tab_inv:
@@ -4204,9 +4204,18 @@ def page_inventory():
             st.divider()
 
             # Group by category for display
+            committed_map = get_committed_stock()
+
+            def _inv_sort(item):
+                qty = item.get("quantity", 0)
+                rp  = item.get("reorder_point", 10)
+                if qty < 0:    return (0, qty)   # negative first
+                if qty <= rp:  return (1, qty)   # low second
+                return (2, qty)                   # optimal last
+
             for cat in list(INVENTORY_CATEGORIES.keys()):
-                cat_items = [i for i in sorted(filtered, key=lambda x: x.get("quantity", 0))
-                             if i.get("category") == cat]
+                cat_items = [i for i in filtered if i.get("category") == cat]
+                cat_items = sorted(cat_items, key=_inv_sort)
                 if not cat_items:
                     continue
                 st.markdown(f"##### {cat}")
@@ -4232,12 +4241,23 @@ def page_inventory():
                                "🔴 Low"        if qty <= reorder else
                                "🟡 Medium"     if qty <= reorder * 2 else
                                "🟢 Optimal")
+
+                    status_color = (
+                        "#DC2626" if qty < 0 else
+                        "#D97706" if qty <= reorder else
+                        "#2D7A4F"
+                    )
+                    st.markdown(
+f"<div style='height:2px;background:{status_color};"
+f"border-radius:2px;margin-bottom:2px;opacity:0.6;'></div>",
+                        unsafe_allow_html=True,
+                    )
+
                     ic1, ic2, ic3, ic4, ic5, ic6, ic7 = st.columns([2.5, 1, 0.7, 0.7, 0.7, 1, 0.5])
                     ic1.write(f"**{item['name']}** — {item.get('branch','')}")
                     ic2.write(item.get("unit", ""))
 
                     # Get committed qty for this item
-                    committed_map = get_committed_stock()
                     item_key = (item['name'].strip().upper(), item.get('branch',''))
                     committed_qty = committed_map.get(item_key, 0)
                     # Try singular/plural variants
@@ -4278,15 +4298,33 @@ def page_inventory():
 
                     # Edit / delete buttons (existing)
                     with ic7:
-                        if st.button("✏️", key=f"iq_{item['id']}",
-                                     help="Adjust stock via Manual Adjustment tab",
+                        if st.button("➕", key=f"iq_{item['id']}",
+                                     help="Quick restock this item",
                                      use_container_width=True):
-                            st.session_state["adj_prefill_item"] = item["name"]
+                            st.session_state["adj_prefill_item"]   = item["name"]
                             st.session_state["adj_prefill_branch"] = item.get("branch","")
-                            st.session_state["active_inv_tab"] = 1
+                            st.session_state["adj_direction"]      = "➕ Add Stock"
+                            st.session_state["adj_reason"]         = "Purchased / Restocked"
                             st.rerun()
-                        if st.button("🗑", key=f"di_{item['id']}", use_container_width=True):
-                            db.delete_inventory_item(item["id"]); st.rerun()
+                        if st.button("🗑", key=f"di_{item['id']}",
+                                     help="Delete this item",
+                                     use_container_width=True):
+                            st.session_state[f"confirm_del_{item['id']}"] = True
+
+                    if st.session_state.get(f"confirm_del_{item['id']}"):
+                        st.warning(f"Delete **{item['name']}**?")
+                        col_yes, col_no = st.columns(2)
+                        if col_yes.button("Yes, delete",
+                                          key=f"del_yes_{item['id']}",
+                                          use_container_width=True):
+                            db.delete_inventory_item(item["id"])
+                            st.session_state.pop(f"confirm_del_{item['id']}", None)
+                            st.rerun()
+                        if col_no.button("Cancel",
+                                         key=f"del_no_{item['id']}",
+                                         use_container_width=True):
+                            st.session_state.pop(f"confirm_del_{item['id']}", None)
+                            st.rerun()
                     with st.expander(f"📋 Details — {item['name']}", expanded=False):
                         st.write(
                             f"- **Category:** {item.get('category','')}\n"
@@ -4304,12 +4342,29 @@ def page_inventory():
         st.markdown("#### 🔧 Manual Stock Adjustment")
         st.caption("Use this to record stock changes not tied to an order — e.g. purchases, damages, returns.")
 
+        if st.session_state.get("adj_prefill_item"):
+            st.info(f"⚡ Quick Restock ready for: "
+                    f"**{st.session_state['adj_prefill_item']}** "
+                    f"at **{st.session_state.get('adj_prefill_branch','')}** "
+                    f"— form pre-filled below.")
+
+        # Read prefill values before form
+        _prefill_branch = st.session_state.get("adj_prefill_branch", "")
+        _prefill_item   = st.session_state.get("adj_prefill_item", "")
+        _prefill_dir    = st.session_state.get("adj_direction", "➕ Add Stock")
+        _prefill_reason = st.session_state.get("adj_reason", "Purchased / Restocked")
+
+        # Clear prefills after reading
+        for _k in ["adj_prefill_branch","adj_prefill_item","adj_direction","adj_reason"]:
+            st.session_state.pop(_k, None)
+
         inventory_fresh = scope_by_branch(db.get_inventory())
         adj_branch_opts = BRANCHES if (CURRENT_ROLE == "Super Admin" or CURRENT_BRANCH == "All") else [CURRENT_BRANCH]
 
         with st.form("manual_adj_form", clear_on_submit=True):
             ac1, ac2 = st.columns(2)
-            adj_branch = ac1.selectbox("Branch *", adj_branch_opts)
+            branch_idx = adj_branch_opts.index(_prefill_branch) if _prefill_branch in adj_branch_opts else 0
+            adj_branch = ac1.selectbox("Branch *", adj_branch_opts, index=branch_idx)
             adj_cat    = ac2.selectbox("Category", ["All"] + list(INVENTORY_CATEGORIES.keys()))
 
             branch_items = [i for i in inventory_fresh if i.get("branch") == adj_branch]
@@ -4321,19 +4376,21 @@ def page_inventory():
                 st.warning("No items found for this branch/category. Add items first.")
                 st.form_submit_button("Apply Adjustment", disabled=True)
             else:
+                item_idx = item_names.index(_prefill_item) if _prefill_item in item_names else 0
+
                 bc1, bc2, bc3 = st.columns(3)
-                selected_name = bc1.selectbox("Item *", item_names)
-                adj_direction = bc2.radio("Direction", ["➕ Add Stock", "➖ Remove Stock"], horizontal=True)
+                selected_name = bc1.selectbox("Item *", item_names, index=item_idx)
+
+                dir_idx = 0 if _prefill_dir == "➕ Add Stock" else 1
+                adj_direction = bc2.radio("Direction",
+                    ["➕ Add Stock", "➖ Remove Stock"],
+                    index=dir_idx, horizontal=True)
                 adj_qty       = bc3.number_input("Quantity *", min_value=1, value=1)
 
-                adj_reason = st.selectbox("Reason *", [
-                    "Purchased / Restocked",
-                    "Used (non-order)",
-                    "Damaged / Spoiled",
-                    "Returned",
-                    "Count Correction",
-                    "Other",
-                ])
+                reason_opts = ["Purchased / Restocked","Used (non-order)",
+                               "Damaged / Spoiled","Returned","Count Correction","Other"]
+                reason_idx = reason_opts.index(_prefill_reason) if _prefill_reason in reason_opts else 0
+                adj_reason = st.selectbox("Reason *", reason_opts, index=reason_idx)
                 adj_notes = st.text_input("Notes (optional)")
 
                 submitted_adj = st.form_submit_button("✅ Apply Adjustment", use_container_width=True)
@@ -4364,7 +4421,24 @@ def page_inventory():
         sc_shift  = sc2.radio("Shift *", ["Opening", "Closing"], horizontal=True, key="sc_shift")
         sc_date   = sc3.date_input("Date *", value=date.today(), key="sc_date")
 
+        sc_cat = st.selectbox(
+            "Filter by Category (optional)",
+            ["All Categories"] + list(INVENTORY_CATEGORIES.keys()),
+            key="sc_category"
+        )
+
+        show_changed_only = st.checkbox(
+            "Show only items I've changed (hides unchanged rows)",
+            value=False,
+            key="sc_changed_only"
+        )
+        if show_changed_only:
+            st.info("Tip: Submit the count to see only the items that changed.")
+
         branch_inv = [i for i in inventory_for_count if i.get("branch") == sc_branch]
+
+        if sc_cat != "All Categories":
+            branch_inv = [i for i in branch_inv if i.get("category") == sc_cat]
 
         import streamlit.components.v1 as components
         if st.button("🖨️ Print Blank Count Sheet", key="print_count_sheet"):
@@ -4403,8 +4477,13 @@ def page_inventory():
                 cat_items = [i for i in branch_inv if i.get("category") == cat]
                 if not cat_items:
                     continue
-                st.markdown(f"**{cat}**")
-                for item in cat_items:
+                st.markdown(
+f"<div style='background:#1C1B22;color:white;padding:5px 12px;"
+f"border-radius:6px;font-size:0.82rem;font-weight:700;"
+f"margin:12px 0 6px;'>{cat}</div>",
+                    unsafe_allow_html=True,
+                )
+                for item in sorted(cat_items, key=lambda x: x.get("name","")):
                     col_name, col_sys, cc1, cc2 = st.columns([3, 1, 1, 1])
                     col_name.write(f"{item['name']}")
                     col_sys.write(f"System: {item.get('quantity', 0)}")
@@ -4481,7 +4560,6 @@ def page_inventory():
                                 "", CURRENT_USER.get("name", "")
                             )
                     saved += 1
-                st.success(f"✅ {sc_shift} count saved for {saved} items at {sc_branch}.")
 
                 corrections = []
                 for data in count_data.values():
@@ -4492,6 +4570,8 @@ def page_inventory():
                     c_usable   = c_counted - c_rejected
                     if c_counted != c_sys_qty or c_rejected > 0:
                         corrections.append((c_item["name"], c_counted, c_rejected, c_usable, c_sys_qty))
+
+                st.success(f"✅ Stock count saved. {len(corrections)} item(s) updated.")
 
                 if corrections:
                     st.markdown("**📊 Corrections Applied:**")
@@ -4572,101 +4652,102 @@ def page_inventory():
                     mime="text/csv")
 
     # ── TAB 5: BACKFILL (Super Admin only) ────────────────────────────────
-    with tab_backfill:
-        if CURRENT_ROLE != "Super Admin":
-            st.info("🔒 Backfill is available to Super Admins only.")
-        else:
-            st.markdown("#### 🔁 Inventory Backfill from Past Orders")
-            st.caption("One-time tool — deducts ALL past orders from current inventory.")
-            backfill_flag = db.get_system_flag("inventory_backfill_applied")
-            if backfill_flag:
-                st.success(f"✅ Backfill already applied on **{backfill_flag}**. Cannot run again.")
+    if tab_backfill:
+        with tab_backfill:
+            if CURRENT_ROLE != "Super Admin":
+                st.info("🔒 Backfill is available to Super Admins only.")
             else:
-                st.warning("⚠️ **Irreversible.** Reviews ALL orders ever logged.")
-                if st.button("🔍 Preview Backfill Deductions", key="bf_preview_btn", type="primary"):
-                    st.session_state["bf_preview_ready"] = True
-                if st.session_state.get("bf_preview_ready"):
-                    all_orders    = db.get_orders()
-                    all_inventory = db.get_inventory()
-                    deduction_map = {}
-                    for o in all_orders:
-                        branch_o = o.get("fulfillment_branch", o.get("branch",""))
-                        for fi in (o.get("flower_items") or []):
-                            fname    = fi.get("flower","").strip()
-                            qty_used = int(fi.get("qty",1))
-                            colors   = [c for c in fi.get("colors",[]) if c and c.lower()!="any"]
-                            if not fname: continue
-                            if not colors:
-                                key = (fname.upper(), branch_o)
-                                deduction_map[key] = deduction_map.get(key,0) + qty_used
-                            else:
-                                for color in colors:
-                                    key = (f"{color.upper()} {fname.upper()}", branch_o)
+                st.markdown("#### 🔁 Inventory Backfill from Past Orders")
+                st.caption("One-time tool — deducts ALL past orders from current inventory.")
+                backfill_flag = db.get_system_flag("inventory_backfill_applied")
+                if backfill_flag:
+                    st.success(f"✅ Backfill already applied on **{backfill_flag}**. Cannot run again.")
+                else:
+                    st.warning("⚠️ **Irreversible.** Reviews ALL orders ever logged.")
+                    if st.button("🔍 Preview Backfill Deductions", key="bf_preview_btn", type="primary"):
+                        st.session_state["bf_preview_ready"] = True
+                    if st.session_state.get("bf_preview_ready"):
+                        all_orders    = db.get_orders()
+                        all_inventory = db.get_inventory()
+                        deduction_map = {}
+                        for o in all_orders:
+                            branch_o = o.get("fulfillment_branch", o.get("branch",""))
+                            for fi in (o.get("flower_items") or []):
+                                fname    = fi.get("flower","").strip()
+                                qty_used = int(fi.get("qty",1))
+                                colors   = [c for c in fi.get("colors",[]) if c and c.lower()!="any"]
+                                if not fname: continue
+                                if not colors:
+                                    key = (fname.upper(), branch_o)
                                     deduction_map[key] = deduction_map.get(key,0) + qty_used
-                    if not deduction_map:
-                        st.info("No flower items found.")
-                    else:
-                        preview_rows = []
-                        for (item_name, branch_o), total_d in sorted(deduction_map.items()):
-                            inv_match = next((i for i in all_inventory
-                                if i.get("name","").strip().upper()==item_name
-                                and i.get("branch","")==branch_o), None)
-                            if inv_match is None and " " in item_name:
-                                base = " ".join(item_name.split(" ")[1:])
+                                else:
+                                    for color in colors:
+                                        key = (f"{color.upper()} {fname.upper()}", branch_o)
+                                        deduction_map[key] = deduction_map.get(key,0) + qty_used
+                        if not deduction_map:
+                            st.info("No flower items found.")
+                        else:
+                            preview_rows = []
+                            for (item_name, branch_o), total_d in sorted(deduction_map.items()):
                                 inv_match = next((i for i in all_inventory
-                                    if i.get("name","").strip().upper()==base
+                                    if i.get("name","").strip().upper()==item_name
                                     and i.get("branch","")==branch_o), None)
-                            curr  = int(inv_match.get("quantity",0)) if inv_match else "Not in inventory"
-                            after = (curr - total_d) if isinstance(curr,int) else f"Will be created at -{total_d}"
-                            preview_rows.append({"Flower":item_name,"Branch":branch_o,
-                                "Total to Deduct":total_d,"Current Stock":curr,"Stock After":after})
-                        df_preview = pd.DataFrame(preview_rows)
-                        def _hl(row):
-                            a = row["Stock After"]
-                            if isinstance(a,int) and a < 0:  return ["background-color:#FFEBEE"]*len(row)
-                            if isinstance(a,int) and a == 0: return ["background-color:#FFF3E0"]*len(row)
-                            if not isinstance(a,int):        return ["background-color:#F3E5F5"]*len(row)
-                            return [""]*len(row)
-                        st.dataframe(df_preview.style.apply(_hl,axis=1), use_container_width=True, hide_index=True)
-                        st.markdown("🔴 Red = goes negative &nbsp;|&nbsp; 🟠 Orange = hits 0 &nbsp;|&nbsp; 🟣 Purple = auto-created")
-                        st.divider()
-                        confirm = st.checkbox("✅ I reviewed the preview and want to apply this backfill", key="bf_confirm")
-                        if confirm:
-                            if st.button("🚀 Apply Backfill Now", key="bf_apply_btn", type="primary"):
-                                with st.spinner("Applying backfill..."):
-                                    total_warnings = []
-                                    for (item_name, branch_o), total_d in deduction_map.items():
-                                        fresh = db.get_inventory()
-                                        match = next((i for i in fresh
-                                            if i.get("name","").strip().upper()==item_name
-                                            and i.get("branch","")==branch_o), None)
-                                        if match is None and " " in item_name:
-                                            base = " ".join(item_name.split(" ")[1:])
+                                if inv_match is None and " " in item_name:
+                                    base = " ".join(item_name.split(" ")[1:])
+                                    inv_match = next((i for i in all_inventory
+                                        if i.get("name","").strip().upper()==base
+                                        and i.get("branch","")==branch_o), None)
+                                curr  = int(inv_match.get("quantity",0)) if inv_match else "Not in inventory"
+                                after = (curr - total_d) if isinstance(curr,int) else f"Will be created at -{total_d}"
+                                preview_rows.append({"Flower":item_name,"Branch":branch_o,
+                                    "Total to Deduct":total_d,"Current Stock":curr,"Stock After":after})
+                            df_preview = pd.DataFrame(preview_rows)
+                            def _hl(row):
+                                a = row["Stock After"]
+                                if isinstance(a,int) and a < 0:  return ["background-color:#FFEBEE"]*len(row)
+                                if isinstance(a,int) and a == 0: return ["background-color:#FFF3E0"]*len(row)
+                                if not isinstance(a,int):        return ["background-color:#F3E5F5"]*len(row)
+                                return [""]*len(row)
+                            st.dataframe(df_preview.style.apply(_hl,axis=1), use_container_width=True, hide_index=True)
+                            st.markdown("🔴 Red = goes negative &nbsp;|&nbsp; 🟠 Orange = hits 0 &nbsp;|&nbsp; 🟣 Purple = auto-created")
+                            st.divider()
+                            confirm = st.checkbox("✅ I reviewed the preview and want to apply this backfill", key="bf_confirm")
+                            if confirm:
+                                if st.button("🚀 Apply Backfill Now", key="bf_apply_btn", type="primary"):
+                                    with st.spinner("Applying backfill..."):
+                                        total_warnings = []
+                                        for (item_name, branch_o), total_d in deduction_map.items():
+                                            fresh = db.get_inventory()
                                             match = next((i for i in fresh
-                                                if i.get("name","").strip().upper()==base
+                                                if i.get("name","").strip().upper()==item_name
                                                 and i.get("branch","")==branch_o), None)
-                                        if match:
-                                            nq = int(match.get("quantity",0)) - total_d
-                                            db.update_inventory_item(match["id"], {"quantity": nq})
-                                            db.log_inventory_change(match["name"], branch_o, -total_d,
-                                                int(match.get("quantity",0)), nq, "Inventory backfill", "", CURRENT_USER.get("name",""))
-                                        else:
-                                            nq = -total_d
-                                            db.save_inventory_item({"id": str(uuid.uuid4())[:8],"name":item_name,
-                                                "category":"🌹 Flowers","branch":branch_o,"quantity":nq,
-                                                "unit":"pcs","unit_cost":0.0,"reorder_point":10,
-                                                "notes":"Auto-created by backfill.","created_at":now_pht()})
-                                            db.log_inventory_change(item_name, branch_o, -total_d, 0, nq,
-                                                "Inventory backfill (auto-created)", "", CURRENT_USER.get("name",""))
-                                        if nq <= 0: total_warnings.append(f"{'🔴🔴' if nq<0 else '🔴'} **{item_name}** ({branch_o}): {nq} pcs")
-                                    db.set_system_flag("inventory_backfill_applied", datetime.now(PHT).strftime("%Y-%m-%d %H:%M"))
-                                    db._invalidate_all()
-                                st.success("✅ Backfill complete!")
-                                if total_warnings:
-                                    st.markdown("**Items at 0 or negative after backfill:**")
-                                    for w in total_warnings: st.warning(w)
-                                st.session_state["bf_preview_ready"] = False
-                                st.rerun()
+                                            if match is None and " " in item_name:
+                                                base = " ".join(item_name.split(" ")[1:])
+                                                match = next((i for i in fresh
+                                                    if i.get("name","").strip().upper()==base
+                                                    and i.get("branch","")==branch_o), None)
+                                            if match:
+                                                nq = int(match.get("quantity",0)) - total_d
+                                                db.update_inventory_item(match["id"], {"quantity": nq})
+                                                db.log_inventory_change(match["name"], branch_o, -total_d,
+                                                    int(match.get("quantity",0)), nq, "Inventory backfill", "", CURRENT_USER.get("name",""))
+                                            else:
+                                                nq = -total_d
+                                                db.save_inventory_item({"id": str(uuid.uuid4())[:8],"name":item_name,
+                                                    "category":"🌹 Flowers","branch":branch_o,"quantity":nq,
+                                                    "unit":"pcs","unit_cost":0.0,"reorder_point":10,
+                                                    "notes":"Auto-created by backfill.","created_at":now_pht()})
+                                                db.log_inventory_change(item_name, branch_o, -total_d, 0, nq,
+                                                    "Inventory backfill (auto-created)", "", CURRENT_USER.get("name",""))
+                                            if nq <= 0: total_warnings.append(f"{'🔴🔴' if nq<0 else '🔴'} **{item_name}** ({branch_o}): {nq} pcs")
+                                        db.set_system_flag("inventory_backfill_applied", datetime.now(PHT).strftime("%Y-%m-%d %H:%M"))
+                                        db._invalidate_all()
+                                    st.success("✅ Backfill complete!")
+                                    if total_warnings:
+                                        st.markdown("**Items at 0 or negative after backfill:**")
+                                        for w in total_warnings: st.warning(w)
+                                    st.session_state["bf_preview_ready"] = False
+                                    st.rerun()
 
     # ── TAB 6: INTER-BRANCH TRANSFER ──────────────────────────────────────
     with tab_transfer:
