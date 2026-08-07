@@ -4386,6 +4386,18 @@ def page_inventory():
             st.warning(f"No inventory items found for {sc_branch}. Add items first.")
         else:
             st.markdown(f"**Entering {sc_shift} count for {sc_branch} — {sc_date}**")
+            st.markdown(
+"<div style='display:grid;grid-template-columns:3fr 1fr 1fr 1fr;"
+"gap:4px;padding:4px 8px;background:#F5F5F5;"
+"font-size:0.72rem;font-weight:700;letter-spacing:0.06em;"
+"text-transform:uppercase;color:#6B7280;margin-bottom:4px;'>"
+"<span>Item</span>"
+"<span style='text-align:center'>System Qty</span>"
+"<span style='text-align:center'>Counted</span>"
+"<span style='text-align:center'>Rejected ❌</span>"
+"</div>",
+                unsafe_allow_html=True,
+            )
             count_data = {}
             for cat in list(INVENTORY_CATEGORIES.keys()):
                 cat_items = [i for i in branch_inv if i.get("category") == cat]
@@ -4393,17 +4405,25 @@ def page_inventory():
                     continue
                 st.markdown(f"**{cat}**")
                 for item in cat_items:
-                    col_name, col_sys, col_count = st.columns([3, 1, 1])
+                    col_name, col_sys, cc1, cc2 = st.columns([3, 1, 1, 1])
                     col_name.write(f"{item['name']}")
                     col_sys.write(f"System: {item.get('quantity', 0)}")
-                    entered = col_count.number_input(
+                    cc1.caption("Counted")
+                    entered = cc1.number_input(
                         "Counted", min_value=0, value=max(0, int(item.get("quantity", 0))),
                         key=f"sc_{sc_shift}_{sc_branch}_{item['id']}_{sc_date}",
+                        label_visibility="collapsed"
+                    )
+                    cc2.caption("Rejected ❌")
+                    rejected = cc2.number_input(
+                        "Rejected (damaged/wilted)", min_value=0, value=0,
+                        key=f"sc_rej_{sc_shift}_{sc_branch}_{item['id']}_{sc_date}",
                         label_visibility="collapsed"
                     )
                     count_data[item["id"]] = {
                         "item": item,
                         "counted": entered,
+                        "rejected": rejected,
                     }
 
             sc_notes = st.text_area("General Notes for this count (optional)", key="sc_notes")
@@ -4413,8 +4433,13 @@ def page_inventory():
                 for item_id, data in count_data.items():
                     item = data["item"]
                     counted = data["counted"]
+                    rejected = data["rejected"]
                     sys_qty = int(item.get("quantity", 0))
-                    variance = counted - sys_qty
+
+                    # Net usable stock = counted minus rejected
+                    usable_qty = counted - rejected
+                    variance   = usable_qty - sys_qty
+
                     entry = {
                         "id": str(uuid.uuid4())[:8],
                         "branch": sc_branch,
@@ -4435,29 +4460,48 @@ def page_inventory():
                         "", CURRENT_USER.get("name", "")
                     )
 
-                    # Apply correction to inventory if variance != 0
-                    if variance != 0:
-                        db.update_inventory_item(item_id, {"quantity": counted})
+                    if counted != sys_qty or rejected > 0:
+                        db.update_inventory_item(item_id, {"quantity": usable_qty})
+
+                        # Log count correction
                         db.log_inventory_change(
                             item["name"], sc_branch,
-                            variance, sys_qty, counted,
-                            f"{sc_shift} stock count correction (counted: {counted}, "
-                            f"system was: {sys_qty}, variance: {variance:+d})",
+                            usable_qty - sys_qty, sys_qty, usable_qty,
+                            f"{sc_shift} stock count — counted: {counted}, "
+                            f"rejected: {rejected}, usable: {usable_qty}",
                             "", CURRENT_USER.get("name", "")
                         )
+
+                        # Log rejects separately if any
+                        if rejected > 0:
+                            db.log_inventory_change(
+                                item["name"], sc_branch,
+                                -rejected, counted, usable_qty,
+                                f"Rejected (damaged/wilted) — {sc_shift} count",
+                                "", CURRENT_USER.get("name", "")
+                            )
                     saved += 1
                 st.success(f"✅ {sc_shift} count saved for {saved} items at {sc_branch}.")
 
-                variances = [(data["item"]["name"], data["counted"] - int(data["item"].get("quantity",0)))
-                             for data in count_data.values()
-                             if data["counted"] != int(data["item"].get("quantity",0))]
-                if variances:
+                corrections = []
+                for data in count_data.values():
+                    c_item     = data["item"]
+                    c_counted  = data["counted"]
+                    c_rejected = data["rejected"]
+                    c_sys_qty  = int(c_item.get("quantity", 0))
+                    c_usable   = c_counted - c_rejected
+                    if c_counted != c_sys_qty or c_rejected > 0:
+                        corrections.append((c_item["name"], c_counted, c_rejected, c_usable, c_sys_qty))
+
+                if corrections:
                     st.markdown("**📊 Corrections Applied:**")
-                    for name, var in variances:
+                    for name, counted_qty, rejected_qty, usable_qty, prev_sys_qty in corrections:
+                        var = usable_qty - prev_sys_qty
                         color = "#DC2626" if var < 0 else "#2D7A4F"
                         st.markdown(
                             f"<span style='color:{color}; font-weight:600;'>"
-                            f"{name}: {var:+d} pcs</span>",
+                            f"• {name}: counted {counted_qty}, rejected {rejected_qty}, "
+                            f"usable {usable_qty} (was {prev_sys_qty})</span>",
                             unsafe_allow_html=True,
                         )
                 else:
@@ -4499,21 +4543,33 @@ def page_inventory():
                     q in l.get("item_name","").lower() or
                     q in l.get("reason","").lower() or
                     q in l.get("order_id","").lower()]
-            df_logs = pd.DataFrame(sorted(logs, key=lambda x: x.get("created_at",""), reverse=True))
-            df_logs = df_logs.rename(columns={
-                "item_name":"Item","branch":"Branch","change_qty":"Change",
-                "qty_before":"Before","qty_after":"After","reason":"Reason",
-                "order_id":"Order","logged_by":"By","created_at":"When"
-            })
-            keep = [c for c in ["When","Item","Branch","Change","Before","After","Reason","Order","By"]
-                    if c in df_logs.columns]
-            df_logs = df_logs[keep]
-            df_logs["When"] = df_logs["When"].apply(lambda x: str(x)[:19])
-            st.dataframe(df_logs, use_container_width=True, hide_index=True)
-            st.download_button("⬇️ Export Audit Log CSV",
-                data=df_logs.to_csv(index=False).encode("utf-8"),
-                file_name=f"inventory_log_{datetime.now(PHT).strftime('%Y%m%d')}.csv",
-                mime="text/csv")
+
+            show_rejects_only = st.checkbox(
+                "🔴 Show rejected flowers only",
+                value=False,
+                key="log_rejects_only"
+            )
+            if show_rejects_only:
+                logs = [l for l in logs if "Rejected" in l.get("reason","")]
+
+            if not logs:
+                st.info("No matching log entries.")
+            else:
+                df_logs = pd.DataFrame(sorted(logs, key=lambda x: x.get("created_at",""), reverse=True))
+                df_logs = df_logs.rename(columns={
+                    "item_name":"Item","branch":"Branch","change_qty":"Change",
+                    "qty_before":"Before","qty_after":"After","reason":"Reason",
+                    "order_id":"Order","logged_by":"By","created_at":"When"
+                })
+                keep = [c for c in ["When","Item","Branch","Change","Before","After","Reason","Order","By"]
+                        if c in df_logs.columns]
+                df_logs = df_logs[keep]
+                df_logs["When"] = df_logs["When"].apply(lambda x: str(x)[:19])
+                st.dataframe(df_logs, use_container_width=True, hide_index=True)
+                st.download_button("⬇️ Export Audit Log CSV",
+                    data=df_logs.to_csv(index=False).encode("utf-8"),
+                    file_name=f"inventory_log_{datetime.now(PHT).strftime('%Y%m%d')}.csv",
+                    mime="text/csv")
 
     # ── TAB 5: BACKFILL (Super Admin only) ────────────────────────────────
     with tab_backfill:
@@ -5215,8 +5271,28 @@ def page_inventory():
                         usage[flower] = usage.get(flower, 0) + qty
             return usage
 
+        def build_reject_map(rp_from_str, rp_to_str, rp_branch):
+            """Build map of {item_name_upper: rejected_qty} for period."""
+            try:
+                logs = db.get_inventory_logs()
+                reject_map = {}
+                for log in logs:
+                    log_date = str(log.get("created_at",""))[:10]
+                    if rp_from_str <= log_date <= rp_to_str:
+                        reason = log.get("reason","")
+                        if "Rejected (damaged/wilted)" in reason:
+                            branch = log.get("branch","")
+                            if rp_branch == "All" or branch == rp_branch:
+                                name = log.get("item_name","").strip().upper()
+                                qty  = abs(int(log.get("change_qty", 0)))
+                                reject_map[name] = reject_map.get(name, 0) + qty
+                return reject_map
+            except Exception:
+                return {}
+
         used_map    = build_usage_map(period_orders)
         advance_map = build_usage_map(advance_orders)
+        reject_map  = build_reject_map(rp_from_str, rp_to_str, rp_branch)
 
         # Get inventory items for selected branch
         if rp_branch == "All":
@@ -5265,7 +5341,7 @@ f"margin-bottom:4px;margin-top:12px;'>{parent}</div>",
 
                 # Table header
                 st.markdown(
-"<div style='display:grid;grid-template-columns:2.5fr 1fr 1fr 1fr 1fr;"
+"<div style='display:grid;grid-template-columns:2.5fr 1fr 1fr 1fr 1fr 1fr;"
 "gap:4px;padding:4px 14px;background:#F5F5F5;"
 "font-size:0.72rem;font-weight:700;letter-spacing:0.08em;"
 "text-transform:uppercase;color:#6B7280;'>"
@@ -5273,6 +5349,7 @@ f"margin-bottom:4px;margin-top:12px;'>{parent}</div>",
 "<span style='text-align:center'>On Hand</span>"
 "<span style='text-align:center'>Used</span>"
 "<span style='text-align:center'>Advance</span>"
+"<span style='text-align:center'>Rejected</span>"
 "<span style='text-align:center'>Remaining</span>"
 "</div>",
                     unsafe_allow_html=True,
@@ -5299,7 +5376,8 @@ f"📍 {br}</div>",
                         on_hand  = int(item.get("quantity", 0))
                         used     = used_map.get(iname, 0)
                         advance  = advance_map.get(iname, 0)
-                        remaining = on_hand - used - advance
+                        rejected = reject_map.get(iname, 0)
+                        remaining = on_hand - used - advance - rejected
 
                         rem_color = (
                             "#DC2626" if remaining < 0 else
@@ -5314,13 +5392,14 @@ f"📍 {br}</div>",
                             display_name = parent_check.title()
 
                         st.markdown(
-f"<div style='display:grid;grid-template-columns:2.5fr 1fr 1fr 1fr 1fr;"
+f"<div style='display:grid;grid-template-columns:2.5fr 1fr 1fr 1fr 1fr 1fr;"
 f"gap:4px;padding:5px 14px;border-bottom:1px solid #F0F0F0;"
 f"font-size:0.85rem;'>"
 f"<span style='color:#1C1B22;'>{display_name}</span>"
 f"<span style='text-align:center;font-weight:600;'>{on_hand}</span>"
 f"<span style='text-align:center;color:#DC2626;'>{used}</span>"
 f"<span style='text-align:center;color:#D97706;'>{advance}</span>"
+f"<span style='text-align:center;color:#DC2626;'>{rejected}</span>"
 f"<span style='text-align:center;font-weight:700;color:{rem_color};'>{remaining}</span>"
 f"</div>",
                             unsafe_allow_html=True,
@@ -5347,7 +5426,7 @@ f"</div>",
                     branches_data = family_map[parent]
                     table_rows += (
                         f"<tr class='family-row'>"
-                        f"<td colspan='5'>{parent}</td>"
+                        f"<td colspan='6'>{parent}</td>"
                         f"</tr>"
                     )
                     all_branches_p = (
@@ -5362,7 +5441,7 @@ f"</div>",
                         if rp_branch == "All":
                             table_rows += (
                                 f"<tr class='branch-row'>"
-                                f"<td colspan='5'>📍 {br}</td>"
+                                f"<td colspan='6'>📍 {br}</td>"
                                 f"</tr>"
                             )
                         for item in sorted(items_in_br,
@@ -5371,7 +5450,8 @@ f"</div>",
                             on_hand   = int(item.get("quantity", 0))
                             used      = used_map.get(iname, 0)
                             advance   = advance_map.get(iname, 0)
-                            remaining = on_hand - used - advance
+                            rejected  = reject_map.get(iname, 0)
+                            remaining = on_hand - used - advance - rejected
                             rem_class = (
                                 "neg" if remaining < 0 else
                                 "low" if remaining <= int(item.get("reorder_point",10)) else
@@ -5388,6 +5468,7 @@ f"</div>",
                                 f"<td class='num'>{on_hand}</td>"
                                 f"<td class='num used'>{used}</td>"
                                 f"<td class='num advance'>{advance}</td>"
+                                f"<td class='num rejected'>{rejected}</td>"
                                 f"<td class='num remaining {rem_class}'>{remaining}</td>"
                                 f"</tr>"
                             )
@@ -5411,6 +5492,7 @@ td{{padding:5px 10px;border-bottom:1px solid #eee;font-size:10pt;}}
 td.num{{text-align:center;}}
 td.used{{color:#DC2626;font-weight:600;}}
 td.advance{{color:#D97706;font-weight:600;}}
+td.rejected{{color:#DC2626;font-weight:600;}}
 td.remaining{{font-weight:700;}}
 td.remaining.ok{{color:#2D7A4F;}}
 td.remaining.low{{color:#D97706;}}
@@ -5455,6 +5537,7 @@ By: {CURRENT_USER.get('name','—')}
 <th class='num'>On Hand</th>
 <th class='num'>Used</th>
 <th class='num'>Advance</th>
+<th class='num'>Rejected</th>
 <th class='num'>Remaining</th>
 </tr>
 </thead>
