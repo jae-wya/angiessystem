@@ -565,6 +565,7 @@ FLOWER_TYPES = [
     "PAPER ROSES/LISIATHUS",
     "LISIANTHUS",
     # Fillers — no color prefix needed
+    "FERBY EUCALYPTUS",
     "GYPSO",
     "STATICE",
     "LIPIDIUM",
