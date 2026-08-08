@@ -4460,38 +4460,90 @@ f"border-radius:2px;margin-bottom:2px;opacity:0.6;'></div>",
             st.warning(f"No inventory items found for {sc_branch}. Add items first.")
         else:
             st.markdown(f"**Entering {sc_shift} count for {sc_branch} — {sc_date}**")
-            st.markdown(
-"<div style='display:grid;grid-template-columns:3fr 1fr 1fr 1fr;"
+
+            # Build today's usage map for this branch and date
+            all_orders_sc = db.get_orders()
+            sc_date_str = sc_date.isoformat() if hasattr(sc_date,'isoformat') else str(sc_date)
+            sc_usage_map = {}
+            for o in all_orders_sc:
+                if (str(o.get("target_date",""))[:10] == sc_date_str
+                    and o.get("fulfillment_branch", o.get("branch","")) == sc_branch
+                    and o.get("status") not in ("Cancelled",)):
+                    for fi in (o.get("flower_items") or []):
+                        flower = fi.get("flower","").strip().upper()
+                        qty    = int(fi.get("qty", 1))
+                        colors = [c for c in fi.get("colors",[]) if c and c.lower() != "any"]
+                        if colors:
+                            for c in colors:
+                                key = f"{c.upper()} {flower}"
+                                sc_usage_map[key] = sc_usage_map.get(key, 0) + qty
+                        else:
+                            sc_usage_map[flower] = sc_usage_map.get(flower, 0) + qty
+
+            # Group items by flower family — same pattern as Inventory Report
+            from collections import defaultdict
+            sc_family_map = defaultdict(list)
+            for item in branch_inv:
+                parent = get_flower_parent(item.get("name","").strip().upper())
+                sc_family_map[parent].append(item)
+
+            ft_upper = [f.upper() for f in FLOWER_TYPES]
+            def _sc_family_sort(k):
+                try: return ft_upper.index(k)
+                except ValueError: return 999
+            sorted_sc_families = sorted(sc_family_map.keys(), key=_sc_family_sort)
+
+            count_data = {}
+            for parent in sorted_sc_families:
+                family_items = sc_family_map[parent]
+
+                # Family header — same dark style as Inventory Report
+                st.markdown(
+f"<div style='background:#1C1B22;color:white;padding:6px 14px;"
+f"border-radius:6px;font-size:0.85rem;font-weight:700;"
+f"margin:12px 0 4px;'>{parent}</div>",
+                    unsafe_allow_html=True,
+                )
+
+                # Column header row
+                st.markdown(
+"<div style='display:grid;grid-template-columns:3fr 1fr 1fr 1fr 1fr;"
 "gap:4px;padding:4px 8px;background:#F5F5F5;"
 "font-size:0.72rem;font-weight:700;letter-spacing:0.06em;"
 "text-transform:uppercase;color:#6B7280;margin-bottom:4px;'>"
 "<span>Item</span>"
 "<span style='text-align:center'>System Qty</span>"
 "<span style='text-align:center'>Counted</span>"
+"<span style='text-align:center'>Used Today</span>"
 "<span style='text-align:center'>Rejected ❌</span>"
 "</div>",
-                unsafe_allow_html=True,
-            )
-            count_data = {}
-            for cat in list(INVENTORY_CATEGORIES.keys()):
-                cat_items = [i for i in branch_inv if i.get("category") == cat]
-                if not cat_items:
-                    continue
-                st.markdown(
-f"<div style='background:#1C1B22;color:white;padding:5px 12px;"
-f"border-radius:6px;font-size:0.82rem;font-weight:700;"
-f"margin:12px 0 6px;'>{cat}</div>",
                     unsafe_allow_html=True,
                 )
-                for item in sorted(cat_items, key=lambda x: x.get("name","")):
-                    col_name, col_sys, cc1, cc2 = st.columns([3, 1, 1, 1])
-                    col_name.write(f"{item['name']}")
-                    col_sys.write(f"System: {item.get('quantity', 0)}")
+
+                for item in sorted(family_items, key=lambda x: x.get("name","")):
+                    sys_qty = int(item.get("quantity", 0))
+                    item_name_upper = item.get("name","").strip().upper()
+                    used_today = sc_usage_map.get(item_name_upper, 0)
+
+                    col_name, col_sys, cc1, col_used, cc2 = st.columns([3, 1, 1, 1, 1])
+
+                    col_name.write(f"**{item.get('name','')}**")
+                    col_sys.markdown(f"<div style='text-align:center;color:#6B7280;'>{sys_qty}</div>",
+                                     unsafe_allow_html=True)
                     cc1.caption("Counted")
                     entered = cc1.number_input(
-                        "Counted", min_value=0, value=max(0, int(item.get("quantity", 0))),
+                        "Counted", min_value=0, value=max(0, sys_qty),
                         key=f"sc_{sc_shift}_{sc_branch}_{item['id']}_{sc_date}",
                         label_visibility="collapsed"
+                    )
+                    col_used.caption("Used Today")
+                    used_today_input = col_used.number_input(
+                        "Used Today",
+                        min_value=0,
+                        value=used_today,
+                        key=f"sc_used_{sc_shift}_{sc_branch}_{item['id']}_{sc_date}",
+                        label_visibility="collapsed",
+                        help="Auto-filled from orders. Override if needed."
                     )
                     cc2.caption("Rejected ❌")
                     rejected = cc2.number_input(
@@ -5503,6 +5555,7 @@ f"</div>",
 
                 # Build table rows HTML
                 table_rows = ""
+                _row_index = 0
                 for parent in sorted_families:
                     branches_data = family_map[parent]
                     table_rows += (
@@ -5546,13 +5599,14 @@ f"</div>",
                             table_rows += (
                                 f"<tr>"
                                 f"<td class='item-name'>{display_name}</td>"
-                                f"<td class='num'>{on_hand}</td>"
-                                f"<td class='num used'>{used}</td>"
-                                f"<td class='num advance'>{advance}</td>"
-                                f"<td class='num rejected'>{rejected}</td>"
-                                f"<td class='num remaining {rem_class}'>{remaining}</td>"
+                                f"<td class='num' contenteditable='true' oninput='recalcRow(this)'>{on_hand}</td>"
+                                f"<td class='num used' contenteditable='true' oninput='recalcRow(this)'>{used}</td>"
+                                f"<td class='num advance' contenteditable='true' oninput='recalcRow(this)'>{advance}</td>"
+                                f"<td class='num rejected' contenteditable='true' oninput='recalcRow(this)'>{rejected}</td>"
+                                f"<td class='num remaining {rem_class}' id='rem_{_row_index}'>{remaining}</td>"
                                 f"</tr>"
                             )
+                            _row_index += 1
 
                 html = f"""<!DOCTYPE html>
 <html>
@@ -5578,7 +5632,16 @@ td.remaining{{font-weight:700;}}
 td.remaining.ok{{color:#2D7A4F;}}
 td.remaining.low{{color:#D97706;}}
 td.remaining.neg{{color:#DC2626;}}
+td.remaining.zero{{color:#D97706;font-weight:700;}}
 td.item-name{{padding-left:20px;}}
+.edit-note{{
+    background:#FEF9E7;border-left:4px solid #D97706;
+    padding:8px 14px;margin-bottom:12px;
+    font-size:10pt;color:#92400E;border-radius:4px;
+}}
+td[contenteditable="true"]:focus{{
+    outline:2px solid #C85C8E;background:#FCEEF5;
+}}
 tr.family-row td{{
     background:#C85C8E;color:white;font-weight:700;
     padding:6px 10px;font-size:10pt;letter-spacing:0.04em;
@@ -5598,6 +5661,8 @@ tr.family-row:hover td,tr.branch-row:hover td{{background:inherit;}}
     body{{padding:0;}}
     tr.family-row td{{-webkit-print-color-adjust:exact;
                       print-color-adjust:exact;}}
+    .edit-note{{display:none;}}
+    td[contenteditable]:focus{{outline:none;background:white;}}
 }}
 </style>
 </head>
@@ -5610,6 +5675,10 @@ Branch: {branch_label} &nbsp;·&nbsp;
 Printed: {datetime.now(PHT).strftime('%B %d, %Y %I:%M %p')} &nbsp;·&nbsp;
 By: {CURRENT_USER.get('name','—')}
 </div>
+</div>
+<div class='edit-note'>
+✏️ Numbers are editable — click any value to correct it.
+Remaining recalculates automatically.
 </div>
 <table>
 <thead>
@@ -5635,6 +5704,22 @@ By: {CURRENT_USER.get('name','—')}
 <span>Angie's Florist System v3.0</span>
 <span>REMAINING = ON HAND − USED − ADVANCE ORDERS</span>
 </div>
+<script>
+function recalcRow(cell) {{
+  var row = cell.parentElement;
+  var cells = row.querySelectorAll('td.num');
+  if (cells.length >= 5) {{
+    var onHand   = parseInt(cells[0].innerText) || 0;
+    var used     = parseInt(cells[1].innerText) || 0;
+    var advance  = parseInt(cells[2].innerText) || 0;
+    var rejected = parseInt(cells[3].innerText) || 0;
+    var remaining = onHand - used - advance - rejected;
+    cells[4].innerText = remaining;
+    cells[4].className = 'num remaining ' +
+      (remaining < 0 ? 'neg' : remaining === 0 ? 'zero' : 'ok');
+  }}
+}}
+</script>
 </body>
 </html>"""
 
