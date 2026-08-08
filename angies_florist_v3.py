@@ -541,7 +541,7 @@ PAYMENT_METHODS_DIGITAL = ["GCash","Bank Transfer","Cash","Maya"]
 OCCASIONS = ["Birthday","Anniversary","Valentine's Day","Mother's Day","Graduation","Sympathy","Wedding","Just Because","Corporate","Other"]
 CANCELLATION_REASONS = ["Customer request","Out of stock","Wrong order","Payment failed","Other"]
 DELIVERY_FAILURE_REASONS = ["Needs Redelivery","Customer Refused","Address Invalid","Contact Unavailable","Other"]
-COLOR_PREFERENCES = ["Florist Choice","Red","Two-tone Red","Pink","Two-tone Pink","Fuchsia Pink","Peach","White","Purple","Two-tone Purple","Yellow","Orange","Two-tone Orange","Blue","Green","Brown","Mixed","Custom"]
+COLOR_PREFERENCES = ["Any","Red","Two-tone Red","Pink","Two-tone Pink","Fuchsia Pink","Peach","White","Purple","Two-tone Purple","Yellow","Orange","Two-tone Orange","Blue","Green","Brown","Mixed","Custom"]
 DELIVERY_ZONES = ["Calamba","Los Baños","Calauan","Cabuyao","Sta. Rosa","Biñan","San Pedro","Bay","San Pablo","Alaminos","Quezon","Batangas","Victoria","Pila","Sta. Cruz","Pagsanjan","Lumban","Rizal","Nagcarlan","Liliw","PICK UP","N/A"]
 WASTE_REASONS = ["Wilted","Damaged","Miscalculation","Customer Return","Expired","Other"]
 FLOWER_TYPES = [
@@ -5424,9 +5424,129 @@ f"margin:12px 0 4px;'>{parent}</div>",
             except Exception:
                 return {}
 
+        def build_usage_detail_map(orders, rp_from_str, rp_to_str, rp_branch):
+            """
+            Returns dict: {item_name_upper: [order_detail_dicts]}
+            where each order_detail has order_code, customer_name,
+            qty, status, target_date
+            """
+            detail_map = {}
+            for o in orders:
+                if not (rp_from_str <= str(o.get("target_date",""))[:10] <= rp_to_str):
+                    continue
+                if o.get("status") in ("Cancelled",):
+                    continue
+                o_branch = o.get("fulfillment_branch", o.get("branch",""))
+                if rp_branch != "All" and o_branch != rp_branch:
+                    continue
+                for fi in (o.get("flower_items") or []):
+                    flower = fi.get("flower","").strip().upper()
+                    qty    = int(fi.get("qty", 1))
+                    colors = [c for c in fi.get("colors",[])
+                             if c and c.lower() != "any"]
+                    names = [f"{c.upper()} {flower}" for c in colors] if colors else [flower]
+                    for name in names:
+                        if name not in detail_map:
+                            detail_map[name] = []
+                        detail_map[name].append({
+                            "order_code":    o.get("order_code",""),
+                            "customer_name": o.get("customer_name","—"),
+                            "qty":           qty,
+                            "status":        o.get("status","—"),
+                            "target_date":   str(o.get("target_date",""))[:10],
+                            "branch":        o_branch,
+                        })
+            return detail_map
+
+        def build_advance_detail_map(orders, today_str, rp_branch):
+            """
+            Returns dict: {item_name_upper: [order_detail_dicts]}
+            for future orders (target_date > today) that are not
+            yet delivered/cancelled — these are holding advance stock.
+            """
+            detail_map = {}
+            for o in orders:
+                if str(o.get("target_date",""))[:10] <= today_str:
+                    continue
+                if o.get("status") in ("Cancelled","Delivered","Picked Up"):
+                    continue
+                o_branch = o.get("fulfillment_branch", o.get("branch",""))
+                if rp_branch != "All" and o_branch != rp_branch:
+                    continue
+                for fi in (o.get("flower_items") or []):
+                    flower = fi.get("flower","").strip().upper()
+                    qty    = int(fi.get("qty", 1))
+                    colors = [c for c in fi.get("colors",[])
+                             if c and c.lower() != "any"]
+                    names = [f"{c.upper()} {flower}" for c in colors] if colors else [flower]
+                    for name in names:
+                        if name not in detail_map:
+                            detail_map[name] = []
+                        detail_map[name].append({
+                            "order_code":    o.get("order_code",""),
+                            "customer_name": o.get("customer_name","—"),
+                            "qty":           qty,
+                            "status":        o.get("status","—"),
+                            "target_date":   str(o.get("target_date",""))[:10],
+                            "branch":        o_branch,
+                        })
+            return detail_map
+
+        def build_onhand_source_map(inv_items, rp_branch):
+            """
+            Returns dict: {item_name_upper: {
+                "qty": int,
+                "last_action": str,
+                "last_date": str,
+                "last_by": str
+            }}
+            Gets the last inventory log entry per item to show
+            where the On Hand number came from.
+            """
+            try:
+                logs = db.get_inventory_logs()
+            except Exception:
+                logs = []
+
+            source_map = {}
+            for item in inv_items:
+                iname = item.get("name","").strip().upper()
+                ibranch = item.get("branch","")
+                if rp_branch != "All" and ibranch != rp_branch:
+                    continue
+
+                # Find most recent log for this item+branch
+                item_logs = [l for l in logs
+                            if l.get("item_name","").strip().upper() == iname
+                            and l.get("branch","") == ibranch]
+
+                if item_logs:
+                    latest = max(item_logs,
+                                key=lambda x: str(x.get("created_at","")))
+                    source_map[iname] = {
+                        "qty":         int(item.get("quantity",0)),
+                        "last_action": latest.get("reason","—"),
+                        "last_date":   str(latest.get("created_at",""))[:10],
+                        "last_by":     latest.get("logged_by","—"),
+                    }
+                else:
+                    source_map[iname] = {
+                        "qty":         int(item.get("quantity",0)),
+                        "last_action": "No history",
+                        "last_date":   "—",
+                        "last_by":     "—",
+                    }
+            return source_map
+
         used_map    = build_usage_map(period_orders)
         advance_map = build_usage_map(advance_orders)
         reject_map  = build_reject_map(rp_from_str, rp_to_str, rp_branch)
+        usage_detail_map = build_usage_detail_map(
+            all_orders_rp, rp_from_str, rp_to_str, rp_branch
+        )
+        advance_detail_map = build_advance_detail_map(
+            all_orders_rp, date.today().isoformat(), rp_branch
+        )
 
         # Get inventory items for selected branch
         if rp_branch == "All":
@@ -5434,6 +5554,8 @@ f"margin:12px 0 4px;'>{parent}</div>",
         else:
             inv_items = [i for i in all_inv
                          if i.get("branch","") == rp_branch]
+
+        onhand_source_map = build_onhand_source_map(inv_items, rp_branch)
 
         # Group items by flower family then branch
         # Structure: {parent_name: {branch: [items]}}
@@ -5538,6 +5660,144 @@ f"<span style='text-align:center;font-weight:700;color:{rem_color};'>{remaining}
 f"</div>",
                             unsafe_allow_html=True,
                         )
+
+                        # Full breakdown expander — show for all items
+                        _used_details    = usage_detail_map.get(iname, [])
+                        _advance_details = advance_detail_map.get(iname, [])
+                        _onhand_source   = onhand_source_map.get(iname, {})
+
+                        _has_detail = used > 0 or advance > 0 or _onhand_source
+
+                        if _has_detail:
+                            with st.expander(
+                                f"📋 Breakdown — {display_name}",
+                                expanded=False
+                            ):
+                                # ── ON HAND ──────────────────────────────────────
+                                st.markdown(
+f"<div style='font-weight:700;font-size:0.85rem;color:#1C1B22;"
+f"margin-bottom:4px;border-bottom:1px solid #E8E3DC;padding-bottom:4px;'>"
+f"📦 ON HAND — {on_hand} pcs</div>",
+                                    unsafe_allow_html=True,
+                                )
+                                if _onhand_source:
+                                    st.markdown(
+f"<div style='font-size:0.8rem;color:#555;padding:4px 8px;"
+f"background:#F8F8F8;border-radius:6px;margin-bottom:10px;'>"
+f"Last update: <strong>{_onhand_source.get('last_action','—')}</strong>"
+f" &nbsp;·&nbsp; {_onhand_source.get('last_date','—')}"
+f" &nbsp;·&nbsp; By: {_onhand_source.get('last_by','—')}"
+f"</div>",
+                                        unsafe_allow_html=True,
+                                    )
+
+                                # ── USED ─────────────────────────────────────────
+                                st.markdown(
+f"<div style='font-weight:700;font-size:0.85rem;color:#DC2626;"
+f"margin-bottom:4px;border-bottom:1px solid #E8E3DC;padding-bottom:4px;"
+f"margin-top:8px;'>"
+f"🛒 USED — {used} pcs"
+f"{f' — {len(_used_details)} order(s)' if _used_details else ' — no orders in period'}"
+f"</div>",
+                                    unsafe_allow_html=True,
+                                )
+                                if _used_details:
+                                    st.markdown(
+"<div style='display:grid;grid-template-columns:2fr 2fr 0.5fr 1fr 1fr 1.5fr;"
+"gap:4px;padding:4px 8px;background:#F5F5F5;"
+"font-size:0.68rem;font-weight:700;letter-spacing:0.06em;"
+"text-transform:uppercase;color:#6B7280;'>"
+"<span>Order Code</span><span>Customer</span>"
+"<span style='text-align:center'>Qty</span>"
+"<span>Status</span><span>Date</span><span>Branch</span>"
+"</div>",
+                                        unsafe_allow_html=True,
+                                    )
+                                    _used_total = 0
+                                    for od in sorted(_used_details, key=lambda x: x["target_date"]):
+                                        _sc = {"Pending":"#D97706","Confirmed":"#0E7490",
+                                               "In Progress":"#7C3AED","Ready":"#2D7A4F",
+                                               "Delivered":"#166534","Picked Up":"#166534",
+                                               "Cancelled":"#DC2626","Failed Delivery":"#DC2626",
+                                               }.get(od["status"],"#6B7280")
+                                        _used_total += od["qty"]
+                                        st.markdown(
+f"<div style='display:grid;grid-template-columns:2fr 2fr 0.5fr 1fr 1fr 1.5fr;"
+f"gap:4px;padding:4px 8px;border-bottom:1px solid #F0F0F0;font-size:0.78rem;'>"
+f"<span style='font-family:JetBrains Mono,monospace;font-size:0.7rem;"
+f"color:#C85C8E;'>{od['order_code']}</span>"
+f"<span>{od['customer_name']}</span>"
+f"<span style='text-align:center;font-weight:700;'>{od['qty']}</span>"
+f"<span style='color:{_sc};font-weight:600;font-size:0.72rem;'>{od['status']}</span>"
+f"<span style='color:#6B7280;'>{od['target_date']}</span>"
+f"<span style='color:#6B7280;font-size:0.72rem;'>{od['branch']}</span>"
+f"</div>",
+                                            unsafe_allow_html=True,
+                                        )
+                                    st.markdown(
+f"<div style='display:grid;grid-template-columns:2fr 2fr 0.5fr 1fr 1fr 1.5fr;"
+f"gap:4px;padding:5px 8px;background:#FDEDEC;font-size:0.8rem;"
+f"font-weight:700;border-top:2px solid #E8E3DC;'>"
+f"<span style='color:#DC2626;'>TOTAL USED</span><span></span>"
+f"<span style='text-align:center;color:#DC2626;'>{_used_total}</span>"
+f"<span></span><span></span><span></span></div>",
+                                        unsafe_allow_html=True,
+                                    )
+                                else:
+                                    st.caption("No orders in this period used this flower.")
+
+                                # ── ADVANCE ──────────────────────────────────────
+                                st.markdown(
+f"<div style='font-weight:700;font-size:0.85rem;color:#D97706;"
+f"margin-bottom:4px;border-bottom:1px solid #E8E3DC;padding-bottom:4px;"
+f"margin-top:8px;'>"
+f"📅 ADVANCE — {advance} pcs"
+f"{f' — {len(_advance_details)} future order(s)' if _advance_details else ' — no advance orders'}"
+f"</div>",
+                                    unsafe_allow_html=True,
+                                )
+                                if _advance_details:
+                                    st.markdown(
+"<div style='display:grid;grid-template-columns:2fr 2fr 0.5fr 1fr 1fr 1.5fr;"
+"gap:4px;padding:4px 8px;background:#F5F5F5;"
+"font-size:0.68rem;font-weight:700;letter-spacing:0.06em;"
+"text-transform:uppercase;color:#6B7280;'>"
+"<span>Order Code</span><span>Customer</span>"
+"<span style='text-align:center'>Qty</span>"
+"<span>Status</span><span>Date</span><span>Branch</span>"
+"</div>",
+                                        unsafe_allow_html=True,
+                                    )
+                                    _adv_total = 0
+                                    for od in sorted(_advance_details, key=lambda x: x["target_date"]):
+                                        _sc = {"Pending":"#D97706","Confirmed":"#0E7490",
+                                               "In Progress":"#7C3AED","Ready":"#2D7A4F",
+                                               }.get(od["status"],"#6B7280")
+                                        _adv_total += od["qty"]
+                                        st.markdown(
+f"<div style='display:grid;grid-template-columns:2fr 2fr 0.5fr 1fr 1fr 1.5fr;"
+f"gap:4px;padding:4px 8px;border-bottom:1px solid #F0F0F0;font-size:0.78rem;'>"
+f"<span style='font-family:JetBrains Mono,monospace;font-size:0.7rem;"
+f"color:#C85C8E;'>{od['order_code']}</span>"
+f"<span>{od['customer_name']}</span>"
+f"<span style='text-align:center;font-weight:700;'>{od['qty']}</span>"
+f"<span style='color:{_sc};font-weight:600;font-size:0.72rem;'>{od['status']}</span>"
+f"<span style='color:#6B7280;'>{od['target_date']}</span>"
+f"<span style='color:#6B7280;font-size:0.72rem;'>{od['branch']}</span>"
+f"</div>",
+                                            unsafe_allow_html=True,
+                                        )
+                                    st.markdown(
+f"<div style='display:grid;grid-template-columns:2fr 2fr 0.5fr 1fr 1fr 1.5fr;"
+f"gap:4px;padding:5px 8px;background:#FEF9E7;font-size:0.8rem;"
+f"font-weight:700;border-top:2px solid #E8E3DC;'>"
+f"<span style='color:#D97706;'>TOTAL ADVANCE</span><span></span>"
+f"<span style='text-align:center;color:#D97706;'>{_adv_total}</span>"
+f"<span></span><span></span><span></span></div>",
+                                        unsafe_allow_html=True,
+                                    )
+                                else:
+                                    st.caption("No future orders are holding this flower.")
 
             st.divider()
 
